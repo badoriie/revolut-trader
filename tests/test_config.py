@@ -1,5 +1,5 @@
 """Basic configuration tests."""
-import pytest
+
 from src.config import RiskLevel, StrategyType, TradingMode, settings
 
 

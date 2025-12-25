@@ -2,6 +2,7 @@
 """
 Revolut Trader: Professional Algorithmic Trading Bot for Revolut Crypto
 """
+
 import argparse
 import asyncio
 import sys

@@ -7,7 +7,7 @@ help:
 	@echo "  make clean        - Remove Python cache files and test artifacts"
 	@echo "  make deep-clean   - Remove all generated files including logs and data"
 	@echo "  make test         - Run tests with coverage"
-	@echo "  make format       - Format code with black"
+	@echo "  make format       - Format code with ruff"
 	@echo "  make lint         - Lint code with ruff"
 	@echo "  make type-check   - Run type checking with mypy"
 	@echo "  make run-paper    - Run bot in paper trading mode"
@@ -72,13 +72,13 @@ test-fast:
 # Format code
 format:
 	@echo "🎨 Formatting code..."
-	black src/ tests/ run.py
+	ruff format src/ tests/ run.py
 	@echo "✅ Formatting complete!"
 
 # Check formatting without making changes
 format-check:
 	@echo "🎨 Checking code formatting..."
-	black --check src/ tests/ run.py
+	ruff format --check src/ tests/ run.py
 	@echo "✅ Format check complete!"
 
 # Lint code

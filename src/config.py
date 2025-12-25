@@ -1,6 +1,5 @@
 from enum import Enum
 from pathlib import Path
-from typing import List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,7 +40,7 @@ class Settings(BaseSettings):
     trading_mode: TradingMode = Field(default=TradingMode.PAPER)
     default_strategy: StrategyType = Field(default=StrategyType.MARKET_MAKING)
     risk_level: RiskLevel = Field(default=RiskLevel.CONSERVATIVE)
-    trading_pairs: List[str] = Field(default=["BTC-USD", "ETH-USD"])
+    trading_pairs: list[str] = Field(default=["BTC-USD", "ETH-USD"])
 
     @field_validator("trading_pairs", mode="before")
     @classmethod

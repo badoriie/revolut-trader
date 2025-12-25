@@ -1,6 +1,5 @@
 from collections import deque
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional
 
 from loguru import logger
 
@@ -26,15 +25,15 @@ class MeanReversionStrategy(BaseStrategy):
         self.min_deviation = Decimal(str(min_deviation))
 
         # Price history for calculations
-        self.price_history: Dict[str, Deque[Decimal]] = {}
+        self.price_history: dict[str, deque[Decimal]] = {}
 
     async def analyze(
         self,
         symbol: str,
         market_data: MarketData,
-        positions: List[Position],
+        positions: list[Position],
         portfolio_value: Decimal,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """Generate mean reversion signals using Bollinger Bands."""
 
         # Initialize price history for symbol if needed

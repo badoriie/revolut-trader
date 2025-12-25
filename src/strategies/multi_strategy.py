@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -17,7 +16,7 @@ class MultiStrategy(BaseStrategy):
 
     def __init__(
         self,
-        weights: Optional[Dict[str, float]] = None,
+        weights: dict[str, float] | None = None,
         min_consensus: float = 0.6,  # 60% agreement required
     ):
         super().__init__("Multi-Strategy")
@@ -32,7 +31,7 @@ class MultiStrategy(BaseStrategy):
         self.min_consensus = min_consensus
 
         # Initialize sub-strategies
-        self.strategies: Dict[str, BaseStrategy] = {
+        self.strategies: dict[str, BaseStrategy] = {
             "market_making": MarketMakingStrategy(),
             "momentum": MomentumStrategy(),
             "mean_reversion": MeanReversionStrategy(),
@@ -48,12 +47,12 @@ class MultiStrategy(BaseStrategy):
         self,
         symbol: str,
         market_data: MarketData,
-        positions: List[Position],
+        positions: list[Position],
         portfolio_value: Decimal,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """Generate consensus signal from multiple strategies."""
 
-        signals: Dict[str, Signal] = {}
+        signals: dict[str, Signal] = {}
 
         # Get signals from all sub-strategies
         for strategy_name, strategy in self.strategies.items():

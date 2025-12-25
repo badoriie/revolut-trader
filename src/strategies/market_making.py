@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import List, Optional
 
 from loguru import logger
 
@@ -28,9 +27,9 @@ class MarketMakingStrategy(BaseStrategy):
         self,
         symbol: str,
         market_data: MarketData,
-        positions: List[Position],
+        positions: list[Position],
         portfolio_value: Decimal,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """Generate market making signals based on spread and inventory."""
 
         # Calculate current spread
@@ -39,9 +38,7 @@ class MarketMakingStrategy(BaseStrategy):
 
         # Check if spread is wide enough to be profitable
         if spread < self.spread_threshold:
-            logger.debug(
-                f"{symbol}: Spread {spread:.4f} below threshold {self.spread_threshold}"
-            )
+            logger.debug(f"{symbol}: Spread {spread:.4f} below threshold {self.spread_threshold}")
             return None
 
         # Calculate current inventory position
@@ -62,7 +59,9 @@ class MarketMakingStrategy(BaseStrategy):
             # Too much inventory, prefer selling
             signal_type = "SELL"
             strength = min(1.0, float(inventory_ratio))
-            reason = f"Inventory imbalance: {inventory_ratio:.2%} > target {self.inventory_target:.2%}"
+            reason = (
+                f"Inventory imbalance: {inventory_ratio:.2%} > target {self.inventory_target:.2%}"
+            )
         elif inventory_ratio < self.inventory_target * Decimal("0.5"):
             # Too little inventory, prefer buying
             signal_type = "BUY"

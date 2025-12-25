@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -23,14 +22,12 @@ class OrderExecutor:
         self.trading_mode = trading_mode
 
         # Track positions and orders
-        self.positions: Dict[str, Position] = {}
-        self.open_orders: Dict[str, Order] = {}
+        self.positions: dict[str, Position] = {}
+        self.open_orders: dict[str, Order] = {}
 
         logger.info(f"Order Executor initialized in {trading_mode} mode")
 
-    async def execute_signal(
-        self, signal: Signal, portfolio_value: Decimal
-    ) -> Optional[Order]:
+    async def execute_signal(self, signal: Signal, portfolio_value: Decimal) -> Order | None:
         """Execute a trading signal."""
 
         # Determine order details from signal
@@ -80,7 +77,9 @@ class OrderExecutor:
 
     async def _execute_paper_order(self, order: Order) -> Order:
         """Execute order in paper trading mode (simulated)."""
-        logger.info(f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}")
+        logger.info(
+            f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}"
+        )
 
         # Simulate order fill
         order.order_id = f"paper_{order.symbol}_{int(order.created_at.timestamp())}"
@@ -133,8 +132,7 @@ class OrderExecutor:
             if position.side == order.side:
                 total_qty = position.quantity + order.filled_quantity
                 total_cost = (
-                    position.entry_price * position.quantity
-                    + order.price * order.filled_quantity
+                    position.entry_price * position.quantity + order.price * order.filled_quantity
                 )
                 position.entry_price = total_cost / total_qty
                 position.quantity = total_qty
@@ -145,16 +143,12 @@ class OrderExecutor:
                     # Close position
                     realized_pnl = position.unrealized_pnl
                     position.realized_pnl += realized_pnl
-                    logger.info(
-                        f"Position closed: {symbol}, Realized P&L: {realized_pnl}"
-                    )
+                    logger.info(f"Position closed: {symbol}, Realized P&L: {realized_pnl}")
                     del self.positions[symbol]
                 else:
                     # Reduce position
                     position.quantity -= order.filled_quantity
-                    realized_pnl = (
-                        order.price - position.entry_price
-                    ) * order.filled_quantity
+                    realized_pnl = (order.price - position.entry_price) * order.filled_quantity
                     position.realized_pnl += realized_pnl
         else:
             # Create new position
@@ -221,15 +215,13 @@ class OrderExecutor:
 
     async def get_portfolio_value(self, cash_balance: Decimal) -> Decimal:
         """Calculate total portfolio value."""
-        positions_value = sum(
-            pos.quantity * pos.current_price for pos in self.positions.values()
-        )
+        positions_value = sum(pos.quantity * pos.current_price for pos in self.positions.values())
         return cash_balance + positions_value
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         """Get all current positions."""
         return list(self.positions.values())
 
-    def get_position(self, symbol: str) -> Optional[Position]:
+    def get_position(self, symbol: str) -> Position | None:
         """Get position for a specific symbol."""
         return self.positions.get(symbol)

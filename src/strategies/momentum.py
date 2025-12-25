@@ -1,6 +1,5 @@
 from collections import deque
 from decimal import Decimal
-from typing import Deque, Dict, List, Optional
 
 from loguru import logger
 
@@ -30,15 +29,15 @@ class MomentumStrategy(BaseStrategy):
         self.rsi_oversold = rsi_oversold
 
         # Price history for calculations
-        self.price_history: Dict[str, Deque[Decimal]] = {}
+        self.price_history: dict[str, deque[Decimal]] = {}
 
     async def analyze(
         self,
         symbol: str,
         market_data: MarketData,
-        positions: List[Position],
+        positions: list[Position],
         portfolio_value: Decimal,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """Generate momentum signals based on moving averages and RSI."""
 
         # Initialize price history for symbol if needed
@@ -122,7 +121,7 @@ class MomentumStrategy(BaseStrategy):
             },
         )
 
-    def _calculate_rsi(self, prices: List[Decimal]) -> Decimal:
+    def _calculate_rsi(self, prices: list[Decimal]) -> Decimal:
         """Calculate Relative Strength Index."""
         if len(prices) < 2:
             return Decimal("50")

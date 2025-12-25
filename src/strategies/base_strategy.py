@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from decimal import Decimal
-from typing import List, Optional
 
 from src.data.models import MarketData, Position, Signal
 
@@ -17,9 +16,9 @@ class BaseStrategy(ABC):
         self,
         symbol: str,
         market_data: MarketData,
-        positions: List[Position],
+        positions: list[Position],
         portfolio_value: Decimal,
-    ) -> Optional[Signal]:
+    ) -> Signal | None:
         """
         Analyze market data and generate trading signal.
 

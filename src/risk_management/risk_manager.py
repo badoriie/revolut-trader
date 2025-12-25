@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import Dict, List, Optional
 
 from loguru import logger
 
@@ -10,7 +9,7 @@ from src.data.models import Order, OrderSide, Position
 class RiskManager:
     """Risk management system for controlling trading exposure."""
 
-    def __init__(self, risk_level: Optional[RiskLevel] = None):
+    def __init__(self, risk_level: RiskLevel | None = None):
         self.risk_level = risk_level or settings.risk_level
         self.risk_params = settings.get_risk_parameters()
         self.daily_pnl = Decimal("0")
@@ -26,7 +25,7 @@ class RiskManager:
         quantity: Decimal,
         price: Decimal,
         portfolio_value: Decimal,
-        current_positions: List[Position],
+        current_positions: list[Position],
     ) -> tuple[bool, str]:
         """Check if a new position can be opened based on risk rules."""
 
@@ -51,9 +50,7 @@ class RiskManager:
 
         # Check for concentration risk (too much in one symbol)
         existing_exposure = sum(
-            p.quantity * p.current_price
-            for p in current_positions
-            if p.symbol == symbol
+            p.quantity * p.current_price for p in current_positions if p.symbol == symbol
         )
         total_exposure = existing_exposure + position_value
         exposure_pct = (total_exposure / portfolio_value) * 100
@@ -85,7 +82,7 @@ class RiskManager:
         return quantity.quantize(Decimal("0.00000001"))
 
     def calculate_stop_loss(
-        self, entry_price: Decimal, side: OrderSide, custom_pct: Optional[float] = None
+        self, entry_price: Decimal, side: OrderSide, custom_pct: float | None = None
     ) -> Decimal:
         """Calculate stop loss price."""
         stop_pct = custom_pct or self.risk_params["stop_loss_pct"]
@@ -99,7 +96,7 @@ class RiskManager:
         return stop_price.quantize(Decimal("0.01"))
 
     def calculate_take_profit(
-        self, entry_price: Decimal, side: OrderSide, custom_pct: Optional[float] = None
+        self, entry_price: Decimal, side: OrderSide, custom_pct: float | None = None
     ) -> Decimal:
         """Calculate take profit price."""
         tp_pct = custom_pct or self.risk_params["take_profit_pct"]
@@ -133,7 +130,7 @@ class RiskManager:
         logger.info("Daily risk limits reset")
 
     def validate_order(
-        self, order: Order, portfolio_value: Decimal, current_positions: List[Position]
+        self, order: Order, portfolio_value: Decimal, current_positions: list[Position]
     ) -> tuple[bool, str]:
         """Validate an order before execution."""
         if not order.price or not order.quantity:

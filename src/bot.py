@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Optional
 
 from loguru import logger
 
@@ -23,10 +22,10 @@ class TradingBot:
 
     def __init__(
         self,
-        strategy_type: Optional[StrategyType] = None,
-        risk_level: Optional[RiskLevel] = None,
-        trading_mode: Optional[TradingMode] = None,
-        trading_pairs: Optional[list] = None,
+        strategy_type: StrategyType | None = None,
+        risk_level: RiskLevel | None = None,
+        trading_mode: TradingMode | None = None,
+        trading_pairs: list | None = None,
     ):
         # Configuration
         self.strategy_type = strategy_type or settings.default_strategy
@@ -35,18 +34,18 @@ class TradingBot:
         self.trading_pairs = trading_pairs or settings.trading_pairs
 
         # Components (initialized in start())
-        self.api_client: Optional[RevolutAPIClient] = None
-        self.risk_manager: Optional[RiskManager] = None
-        self.executor: Optional[OrderExecutor] = None
-        self.notifier: Optional[TelegramNotifier] = None
-        self.strategy: Optional[BaseStrategy] = None
+        self.api_client: RevolutAPIClient | None = None
+        self.risk_manager: RiskManager | None = None
+        self.executor: OrderExecutor | None = None
+        self.notifier: TelegramNotifier | None = None
+        self.strategy: BaseStrategy | None = None
 
         # State
         self.is_running = False
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
         self.portfolio_snapshots: list[PortfolioSnapshot] = []
 
-        logger.info(f"Trading Bot initialized")
+        logger.info("Trading Bot initialized")
         logger.info(f"Strategy: {self.strategy_type}")
         logger.info(f"Risk Level: {self.risk_level}")
         logger.info(f"Trading Mode: {self.trading_mode}")
@@ -200,7 +199,7 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Error processing {symbol}: {str(e)}", exc_info=True)
 
-    async def _fetch_market_data(self, symbol: str) -> Optional[MarketData]:
+    async def _fetch_market_data(self, symbol: str) -> MarketData | None:
         """Fetch current market data for a symbol."""
         try:
             if self.trading_mode == TradingMode.PAPER:
@@ -244,9 +243,7 @@ class TradingBot:
         """Update and save portfolio snapshot."""
         positions = self.executor.get_positions()
 
-        positions_value = sum(
-            pos.quantity * pos.current_price for pos in positions
-        )
+        positions_value = sum(pos.quantity * pos.current_price for pos in positions)
         unrealized_pnl = sum(pos.unrealized_pnl for pos in positions)
         realized_pnl = sum(pos.realized_pnl for pos in positions)
         total_value = self.cash_balance + positions_value

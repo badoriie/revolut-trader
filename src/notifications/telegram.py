@@ -1,5 +1,3 @@
-from typing import Optional
-
 from loguru import logger
 from telegram import Bot
 from telegram.error import TelegramError
@@ -11,13 +9,11 @@ from src.data.models import Order, Position, Signal
 class TelegramNotifier:
     """Send trading notifications via Telegram."""
 
-    def __init__(
-        self, bot_token: Optional[str] = None, chat_id: Optional[str] = None
-    ):
+    def __init__(self, bot_token: str | None = None, chat_id: str | None = None):
         self.enabled = settings.enable_telegram
         self.bot_token = bot_token or settings.telegram_bot_token
         self.chat_id = chat_id or settings.telegram_chat_id
-        self.bot: Optional[Bot] = None
+        self.bot: Bot | None = None
 
         if self.enabled:
             if not self.bot_token or not self.chat_id:
@@ -35,9 +31,7 @@ class TelegramNotifier:
             return
 
         try:
-            await self.bot.send_message(
-                chat_id=self.chat_id, text=message, parse_mode=parse_mode
-            )
+            await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=parse_mode)
         except TelegramError as e:
             logger.error(f"Failed to send Telegram message: {str(e)}")
         except Exception as e:
@@ -100,9 +94,7 @@ Take Profit: ${position.take_profit}
 """
         await self.send_message(message)
 
-    async def notify_daily_summary(
-        self, total_pnl: float, win_rate: float, num_trades: int
-    ):
+    async def notify_daily_summary(self, total_pnl: float, win_rate: float, num_trades: int):
         """Send daily trading summary."""
         pnl_emoji = "💰" if total_pnl >= 0 else "📉"
         message = f"""
