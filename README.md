@@ -69,43 +69,53 @@ cat config/revolut_public.pem
 4. Paste your public key from `config/revolut_public.pem`
 5. Copy the generated API key (64 characters)
 
-### 3. Configuration
+### 3. Secure Credential Storage (Recommended: 1Password)
+
+**For Production**: Use 1Password to store credentials securely (no .env file needed)
 
 ```bash
-# Copy example environment file
-cp .env.example .env
+# Install 1Password CLI
+brew install --cask 1password-cli
 
-# Edit .env with your settings
-nano .env
+# Sign in
+eval $(op signin)
+
+# Store API key in 1Password
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  REVOLUT_API_KEY[concealed]="your-api-key"
+
+# Store private key in 1Password (more secure than config folder)
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"
+
+# Delete local PEM file for security
+rm config/revolut_private.pem config/revolut_public.pem
 ```
 
-Required settings in `.env`:
+**Benefits:**
+- ✅ Private keys never stored on disk
+- ✅ Encrypted vault storage
+- ✅ No risk of accidental git commits
+- ✅ Audit trail of access
+- ✅ Easy credential rotation
 
-```bash
-# Revolut API
-REVOLUT_API_KEY=your_64_character_api_key_here
-REVOLUT_PRIVATE_KEY_PATH=./config/revolut_private.pem
+See [1Password Integration Guide](docs/1PASSWORD_INTEGRATION.md) for details.
 
-# Trading Configuration
-TRADING_MODE=paper  # Start with paper trading!
-DEFAULT_STRATEGY=market_making
-RISK_LEVEL=conservative
-
-# Trading Pairs
-TRADING_PAIRS=BTC-USD,ETH-USD
-
-# Telegram (optional but recommended)
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-ENABLE_TELEGRAM=true
-```
+**Note**: `.env` file is NOT used for credentials. All sensitive data is in 1Password only.
 
 ### 4. Setup Telegram Notifications (Optional)
 
-1. Create a bot via [@BotFather](https://t.me/BotFather)
-2. Copy the bot token
-3. Get your chat ID from [@userinfobot](https://t.me/userinfobot)
-4. Add both to your `.env` file
+Store your Telegram credentials in 1Password:
+
+```bash
+# Get bot token from @BotFather and chat ID from @userinfobot
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="your-telegram-bot-token" \
+  TELEGRAM_CHAT_ID[concealed]="your-telegram-chat-id"
+```
 
 ### 5. Run the Bot
 
@@ -264,17 +274,22 @@ Receive real-time notifications for:
 - This software is provided as-is with no guarantees
 
 ⚠️ **SECURITY**:
-- Never commit your `.env` file
-- Keep your API keys secure
-- Use strong passwords
+- All credentials must be in 1Password (never in files)
+- Never commit PEM files or API keys
+- Use strong 1Password master password
 - Enable 2FA on your Revolut account
+- Sign in to 1Password before running: `eval $(op signin)`
 
 ## Troubleshooting
 
 ### API Connection Issues
 ```bash
-# Verify API key is correct in .env
-# Check that private key exists: ls -la config/revolut_private.pem
+# Verify credentials are in 1Password
+op item get revolut-trader-credentials --vault revolut-trader
+
+# Check 1Password is signed in
+op account list
+
 # Ensure public key is registered on Revolut X
 ```
 

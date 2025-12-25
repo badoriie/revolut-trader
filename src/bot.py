@@ -51,9 +51,28 @@ class TradingBot:
         logger.info(f"Trading Mode: {self.trading_mode}")
         logger.info(f"Trading Pairs: {self.trading_pairs}")
 
+    def _validate_security_settings(self):
+        """Validate security configuration before starting bot."""
+        from src.utils.onepassword import OnePasswordClient
+
+        # 1Password is always required - no .env fallback
+        client = OnePasswordClient()
+        if client.is_available():
+            logger.info("✓ 1Password configured and available (secure mode)")
+        else:
+            logger.error(
+                "✗ 1Password is required but not available!\n"
+                "  Install 1Password CLI: brew install --cask 1password-cli\n"
+                "  Sign in: eval $(op signin)"
+            )
+            # Will fail when trying to initialize API client
+
     async def start(self):
         """Initialize and start the trading bot."""
         logger.info("Starting trading bot...")
+
+        # Validate 1Password configuration for production
+        self._validate_security_settings()
 
         # Initialize API client
         self.api_client = RevolutAPIClient()

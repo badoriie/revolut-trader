@@ -302,6 +302,77 @@ check_status() {
     echo ""
 }
 
+# Create sample item with placeholder values
+create_sample_item() {
+    print_info "Creating sample credentials item in 1Password..."
+
+    # Check if item already exists
+    if op item get "$ITEM_NAME" --vault "$VAULT_NAME" &> /dev/null; then
+        print_warning "Item already exists: $ITEM_NAME"
+        read -p "Do you want to replace it with a new sample? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+            print_info "Keeping existing item"
+            return 0
+        fi
+
+        # Delete existing item
+        op item delete "$ITEM_NAME" --vault "$VAULT_NAME"
+        print_info "Deleted existing item"
+    fi
+
+    # Read PEM file if it exists
+    PEM_CONTENT=""
+    if [ -f "config/revolut_private.pem" ]; then
+        PEM_CONTENT=$(cat config/revolut_private.pem)
+        print_success "Found local PEM file - will include in 1Password"
+    fi
+
+    # Create item with sample values using op item create
+    print_info "Creating item with placeholder values..."
+
+    if [ -n "$PEM_CONTENT" ]; then
+        # If we have a PEM file, use it
+        op item create \
+            --category "Secure Note" \
+            --vault "$VAULT_NAME" \
+            --title "$ITEM_NAME" \
+            "REVOLUT_API_KEY[concealed]=your-revolut-api-key-here" \
+            "REVOLUT_PRIVATE_KEY[concealed]=$PEM_CONTENT" \
+            "TELEGRAM_BOT_TOKEN[concealed]=your-telegram-bot-token-here" \
+            "TELEGRAM_CHAT_ID[concealed]=your-telegram-chat-id-here" \
+            "notesPlain=Revolut Trading Bot Credentials - Edit these values with your actual credentials"
+    else
+        # Otherwise use placeholder for PEM too
+        op item create \
+            --category "Secure Note" \
+            --vault "$VAULT_NAME" \
+            --title "$ITEM_NAME" \
+            "REVOLUT_API_KEY[concealed]=your-revolut-api-key-here" \
+            "REVOLUT_PRIVATE_KEY[concealed]=paste-your-pem-file-content-here" \
+            "TELEGRAM_BOT_TOKEN[concealed]=your-telegram-bot-token-here" \
+            "TELEGRAM_CHAT_ID[concealed]=your-telegram-chat-id-here" \
+            "notesPlain=Revolut Trading Bot Credentials - Edit these values with your actual credentials"
+    fi
+
+    print_success "Sample item created in 1Password!"
+    echo ""
+    print_info "Item: $ITEM_NAME"
+    print_info "Vault: $VAULT_NAME"
+    echo ""
+    print_warning "Next steps:"
+    echo "  1. Edit the item in 1Password app or CLI with your actual credentials:"
+    echo "     op item edit $ITEM_NAME --vault $VAULT_NAME"
+    echo ""
+    echo "  2. Required fields to update:"
+    echo "     - REVOLUT_API_KEY: Your 64-character API key from Revolut X"
+    if [ -z "$PEM_CONTENT" ]; then
+        echo "     - REVOLUT_PRIVATE_KEY: Content of your config/revolut_private.pem file"
+    fi
+    echo "     - TELEGRAM_BOT_TOKEN: (Optional) From @BotFather"
+    echo "     - TELEGRAM_CHAT_ID: (Optional) From @userinfobot"
+    echo ""
+}
+
 # Setup wizard
 setup_wizard() {
     echo ""
@@ -312,7 +383,9 @@ setup_wizard() {
     # Check 1Password CLI
     if ! check_op_installed; then
         print_error "1Password CLI is not installed"
-        print_info "Please install from: https://developer.1password.com/docs/cli/get-started/"
+        echo ""
+        print_info "Install with: brew install --cask 1password-cli"
+        print_info "Or visit: https://developer.1password.com/docs/cli/get-started/"
         return 1
     fi
 
@@ -338,26 +411,18 @@ setup_wizard() {
     ensure_vault_exists
     echo ""
 
-    # Check if .env exists
-    if [ -f "$ENV_FILE" ]; then
-        print_info "Found existing .env file"
-        read -p "Do you want to store these credentials in 1Password? (y/N): " confirm
-
-        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-            store_credentials
-        fi
-    else
-        print_warning ".env file not found"
-        print_info "Please create .env file first, then run: make 1password-store"
-    fi
+    # Create sample item
+    create_sample_item
 
     echo ""
     print_success "Setup complete!"
     echo ""
-    print_info "Next steps:"
-    echo "  1. Store credentials: make 1password-store"
-    echo "  2. Retrieve credentials: make 1password-retrieve"
-    echo "  3. Check status: make 1password-status"
+    print_info "You can now:"
+    echo "  1. Edit credentials in 1Password app"
+    echo "  2. Or use CLI: op item edit $ITEM_NAME --vault $VAULT_NAME"
+    echo "  3. View credentials: make 1password-show"
+    echo "  4. Check status: make 1password-status"
+    echo ""
 }
 
 # Main command handler

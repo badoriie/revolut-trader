@@ -27,11 +27,12 @@ class RiskLevel(str, Enum):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
+
+    # All credentials are retrieved from 1Password only
+    # No .env file dependency for security
 
     # Revolut API
     revolut_api_key: str = Field(default="")
@@ -96,26 +97,41 @@ class Settings(BaseSettings):
         }
         return risk_params.get(self.risk_level, risk_params[RiskLevel.CONSERVATIVE])
 
-    def get_private_key_content(self) -> str | None:
-        """Get private key content from 1Password or file.
+    def get_private_key_content(self) -> str:
+        """Get private key content from 1Password only (no .env fallback).
 
-        Priority:
-        1. Try to get from 1Password (REVOLUT_PRIVATE_KEY field)
-        2. Fall back to reading from file path
+        Retrieves private key from 1Password vault.
+        This is the only secure way to store credentials.
 
         Returns:
-            PEM-encoded private key content or None if not found
+            PEM-encoded private key content
+
+        Raises:
+            RuntimeError: If 1Password is not available or private key not found
         """
-        # Try 1Password first (more secure)
-        private_key_pem = get_credential("REVOLUT_PRIVATE_KEY", use_1password=True)
-        if private_key_pem:
-            return private_key_pem
+        from src.utils.onepassword import OnePasswordClient
 
-        # Fall back to file if exists
-        if self.revolut_private_key_path.exists():
-            return self.revolut_private_key_path.read_text()
+        client = OnePasswordClient()
 
-        return None
+        # 1Password is required - no fallback
+        if not client.is_available():
+            raise RuntimeError(
+                "1Password is required but not available. Please:\n"
+                "1. Install 1Password CLI: brew install --cask 1password-cli\n"
+                "2. Sign in: eval $(op signin)\n"
+                "3. Store your private key: op item edit revolut-trader-credentials "
+                "--vault revolut-trader REVOLUT_PRIVATE_KEY[concealed]=\"$(cat config/revolut_private.pem)\"\n"
+            )
+
+        private_key_pem = client.get_field("REVOLUT_PRIVATE_KEY")
+        if not private_key_pem:
+            raise RuntimeError(
+                "Private key not found in 1Password. Please store it:\n"
+                "op item edit revolut-trader-credentials --vault revolut-trader "
+                "REVOLUT_PRIVATE_KEY[concealed]=\"$(cat config/revolut_private.pem)\""
+            )
+
+        return private_key_pem
 
 
 settings = Settings()

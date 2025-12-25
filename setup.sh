@@ -42,18 +42,17 @@ else
     echo "✓ Key pair already exists"
 fi
 
-# Copy .env.example to .env if not exists
-if [ ! -f ".env" ]; then
-    echo ""
-    echo "Creating .env file from template..."
-    cp .env.example .env
-    echo "✓ .env file created. Please edit it with your settings:"
-    echo "  - Add your Revolut API key"
-    echo "  - Configure trading pairs"
-    echo "  - (Optional) Add Telegram credentials"
-else
-    echo "✓ .env file already exists"
-fi
+# Note: .env file NOT needed - credentials stored in 1Password
+echo ""
+echo "================================================="
+echo "IMPORTANT: Credential Storage"
+echo "================================================="
+echo "This bot uses 1Password for secure credential storage."
+echo "No .env file is needed or used."
+echo ""
+echo "After key generation, store credentials in 1Password:"
+echo "  make 1password-setup"
+echo ""
 
 # Create necessary directories
 echo ""
@@ -67,14 +66,20 @@ echo "================================================="
 echo ""
 echo "Next steps:"
 echo "1. Register your public key on Revolut X web app"
-echo "2. Edit .env file with your API key:"
-echo "   nano .env"
 echo ""
-echo "3. Test in paper mode (RECOMMENDED):"
+echo "2. Install and configure 1Password CLI:"
+echo "   brew install --cask 1password-cli"
+echo "   eval \$(op signin)"
+echo ""
+echo "3. Store credentials in 1Password:"
+echo "   make 1password-setup"
+echo ""
+echo "4. Test in paper mode (RECOMMENDED):"
 echo "   python run.py --strategy market_making --mode paper"
 echo ""
-echo "4. View all options:"
+echo "5. View all options:"
 echo "   python run.py --help"
 echo ""
 echo "⚠️  ALWAYS test in paper mode before live trading!"
+echo "⚠️  All credentials are stored in 1Password (no .env file)"
 echo "================================================="

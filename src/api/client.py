@@ -21,12 +21,37 @@ class RevolutAPIClient:
         private_key_content: str | None = None,
         base_url: str | None = None,
     ):
-        self.api_key = api_key or settings.revolut_api_key
+        # Get API key from 1Password if not provided
+        if api_key:
+            self.api_key = api_key
+        else:
+            self.api_key = self._get_api_key_from_1password() or settings.revolut_api_key
+
         self.private_key_path = private_key_path
         self.private_key_content = private_key_content
         self.base_url = (base_url or settings.revolut_api_base_url).rstrip("/")
         self.client = httpx.AsyncClient(timeout=30.0)
         self._private_key: Ed25519PrivateKey | None = None
+
+    def _get_api_key_from_1password(self) -> str:
+        """Retrieve API key from 1Password only (no .env fallback)."""
+        from src.utils.onepassword import OnePasswordClient
+
+        client = OnePasswordClient()
+        if not client.is_available():
+            raise RuntimeError(
+                "1Password is required but not available for API key retrieval.\n"
+                "Please sign in: eval $(op signin)"
+            )
+
+        api_key = client.get_field("REVOLUT_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "REVOLUT_API_KEY not found in 1Password. Please store it:\n"
+                "op item edit revolut-trader-credentials --vault revolut-trader "
+                "REVOLUT_API_KEY[concealed]=\"your-api-key\""
+            )
+        return api_key
 
     async def __aenter__(self):
         await self.initialize()
@@ -60,17 +85,17 @@ class RevolutAPIClient:
             pem_content = self.private_key_path.read_text()
             logger.debug(f"Using private key from path: {self.private_key_path}")
 
-        # Priority 3 & 4: Try 1Password first, then fall back to file from settings
+        # Priority 3: Get from 1Password via settings (enforced in production)
         else:
-            pem_content = settings.get_private_key_content()
-            if pem_content:
-                logger.info("Using private key from 1Password (secure storage)")
-            else:
-                raise FileNotFoundError(
-                    "Private key not found. Please either:\n"
-                    "1. Store it in 1Password using field 'REVOLUT_PRIVATE_KEY', or\n"
-                    f"2. Place it at {settings.revolut_private_key_path}"
-                )
+            try:
+                pem_content = settings.get_private_key_content()
+                if pem_content:
+                    logger.info("✓ Using private key from 1Password (secure storage)")
+                else:
+                    raise FileNotFoundError("Private key not found in 1Password or local storage")
+            except RuntimeError as e:
+                # Re-raise 1Password requirement errors from settings
+                raise RuntimeError(str(e)) from e
 
         # Load the private key from PEM content
         try:

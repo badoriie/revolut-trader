@@ -46,7 +46,7 @@ op account list
 
 ## Quick Start
 
-### Option 1: Setup Wizard (Recommended)
+### Setup Wizard (One Command)
 
 Run the interactive setup wizard:
 
@@ -56,27 +56,28 @@ make 1password-setup
 
 This will:
 1. Check if 1Password CLI is installed and signed in
-2. Create a vault for the trading bot (or use existing)
-3. Import credentials from your existing `.env` file
-4. Verify the setup
+2. Create a vault `revolut-trader` (or use existing)
+3. Create a sample item `revolut-trader-credentials` with all required fields:
+   - **REVOLUT_API_KEY** (placeholder: "your-revolut-api-key-here")
+   - **REVOLUT_PRIVATE_KEY** (auto-populated from `config/revolut_private.pem` if exists)
+   - **TELEGRAM_BOT_TOKEN** (placeholder: "your-telegram-bot-token-here")
+   - **TELEGRAM_CHAT_ID** (placeholder: "your-telegram-chat-id-here")
 
-### Option 2: Manual Setup
+**After setup:**
+1. Open 1Password app (or use CLI)
+2. Find the `revolut-trader-credentials` item
+3. Edit the placeholder values with your actual credentials
+4. Done! The bot will now use 1Password automatically
 
-1. **Store existing credentials:**
-   ```bash
-   # Make sure you have a .env file with your credentials
-   make 1password-store
-   ```
+### Verify Setup
 
-2. **Verify storage:**
-   ```bash
-   make 1password-show
-   ```
+```bash
+# Check status
+make 1password-status
 
-3. **Retrieve credentials:**
-   ```bash
-   make 1password-retrieve
-   ```
+# View stored credentials (masked)
+make 1password-show
+```
 
 ## Usage
 
