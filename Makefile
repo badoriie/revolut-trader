@@ -1,18 +1,44 @@
-.PHONY: help clean deep-clean install test format lint type-check run-paper run-live
+.PHONY: help clean deep-clean install test format lint type-check run-paper run-live 1password-setup 1password-store 1password-retrieve 1password-status 1password-show 1password-delete
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make install      - Install dependencies"
-	@echo "  make clean        - Remove Python cache files and test artifacts"
-	@echo "  make deep-clean   - Remove all generated files including logs and data"
-	@echo "  make test         - Run tests with coverage"
-	@echo "  make format       - Format code with ruff"
-	@echo "  make lint         - Lint code with ruff"
-	@echo "  make type-check   - Run type checking with mypy"
-	@echo "  make run-paper    - Run bot in paper trading mode"
-	@echo "  make run-live     - Run bot in live trading mode (USE WITH CAUTION)"
-	@echo "  make setup        - Initial project setup"
+	@echo ""
+	@echo "Development:"
+	@echo "  make install           - Install dependencies"
+	@echo "  make install-dev       - Install with development dependencies"
+	@echo "  make clean             - Remove Python cache files and test artifacts"
+	@echo "  make deep-clean        - Remove all generated files including logs and data"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  make test              - Run tests with coverage"
+	@echo "  make test-fast         - Run tests without coverage"
+	@echo "  make format            - Format code with ruff"
+	@echo "  make format-check      - Check code formatting"
+	@echo "  make lint              - Lint code with ruff"
+	@echo "  make lint-fix          - Auto-fix linting issues"
+	@echo "  make type-check        - Run type checking with mypy"
+	@echo "  make check-all         - Run all quality checks"
+	@echo ""
+	@echo "Trading Bot:"
+	@echo "  make run-paper         - Run bot in paper trading mode"
+	@echo "  make run-live          - Run bot in live trading mode (USE WITH CAUTION)"
+	@echo "  make setup             - Initial project setup"
+	@echo ""
+	@echo "1Password Integration:"
+	@echo "  make 1password-setup   - Setup 1Password integration"
+	@echo "  make 1password-store   - Store credentials in 1Password"
+	@echo "  make 1password-retrieve- Retrieve credentials from 1Password"
+	@echo "  make 1password-sync    - Auto-sync from 1Password if available"
+	@echo "  make 1password-show    - Show stored credentials (masked)"
+	@echo "  make 1password-status  - Check 1Password status"
+	@echo "  make 1password-delete  - Delete credentials from 1Password"
+	@echo ""
+	@echo "Security & Maintenance:"
+	@echo "  make backup            - Backup configuration and data"
+	@echo "  make security-check    - Run security checks"
+	@echo "  make validate-config   - Validate configuration"
+	@echo "  make status            - Show project status"
 
 # Clean Python cache files, test artifacts, and build files
 clean:
@@ -242,3 +268,38 @@ security-check:
 	@grep -q "^\.env$$" .gitignore && echo "✅ .env in .gitignore" || echo "❌ .env not in .gitignore"
 	@grep -q "revolut_private.pem" .gitignore && echo "✅ private key in .gitignore" || echo "⚠️  private key not in .gitignore"
 	@echo "✅ Security check complete!"
+
+# 1Password Integration Commands
+
+# Setup 1Password integration
+1password-setup:
+	@bash scripts/1password-manager.sh setup
+
+# Store credentials in 1Password
+1password-store:
+	@bash scripts/1password-manager.sh store
+
+# Retrieve credentials from 1Password
+1password-retrieve:
+	@bash scripts/1password-manager.sh retrieve
+
+# Show stored credentials (masked)
+1password-show:
+	@bash scripts/1password-manager.sh show
+
+# Check 1Password status
+1password-status:
+	@bash scripts/1password-manager.sh status
+
+# Delete credentials from 1Password
+1password-delete:
+	@bash scripts/1password-manager.sh delete
+
+# Auto-sync: retrieve from 1Password if available, otherwise use .env
+1password-sync:
+	@if command -v op &> /dev/null && op account list &> /dev/null; then \
+		echo "🔄 Syncing from 1Password..."; \
+		bash scripts/1password-manager.sh retrieve; \
+	else \
+		echo "ℹ️  1Password not available, using existing .env"; \
+	fi
