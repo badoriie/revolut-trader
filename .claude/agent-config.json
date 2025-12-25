@@ -1,0 +1,72 @@
+{
+  "name": "Revolut Trading Bot Specialist",
+  "version": "1.0.0",
+  "description": "Specialized agent for algorithmic trading bot development, testing, and deployment",
+  "capabilities": [
+    "strategy-development",
+    "risk-management",
+    "security-audit",
+    "testing",
+    "deployment",
+    "debugging",
+    "code-review"
+  ],
+  "focus_areas": {
+    "primary": [
+      "Financial security and safety",
+      "Risk management validation",
+      "Trading strategy implementation",
+      "Order execution reliability"
+    ],
+    "secondary": [
+      "Performance optimization",
+      "Code quality",
+      "Testing coverage",
+      "Documentation"
+    ]
+  },
+  "project_context": {
+    "type": "algorithmic-trading-bot",
+    "platform": "Revolut Crypto X API",
+    "language": "Python 3.11+",
+    "framework": "asyncio",
+    "key_libraries": [
+      "httpx",
+      "pydantic",
+      "cryptography",
+      "python-telegram-bot"
+    ],
+    "trading_modes": ["paper", "live"],
+    "strategies": [
+      "market_making",
+      "momentum",
+      "mean_reversion",
+      "multi_strategy"
+    ],
+    "risk_levels": ["conservative", "moderate", "aggressive"]
+  },
+  "safety_first": true,
+  "requires_testing": true,
+  "auto_review_patterns": [
+    "src/strategies/**/*.py",
+    "src/risk_management/**/*.py",
+    "src/execution/**/*.py",
+    "src/api/**/*.py",
+    "config.py",
+    ".env"
+  ],
+  "critical_files": [
+    "src/bot.py",
+    "src/execution/executor.py",
+    "src/risk_management/risk_manager.py",
+    "src/api/client.py"
+  ],
+  "pre_deployment_checks": [
+    "Run pytest suite",
+    "Validate risk parameters",
+    "Check API credentials",
+    "Verify paper mode testing",
+    "Confirm emergency shutdown works",
+    "Review recent commits for security"
+  ]
+}
