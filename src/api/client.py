@@ -18,10 +18,12 @@ class RevolutAPIClient:
         self,
         api_key: str | None = None,
         private_key_path: Path | None = None,
+        private_key_content: str | None = None,
         base_url: str | None = None,
     ):
         self.api_key = api_key or settings.revolut_api_key
-        self.private_key_path = private_key_path or settings.revolut_private_key_path
+        self.private_key_path = private_key_path
+        self.private_key_content = private_key_content
         self.base_url = (base_url or settings.revolut_api_base_url).rstrip("/")
         self.client = httpx.AsyncClient(timeout=30.0)
         self._private_key: Ed25519PrivateKey | None = None
@@ -34,15 +36,50 @@ class RevolutAPIClient:
         await self.close()
 
     async def initialize(self):
-        """Initialize the API client by loading the private key."""
-        if not self.private_key_path.exists():
-            raise FileNotFoundError(
-                f"Private key not found at {self.private_key_path}. "
-                f"Generate Ed25519 key pair first."
-            )
+        """Initialize the API client by loading the private key.
 
-        with open(self.private_key_path, "rb") as key_file:
-            self._private_key = serialization.load_pem_private_key(key_file.read(), password=None)
+        Priority:
+        1. Use private_key_content if provided directly
+        2. Use private_key_path if provided and exists
+        3. Try to get from 1Password via settings
+        4. Fall back to file path from settings
+
+        Raises:
+            FileNotFoundError: If private key cannot be found
+            ValueError: If private key is not Ed25519 format
+        """
+        pem_content = None
+
+        # Priority 1: Use content if provided directly
+        if self.private_key_content:
+            pem_content = self.private_key_content
+            logger.debug("Using private key content provided directly")
+
+        # Priority 2: Use file path if provided and exists
+        elif self.private_key_path and self.private_key_path.exists():
+            pem_content = self.private_key_path.read_text()
+            logger.debug(f"Using private key from path: {self.private_key_path}")
+
+        # Priority 3 & 4: Try 1Password first, then fall back to file from settings
+        else:
+            pem_content = settings.get_private_key_content()
+            if pem_content:
+                logger.info("Using private key from 1Password (secure storage)")
+            else:
+                raise FileNotFoundError(
+                    "Private key not found. Please either:\n"
+                    "1. Store it in 1Password using field 'REVOLUT_PRIVATE_KEY', or\n"
+                    f"2. Place it at {settings.revolut_private_key_path}"
+                )
+
+        # Load the private key from PEM content
+        try:
+            self._private_key = serialization.load_pem_private_key(
+                pem_content.encode() if isinstance(pem_content, str) else pem_content,
+                password=None,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to load private key: {e}")
 
         if not isinstance(self._private_key, Ed25519PrivateKey):
             raise ValueError("Private key must be Ed25519 format")

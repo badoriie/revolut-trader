@@ -89,6 +89,35 @@ make 1password-store
 
 This reads your `.env` file and stores all credentials in 1Password vault `revolut-trader` under item `revolut-trader-credentials`.
 
+### Store Private Key in 1Password (Recommended)
+
+For enhanced security, store your Revolut private key PEM file in 1Password instead of keeping it in the `config/` folder:
+
+```bash
+# Store the private key in 1Password
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"
+```
+
+Or use the 1Password CLI to create a document field:
+
+```bash
+# Add private key as a concealed text field
+cat config/revolut_private.pem | op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  "REVOLUT_PRIVATE_KEY[concealed]=-"
+```
+
+**Benefits:**
+- Private key never stored in filesystem (more secure)
+- Encrypted in 1Password vault
+- Easy to rotate/update
+- Audit trail of access
+- No risk of accidental git commit
+
+**Note:** After storing in 1Password, you can safely delete the PEM file from `config/` folder. The application will automatically retrieve it from 1Password.
+
 ### Retrieve Credentials from 1Password
 
 ```bash
@@ -195,6 +224,24 @@ for key, value in fields.items():
 ensure_env_file()
 ```
 
+### Private Key Automatic Retrieval
+
+The Revolut API client automatically retrieves the private key from 1Password with the following priority:
+
+1. **1Password** (most secure): Retrieves from `REVOLUT_PRIVATE_KEY` field
+2. **File fallback**: Falls back to `config/revolut_private.pem` if 1Password unavailable
+
+```python
+from src.api.client import RevolutAPIClient
+
+# No code changes needed - automatically uses 1Password if available
+async with RevolutAPIClient() as client:
+    balance = await client.get_balance()
+    print(balance)
+```
+
+The private key is **never** written to disk when using 1Password, providing maximum security.
+
 ## Workflows
 
 ### Development Workflow
@@ -255,20 +302,24 @@ make deploy
 
 ### ✅ DO
 
-- Use 1Password for production credentials
+- **Store private key PEM file in 1Password** (not in config folder)
+- Use 1Password for all production credentials
 - Store credentials once, retrieve as needed
 - Use `1password-sync` in scripts for automatic fallback
 - Set up 1Password service accounts for CI/CD
 - Enable 1Password audit logging
 - Use shared vaults for team collaboration
+- Delete local PEM file after storing in 1Password
 
 ### ❌ DON'T
 
-- Commit `.env` files to git (already in `.gitignore`)
+- **Keep private key PEM files in config folder** (use 1Password instead)
+- Commit `.env` files or `.pem` files to git (already in `.gitignore`)
 - Share credentials via Slack/email
 - Keep credentials in plain text files
 - Use same credentials for dev/staging/production
 - Share your personal 1Password account
+- Email or message private keys to team members
 
 ## Troubleshooting
 
@@ -389,10 +440,19 @@ The 1Password integration is designed to be **non-intrusive**:
 ## FAQ
 
 **Q: Do I need 1Password to run the bot?**
-A: No, 1Password is optional. The bot works fine with `.env` files.
+A: No, 1Password is optional. The bot works fine with `.env` files and local PEM file.
 
 **Q: What happens if 1Password is unavailable?**
-A: The bot automatically falls back to using the `.env` file.
+A: The bot automatically falls back to using the `.env` file and local PEM file from `config/` folder.
+
+**Q: Should I store the private key PEM file in 1Password or config folder?**
+A: **Always store in 1Password for production.** Storing in config folder is only acceptable for local development. 1Password provides encryption, audit trails, and eliminates risk of accidental commits.
+
+**Q: How do I store my private key in 1Password?**
+A: Use: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"`. See "Store Private Key in 1Password" section above.
+
+**Q: Can I delete the PEM file from config folder after storing in 1Password?**
+A: Yes! Once stored in 1Password, the application will automatically retrieve it from there. You can safely delete the local PEM file.
 
 **Q: Can I use 1Password for some credentials and .env for others?**
 A: Yes, `get_credential()` tries 1Password first, then falls back to environment variables.
@@ -401,13 +461,13 @@ A: Yes, `get_credential()` tries 1Password first, then falls back to environment
 A: No, you authenticate with 1Password separately using `op signin`.
 
 **Q: Can I share credentials with my team?**
-A: Yes, use a shared vault in 1Password and all team members can access it.
+A: Yes, use a shared vault in 1Password and all team members can access it (including the private key).
 
 **Q: How often should I sync credentials?**
 A: Use `make 1password-sync` before each run, or at the start of your session.
 
 **Q: What if someone updates credentials in 1Password?**
-A: Run `make 1password-retrieve` to get the latest credentials.
+A: Run `make 1password-retrieve` to get the latest credentials. For the private key, it's retrieved automatically on each run.
 
 ## Resources
 

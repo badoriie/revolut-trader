@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.utils.onepassword import get_credential
+
 
 class TradingMode(str, Enum):
     PAPER = "paper"
@@ -93,6 +95,27 @@ class Settings(BaseSettings):
             },
         }
         return risk_params.get(self.risk_level, risk_params[RiskLevel.CONSERVATIVE])
+
+    def get_private_key_content(self) -> str | None:
+        """Get private key content from 1Password or file.
+
+        Priority:
+        1. Try to get from 1Password (REVOLUT_PRIVATE_KEY field)
+        2. Fall back to reading from file path
+
+        Returns:
+            PEM-encoded private key content or None if not found
+        """
+        # Try 1Password first (more secure)
+        private_key_pem = get_credential("REVOLUT_PRIVATE_KEY", use_1password=True)
+        if private_key_pem:
+            return private_key_pem
+
+        # Fall back to file if exists
+        if self.revolut_private_key_path.exists():
+            return self.revolut_private_key_path.read_text()
+
+        return None
 
 
 settings = Settings()
