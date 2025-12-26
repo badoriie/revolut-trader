@@ -36,78 +36,50 @@ A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API
 # Clone the repository
 cd revolut-trader
 
-# Install dependencies
-pip install -e .
-
-# Or install with dev dependencies
-pip install -e ".[dev]"
+# Complete setup (uv + 1Password + dependencies + key generation)
+make setup
 ```
 
-### 2. Generate Revolut API Keys
+This single command will:
+- Install/verify uv (modern Python package manager)
+- Create Python 3.11+ virtual environment
+- Install 1Password CLI (if needed)
+- Generate Ed25519 keys securely
+- Store keys in 1Password
+- Install all dependencies
 
-#### Step 1: Generate Ed25519 Key Pair
+### 2. Configure Credentials
+
+After running `make setup`, you'll have keys auto-generated and stored in 1Password. Now configure your Revolut API:
+
+#### Register Public Key on Revolut X
+
+1. Copy the public key displayed during setup (or get it with `make opshow`)
+2. Log in to [Revolut X web app](https://www.revolut.com/business/merchant-api)
+3. Navigate to API settings
+4. Create new API key
+5. Paste your public key
+6. Copy the generated API key (64 characters)
+
+#### Store API Key in 1Password
 
 ```bash
-# Create config directory
-mkdir -p config
-
-# Generate private key
-openssl genpkey -algorithm Ed25519 -out config/revolut_private.pem
-
-# Extract public key
-openssl pkey -in config/revolut_private.pem -pubout -out config/revolut_public.pem
-
-# Display public key (you'll need this for Revolut)
-cat config/revolut_public.pem
-```
-
-#### Step 2: Register API Key on Revolut X
-
-1. Log in to [Revolut X web app](https://www.revolut.com/business/revolut-x/)
-2. Navigate to API settings
-3. Create new API key
-4. Paste your public key from `config/revolut_public.pem`
-5. Copy the generated API key (64 characters)
-
-### 3. Secure Credential Storage (Recommended: 1Password)
-
-**For Production**: Use 1Password to store credentials securely (no .env file needed)
-
-```bash
-# Install 1Password CLI
-brew install --cask 1password-cli
-
-# Sign in
-eval $(op signin)
-
-# Store API key in 1Password
+# Store your Revolut API key
 op item edit revolut-trader-credentials \
   --vault revolut-trader \
-  REVOLUT_API_KEY[concealed]="your-api-key"
-
-# Store private key in 1Password (more secure than config folder)
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"
-
-# Delete local PEM file for security
-rm config/revolut_private.pem config/revolut_public.pem
+  REVOLUT_API_KEY[concealed]="your-api-key-from-revolut"
 ```
 
-**Benefits:**
-- ✅ Private keys never stored on disk
-- ✅ Encrypted vault storage
+**Security Benefits:**
+- ✅ Private keys NEVER stored on disk
+- ✅ Generated in temp directory, immediately stored in 1Password
+- ✅ Auto-deleted after storage (zero disk footprint)
+- ✅ Encrypted vault storage with audit trail
 - ✅ No risk of accidental git commits
-- ✅ Audit trail of access
-- ✅ Easy credential rotation
 
-See [1Password Integration Guide](docs/1PASSWORD_INTEGRATION.md) for details.
+See [1Password Integration Guide](docs/1PASSWORD_INTEGRATION.md) for full details.
 
-**Note**: `.env` file is NOT used for credentials. All sensitive data is in 1Password only.
-
-### 4. Setup Telegram Notifications (Optional)
-
-Store your Telegram credentials in 1Password:
+### 3. Setup Telegram Notifications (Optional)
 
 ```bash
 # Get bot token from @BotFather and chat ID from @userinfobot
@@ -117,14 +89,24 @@ op item edit revolut-trader-credentials \
   TELEGRAM_CHAT_ID[concealed]="your-telegram-chat-id"
 ```
 
+### 4. Verify Setup
+
+```bash
+# Check 1Password status
+make opstatus
+
+# View credentials (masked)
+make opshow
+```
+
 ### 5. Run the Bot
 
 ```bash
 # Paper trading with market making (RECOMMENDED for testing)
-python run.py --strategy market_making --mode paper
+uv run python run.py --strategy market_making --mode paper
 
 # View all options
-python run.py --help
+uv run python run.py --help
 ```
 
 ## Usage Examples
@@ -133,16 +115,19 @@ python run.py --help
 
 ```bash
 # Test market making strategy
-python run.py --strategy market_making --mode paper
+uv run python run.py --strategy market_making --mode paper
 
 # Test momentum strategy with moderate risk
-python run.py --strategy momentum --risk moderate --mode paper
+uv run python run.py --strategy momentum --risk moderate --mode paper
 
 # Test mean reversion
-python run.py --strategy mean_reversion --mode paper
+uv run python run.py --strategy mean_reversion --mode paper
 
 # Test multi-strategy (combines all strategies)
-python run.py --strategy multi_strategy --mode paper
+uv run python run.py --strategy multi_strategy --mode paper
+
+# OR use Makefile shortcut
+make run-paper
 ```
 
 ### Live Trading (Real Money)
@@ -151,23 +136,26 @@ python run.py --strategy multi_strategy --mode paper
 
 ```bash
 # Live trading with conservative risk (recommended)
-python run.py --strategy market_making --risk conservative --mode live
+uv run python run.py --strategy market_making --risk conservative --mode live
 
 # Live momentum trading with moderate risk
-python run.py --strategy momentum --risk moderate --mode live
+uv run python run.py --strategy momentum --risk moderate --mode live
+
+# OR use Makefile (with safety confirmation)
+make run-live
 ```
 
 ### Advanced Options
 
 ```bash
 # Custom trading pairs
-python run.py --strategy momentum --pairs BTC-USD,ETH-USD,SOL-USD
+uv run python run.py --strategy momentum --pairs BTC-USD,ETH-USD,SOL-USD
 
 # Faster update interval (30 seconds)
-python run.py --strategy market_making --interval 30
+uv run python run.py --strategy market_making --interval 30
 
 # Debug logging
-python run.py --strategy momentum --log-level DEBUG
+uv run python run.py --strategy momentum --log-level DEBUG
 ```
 
 ## Strategy Details
@@ -221,21 +209,29 @@ python run.py --strategy momentum --log-level DEBUG
 ```
 revolut-trader/
 ├── src/
-│   ├── api/              # Revolut API client
+│   ├── api/              # Revolut API client (Ed25519 auth)
 │   ├── strategies/       # Trading strategies
 │   ├── risk_management/  # Risk controls
 │   ├── execution/        # Order execution
 │   ├── notifications/    # Telegram alerts
-│   ├── data/            # Data models
-│   ├── config.py        # Configuration
-│   └── bot.py           # Main bot logic
-├── tests/               # Unit tests
-├── config/              # API keys
-├── logs/                # Log files
-├── run.py              # CLI entry point
-├── .env                # Configuration
-└── README.md           # This file
+│   ├── data/             # Data models
+│   ├── utils/            # 1Password integration
+│   ├── config.py         # Configuration
+│   └── bot.py            # Main bot logic
+├── tests/                # Unit tests
+├── scripts/              # Setup and management scripts
+│   ├── setup.sh          # Complete project setup
+│   └── 1password-manager.sh  # Credential management
+├── .claude/              # Claude Code agent configuration
+├── docs/                 # Documentation
+├── logs/                 # Runtime logs (gitignored)
+├── data/                 # Runtime trading data (gitignored)
+├── run.py                # CLI entry point
+├── Makefile              # All project commands
+└── README.md             # This file
 ```
+
+**Note:** No `.env` or `config/*.pem` files - all credentials in 1Password only.
 
 ## Safety Features
 
@@ -274,21 +270,25 @@ Receive real-time notifications for:
 - This software is provided as-is with no guarantees
 
 ⚠️ **SECURITY**:
-- All credentials must be in 1Password (never in files)
-- Never commit PEM files or API keys
-- Use strong 1Password master password
-- Enable 2FA on your Revolut account
-- Sign in to 1Password before running: `eval $(op signin)`
+- **1Password Required**: All credentials stored exclusively in 1Password
+- **Zero Disk Footprint**: Private keys never written to disk
+- **Sign In First**: Always run `eval $(op signin)` before using the bot
+- **Strong Password**: Use a strong 1Password master password
+- **2FA**: Enable 2FA on your Revolut account
+- **Never Bypass**: Don't create .env files or store keys locally
 
 ## Troubleshooting
 
 ### API Connection Issues
 ```bash
-# Verify credentials are in 1Password
-op item get revolut-trader-credentials --vault revolut-trader
+# Verify 1Password is signed in
+make opstatus
 
-# Check 1Password is signed in
-op account list
+# View credentials (masked)
+make opshow
+
+# Check credentials in 1Password
+op item get revolut-trader-credentials --vault revolut-trader --format json
 
 # Ensure public key is registered on Revolut X
 ```
@@ -297,30 +297,54 @@ op account list
 - Strategies need time to collect data (especially Momentum/Mean Reversion)
 - Check if market conditions match strategy (e.g., trends for Momentum)
 - Verify trading pairs are correct
-- Check logs for specific errors
+- Check logs for specific errors: `make logs`
 
 ### Telegram Not Working
 ```bash
-# Verify bot token and chat ID in .env
-# Test bot independently: python -c "from telegram import Bot; Bot('YOUR_TOKEN').send_message('YOUR_CHAT_ID', 'Test')"
+# Verify credentials are in 1Password
+make opshow
+
+# Update Telegram credentials
+op item edit revolut-trader-credentials --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="your-bot-token" \
+  TELEGRAM_CHAT_ID[concealed]="your-chat-id"
 ```
 
 ## Development
 
+### Available Make Commands
+
+```bash
+make help      # Show all commands
+make setup     # Complete project setup
+make install   # Install/update dependencies
+make test      # Run tests with coverage
+make lint      # Check code quality
+make format    # Format code
+make check     # Run all quality checks
+make clean     # Remove cache files
+```
+
 ### Running Tests
 ```bash
-pytest
+make test
+
+# Or directly with uv
+uv run pytest --cov=src
 ```
 
 ### Code Formatting
 ```bash
-black src/ tests/
-ruff check src/ tests/
+make format
+
+# Or directly
+uv run ruff format src/ tests/
+uv run ruff check --fix src/ tests/
 ```
 
 ### Type Checking
 ```bash
-mypy src/
+uv run mypy src/
 ```
 
 ## Performance Tips
