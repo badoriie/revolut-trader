@@ -1,4 +1,4 @@
-.PHONY: help clean deep-clean install test format lint type-check run-paper run-live 1password-setup 1password-store 1password-retrieve 1password-status 1password-show 1password-delete
+.PHONY: help clean deep-clean install test format lint type-check run-paper run-live 1password-setup 1password-status 1password-show 1password-delete ops opshow opstatus opdelete
 
 # Default target
 help:
@@ -25,14 +25,11 @@ help:
 	@echo "  make run-live          - Run bot in live trading mode (USE WITH CAUTION)"
 	@echo "  make setup             - Initial project setup"
 	@echo ""
-	@echo "1Password Integration:"
-	@echo "  make 1password-setup   - Setup 1Password integration"
-	@echo "  make 1password-store   - Store credentials in 1Password"
-	@echo "  make 1password-retrieve- Retrieve credentials from 1Password"
-	@echo "  make 1password-sync    - Auto-sync from 1Password if available"
-	@echo "  make 1password-show    - Show stored credentials (masked)"
-	@echo "  make 1password-status  - Check 1Password status"
-	@echo "  make 1password-delete  - Delete credentials from 1Password"
+	@echo "1Password (required - short commands):"
+	@echo "  make ops               - Setup 1Password and store credentials"
+	@echo "  make opshow            - Show stored credentials (masked)"
+	@echo "  make opstatus          - Check 1Password status"
+	@echo "  make opdelete          - Delete credentials from 1Password"
 	@echo ""
 	@echo "Security & Maintenance:"
 	@echo "  make backup            - Backup configuration and data"
@@ -199,16 +196,15 @@ status:
 		echo "  Not created"; \
 	fi
 	@echo ""
-	@echo "Configuration:"
-	@if [ -f ".env" ]; then \
-		echo "  .env file exists ✓"; \
+	@echo "1Password Status:"
+	@if command -v op &> /dev/null && op account list &> /dev/null; then \
+		if op item get revolut-trader-credentials --vault revolut-trader &> /dev/null; then \
+			echo "  Credentials stored in 1Password ✓"; \
+		else \
+			echo "  Credentials not found in 1Password ✗"; \
+		fi \
 	else \
-		echo "  .env file missing ✗"; \
-	fi
-	@if [ -f "config/revolut_private.pem" ]; then \
-		echo "  Private key exists ✓"; \
-	else \
-		echo "  Private key missing ✗"; \
+		echo "  1Password not available ✗"; \
 	fi
 
 # Backup configuration and data
@@ -217,11 +213,11 @@ backup:
 	@mkdir -p backups
 	@BACKUP_NAME=backup_$$(date +%Y%m%d_%H%M%S); \
 	mkdir -p backups/$$BACKUP_NAME; \
-	[ -f ".env" ] && cp .env backups/$$BACKUP_NAME/ || true; \
 	[ -d "config" ] && cp -r config backups/$$BACKUP_NAME/ || true; \
 	[ -d "data" ] && cp -r data backups/$$BACKUP_NAME/ || true; \
 	[ -d "logs" ] && cp -r logs backups/$$BACKUP_NAME/ || true; \
 	echo "✅ Backup created: backups/$$BACKUP_NAME"
+	@echo "ℹ️  Credentials are stored in 1Password, not backed up locally"
 
 # Restore from backup
 restore:
@@ -231,10 +227,10 @@ restore:
 	@read -p "Enter backup name to restore: " backup && \
 	if [ -d "backups/$$backup" ]; then \
 		echo "Restoring from $$backup..."; \
-		[ -f "backups/$$backup/.env" ] && cp backups/$$backup/.env . || true; \
 		[ -d "backups/$$backup/config" ] && cp -r backups/$$backup/config . || true; \
 		[ -d "backups/$$backup/data" ] && cp -r backups/$$backup/data . || true; \
 		echo "✅ Restore complete!"; \
+		echo "ℹ️  Credentials must be retrieved from 1Password separately"; \
 	else \
 		echo "❌ Backup not found"; \
 	fi
@@ -269,19 +265,11 @@ security-check:
 	@grep -q "revolut_private.pem" .gitignore && echo "✅ private key in .gitignore" || echo "⚠️  private key not in .gitignore"
 	@echo "✅ Security check complete!"
 
-# 1Password Integration Commands
+# 1Password Integration Commands (Required)
 
-# Setup 1Password integration
+# Setup 1Password and store credentials
 1password-setup:
 	@bash scripts/1password-manager.sh setup
-
-# Store credentials in 1Password
-1password-store:
-	@bash scripts/1password-manager.sh store
-
-# Retrieve credentials from 1Password
-1password-retrieve:
-	@bash scripts/1password-manager.sh retrieve
 
 # Show stored credentials (masked)
 1password-show:
@@ -295,11 +283,8 @@ security-check:
 1password-delete:
 	@bash scripts/1password-manager.sh delete
 
-# Auto-sync: retrieve from 1Password if available, otherwise use .env
-1password-sync:
-	@if command -v op &> /dev/null && op account list &> /dev/null; then \
-		echo "🔄 Syncing from 1Password..."; \
-		bash scripts/1password-manager.sh retrieve; \
-	else \
-		echo "ℹ️  1Password not available, using existing .env"; \
-	fi
+# Short aliases
+ops: 1password-setup
+opshow: 1password-show
+opstatus: 1password-status
+opdelete: 1password-delete

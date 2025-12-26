@@ -1,7 +1,10 @@
-"""1Password integration for secure credential management."""
+"""1Password integration for secure credential management.
+
+This module provides 1Password-only credential management.
+No .env file fallback - 1Password is required for all credentials.
+"""
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
@@ -200,102 +203,44 @@ class OnePasswordClient:
             logger.warning(f"Error setting {field_name} in 1Password: {e}")
             return False
 
-    def create_env_file(self, env_path: Path = Path(".env")) -> bool:
-        """Create .env file from 1Password credentials.
-
-        Args:
-            env_path: Path to the .env file
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.is_available():
-            logger.warning("1Password not available, cannot create .env file")
-            return False
-
-        fields = self.get_all_fields()
-        if not fields:
-            logger.warning("No fields found in 1Password")
-            return False
-
-        try:
-            with open(env_path, "w") as f:
-                f.write(f"# Generated from 1Password\n")
-                f.write(f"# Vault: {self.vault_name}\n")
-                f.write(f"# Item: {self.item_name}\n")
-                f.write(f"#\n")
-                f.write(f"# DO NOT COMMIT THIS FILE\n")
-                f.write(f"\n")
-
-                for key, value in fields.items():
-                    f.write(f"{key}={value}\n")
-
-            logger.success(f"Created {env_path} from 1Password")
-            return True
-
-        except Exception as e:
-            logger.error(f"Error creating .env file: {e}")
-            return False
-
 
 def get_credential(
     key: str,
     default: str | None = None,
-    use_1password: bool = True,
 ) -> str | None:
-    """Get a credential from 1Password or environment variable.
+    """Get a credential from 1Password only (no .env fallback).
 
     Args:
         key: The credential key
         default: Default value if not found
-        use_1password: Whether to try 1Password first
 
     Returns:
         The credential value or default
-    """
-    # Try 1Password first if enabled
-    if use_1password:
-        client = OnePasswordClient()
-        value = client.get_field(key)
-        if value:
-            return value
 
-    # Fall back to environment variable
-    value = os.getenv(key)
+    Raises:
+        RuntimeError: If 1Password is not available (when no default provided)
+    """
+    client = OnePasswordClient()
+
+    if not client.is_available():
+        if default is not None:
+            logger.warning(f"1Password not available, using default for {key}")
+            return default
+        raise RuntimeError(
+            "1Password is required but not available. Please:\n"
+            "1. Install 1Password CLI: brew install --cask 1password-cli\n"
+            "2. Sign in: eval $(op signin)\n"
+            "3. Setup credentials: make ops"
+        )
+
+    value = client.get_field(key)
     if value:
         return value
 
-    # Return default
-    return default
+    if default is not None:
+        return default
 
-
-def ensure_env_file(force_1password: bool = False) -> bool:
-    """Ensure .env file exists, creating from 1Password if available.
-
-    Args:
-        force_1password: Force creation from 1Password even if .env exists
-
-    Returns:
-        True if .env file exists or was created
-    """
-    env_path = Path(".env")
-
-    # If .env exists and we're not forcing, we're done
-    if env_path.exists() and not force_1password:
-        return True
-
-    # Try to create from 1Password
-    client = OnePasswordClient()
-    if client.is_available():
-        logger.info("Creating .env from 1Password...")
-        return client.create_env_file(env_path)
-
-    # 1Password not available
-    if not env_path.exists():
-        logger.warning(
-            ".env file not found and 1Password not available. "
-            "Please create .env file manually."
-        )
-        return False
-
-    return True
+    raise RuntimeError(
+        f"Credential '{key}' not found in 1Password and no default provided. "
+        f"Please store it: op item edit revolut-trader-credentials --vault revolut-trader {key}[concealed]=YOUR_VALUE"
+    )

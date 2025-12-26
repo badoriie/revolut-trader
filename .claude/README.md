@@ -180,6 +180,51 @@ Example:
 logs and find the root cause."
 ```
 
+## Code Quality Standards
+
+### Clean and Maintainable Code is CRITICAL
+
+**This is a financial trading system handling real money. Code quality is not optional - it's essential for:**
+- **Safety**: Bugs can cause financial losses
+- **Reliability**: Trading systems must be dependable 24/7
+- **Auditability**: Code must be reviewable for compliance
+- **Maintainability**: You'll need to debug at 2 AM when issues occur
+
+📖 **See [CODING_STANDARDS.md](.claude/CODING_STANDARDS.md) for detailed guidelines and examples.**
+
+### Core Principles
+
+1. **Readability First**
+   - Code is read 10x more than it's written
+   - Use descriptive variable names (`position_size` not `ps`)
+   - Keep functions short and focused (< 50 lines)
+   - Avoid nested complexity (max 3 levels)
+
+2. **Explicit Over Clever**
+   - Simple, obvious code beats clever one-liners
+   - Prefer clarity over performance micro-optimizations
+   - Document "why" not "what" in comments
+
+3. **Type Safety**
+   - Use type hints for all function signatures
+   - Leverage Pydantic models for data validation
+   - Run mypy type checking before commits
+
+4. **Error Handling**
+   - Handle errors explicitly, never swallow exceptions
+   - Use specific exception types
+   - Log errors with context for debugging
+
+5. **Testing is Mandatory**
+   - Write tests before deploying to production
+   - Test edge cases and failure scenarios
+   - Maintain >80% code coverage
+
+6. **Documentation**
+   - All public functions must have docstrings
+   - Document assumptions and constraints
+   - Keep README and docs up to date
+
 ## Best Practices
 
 ### When Developing Strategies
@@ -190,6 +235,7 @@ logs and find the root cause."
 4. Include proper logging at DEBUG and INFO levels
 5. Add comprehensive docstrings
 6. Write unit tests before deploying
+7. **Keep code clean and maintainable** - follow the Code Quality Standards above
 
 ### When Modifying Risk Management
 

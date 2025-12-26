@@ -46,12 +46,32 @@ op account list
 
 ## Quick Start
 
+### Shorter Commands
+
+All 1Password commands have short aliases:
+
+```bash
+# Long form (still works)
+make 1password-setup
+make 1password-store
+make 1password-retrieve
+
+# Short form (recommended)
+make ops        # Setup
+make opstore    # Store credentials
+make opget      # Get credentials
+make opshow     # Show credentials (masked)
+make opstatus   # Check status
+make opsync     # Auto-sync
+make opdelete   # Delete credentials
+```
+
 ### Setup Wizard (One Command)
 
 Run the interactive setup wizard:
 
 ```bash
-make 1password-setup
+make ops
 ```
 
 This will:

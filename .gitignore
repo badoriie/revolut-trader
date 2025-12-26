@@ -163,10 +163,30 @@ cython_debug/
 .idea/
 
 # Revolut Trader Specific
-logs/
-data/
+
+# Runtime logs (root level only)
+/logs/
+
+# Runtime trading data (root level only - NOT src/data/ which contains code)
+/data/
+
+# Private keys and credentials
 config/*.pem
 config/*.key
-.env
+
+# Environment file variants (note: .env already ignored in Python template above)
 .env.local
+.env.*.local
+.env.example.deprecated
+
+# Database files
 *.db
+*.sqlite
+*.sqlite3
+
+# Configuration backups (may contain sensitive data)
+/backups/
+
+# 1Password Only
+# This project uses 1Password exclusively for credentials
+# See CREDENTIALS.md for setup instructions
