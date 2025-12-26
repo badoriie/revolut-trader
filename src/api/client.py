@@ -49,7 +49,7 @@ class RevolutAPIClient:
             raise RuntimeError(
                 "REVOLUT_API_KEY not found in 1Password. Please store it:\n"
                 "op item edit revolut-trader-credentials --vault revolut-trader "
-                "REVOLUT_API_KEY[concealed]=\"your-api-key\""
+                'REVOLUT_API_KEY[concealed]="your-api-key"'
             )
         return api_key
 
@@ -104,7 +104,7 @@ class RevolutAPIClient:
                 password=None,
             )
         except Exception as e:
-            raise ValueError(f"Failed to load private key: {e}")
+            raise ValueError(f"Failed to load private key: {e}") from e
 
         if not isinstance(self._private_key, Ed25519PrivateKey):
             raise ValueError("Private key must be Ed25519 format")

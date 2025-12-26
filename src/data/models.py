@@ -1,7 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -37,8 +36,8 @@ class Position(BaseModel):
     current_price: Decimal
     unrealized_pnl: Decimal = Decimal("0")
     realized_pnl: Decimal = Decimal("0")
-    stop_loss: Optional[Decimal] = None
-    take_profit: Optional[Decimal] = None
+    stop_loss: Decimal | None = None
+    take_profit: Decimal | None = None
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -66,17 +65,17 @@ class Position(BaseModel):
 class Order(BaseModel):
     """Order model."""
 
-    order_id: Optional[str] = None
+    order_id: str | None = None
     symbol: str
     side: OrderSide
     order_type: OrderType
     quantity: Decimal
-    price: Optional[Decimal] = None
+    price: Decimal | None = None
     filled_quantity: Decimal = Decimal("0")
     status: OrderStatus = OrderStatus.PENDING
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    strategy: Optional[str] = None
+    strategy: str | None = None
 
 
 class Trade(BaseModel):

@@ -6,7 +6,6 @@ No .env file fallback - 1Password is required for all credentials.
 
 import json
 import subprocess
-from pathlib import Path
 
 from loguru import logger
 
@@ -58,9 +57,7 @@ class OnePasswordClient:
                 timeout=5,
             )
             if result.returncode != 0:
-                logger.warning(
-                    "1Password CLI installed but not signed in. Run: eval $(op signin)"
-                )
+                logger.warning("1Password CLI installed but not signed in. Run: eval $(op signin)")
                 self._is_available = False
                 return False
 

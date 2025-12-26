@@ -4,8 +4,6 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.utils.onepassword import get_credential
-
 
 class TradingMode(str, Enum):
     PAPER = "paper"
@@ -120,7 +118,7 @@ class Settings(BaseSettings):
                 "1. Install 1Password CLI: brew install --cask 1password-cli\n"
                 "2. Sign in: eval $(op signin)\n"
                 "3. Store your private key: op item edit revolut-trader-credentials "
-                "--vault revolut-trader REVOLUT_PRIVATE_KEY[concealed]=\"$(cat config/revolut_private.pem)\"\n"
+                '--vault revolut-trader REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"\n'
             )
 
         private_key_pem = client.get_field("REVOLUT_PRIVATE_KEY")
@@ -128,7 +126,7 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Private key not found in 1Password. Please store it:\n"
                 "op item edit revolut-trader-credentials --vault revolut-trader "
-                "REVOLUT_PRIVATE_KEY[concealed]=\"$(cat config/revolut_private.pem)\""
+                'REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"'
             )
 
         return private_key_pem
