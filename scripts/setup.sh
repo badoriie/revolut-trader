@@ -197,7 +197,7 @@ else
 
     # Create temporary directory for keys
     TEMP_DIR=$(mktemp -d)
-    trap "rm -rf $TEMP_DIR" EXIT
+    trap 'rm -rf "$TEMP_DIR"' EXIT
 
     # Generate keys to temp location
     if ! openssl genpkey -algorithm Ed25519 -out "$TEMP_DIR/revolut_private.pem" 2>/dev/null; then
