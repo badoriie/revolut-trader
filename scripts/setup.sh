@@ -242,7 +242,7 @@ echo "Checking for API credentials in 1Password..."
 api_key_exists=false
 if op item get "$ITEM_NAME" --vault "$VAULT_NAME" --fields REVOLUT_API_KEY &> /dev/null; then
     api_key=$(op item get "$ITEM_NAME" --vault "$VAULT_NAME" --fields REVOLUT_API_KEY)
-    if [ -n "$api_key" ] && [ "$api_key" != "" ]; then
+    if [ -n "$api_key" ] && [ "$api_key" != "" ] && [ "$api_key" != "<your-revolut-api-key-here>" ]; then
         api_key_exists=true
     fi
 fi
