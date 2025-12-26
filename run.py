@@ -123,7 +123,7 @@ Examples:
         "--pairs",
         "-p",
         type=str,
-        help="Comma-separated trading pairs (default: from .env)",
+        help="Comma-separated trading pairs (default: BTC-USD,ETH-USD)",
     )
 
     parser.add_argument(

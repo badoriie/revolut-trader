@@ -47,10 +47,10 @@ Perform a comprehensive security audit of the trading bot:
 - Ensure risk limits cannot be bypassed
 
 **Credential Management**
-- Verify .env file is in .gitignore
-- Check no credentials in logs
-- Validate private key file permissions
-- Review environment variable usage
+- Verify credentials stored in 1Password only
+- Check no credentials in logs or code
+- Validate 1Password CLI authentication
+- Confirm no local credential files (.env, etc.)
 - Check for any hardcoded secrets
 
 **Data Validation**
@@ -80,11 +80,11 @@ Provide:
 I'm preparing to deploy to live trading. Validate security:
 
 **Environment**
-- [ ] .env file configured correctly
+- [ ] 1Password credentials configured correctly
 - [ ] No credentials in code or logs
-- [ ] Private keys secured and not in git
-- [ ] API keys valid and tested
-- [ ] File permissions set correctly
+- [ ] 1Password CLI authenticated and working
+- [ ] API keys valid and tested in 1Password
+- [ ] No local credential files present
 
 **Code Review**
 - [ ] All financial calculations validated
@@ -234,17 +234,16 @@ Scan the codebase for potential credential exposure:
 Check:
 1. No API keys in code files
 2. No private keys in code files
-3. .env file in .gitignore
+3. All credentials in 1Password only
 4. No credentials in logs
 5. No credentials in error messages
 6. No credentials in test files
-7. Secure handling of environment variables
+7. No local credential files (.env, etc.)
 
 Files to check:
 - src/**/*.py
 - tests/**/*.py
 - config.py
-- .env.example (should have placeholders only)
 - README.md and docs (no real credentials)
 
 Report any credential exposure immediately.
@@ -292,7 +291,7 @@ Review input validation across the codebase:
 - Review range checking
 
 **Configuration**
-- Validate .env values
+- Validate 1Password credentials
 - Check risk parameters
 - Verify trading pairs format
 - Review all user inputs
