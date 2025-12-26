@@ -52,14 +52,17 @@ The trading bot skill is automatically available when working in this project di
 
 ```
 .claude/
-├── README.md                 # This file
+├── README.md                 # This file (agent overview)
 ├── agent-config.json         # Agent configuration
+├── CODING_STANDARDS.md       # Code quality standards (CRITICAL)
+├── QUICK_START.md            # Quick start guide
 ├── skills/
 │   └── trading-bot.md       # Trading bot specialist skill
 └── prompts/
     ├── strategy-review.md   # Strategy review template
     ├── security-audit.md    # Security audit template
-    └── deployment-check.md  # Deployment checklist template
+    ├── deployment-check.md  # Deployment checklist template
+    └── testing-debug.md     # Testing and debugging template
 ```
 
 ## Safety Guidelines
@@ -76,16 +79,17 @@ The trading bot skill is automatically available when working in this project di
 
 Before deploying to live trading:
 
-- [ ] All tests pass (`pytest --cov`)
-- [ ] Type checking passes (`mypy src/`)
-- [ ] Code is formatted (`black src/` and `ruff check src/`)
+- [ ] All tests pass (`make test`)
+- [ ] Code quality checks pass (`make check`)
+- [ ] Code follows CODING_STANDARDS.md
 - [ ] Paper mode tested successfully for at least 24 hours
 - [ ] Risk parameters validated for account size
-- [ ] API credentials secured in 1Password
-- [ ] Telegram notifications working
+- [ ] 1Password signed in (`make opstatus`)
+- [ ] API credentials verified (`make opshow`)
+- [ ] Telegram notifications working (if enabled)
 - [ ] Stop loss and position limits tested
 - [ ] Emergency shutdown procedure documented
-- [ ] Backup of current configuration saved
+- [ ] Backup of current configuration saved (`make backup`)
 
 ## Agent Capabilities
 
@@ -272,8 +276,12 @@ logs and find the root cause."
 
 ### Configuration Files
 
-- `config.py` - Risk parameters and settings
-- 1Password - All credentials stored securely (see CREDENTIALS.md)
+- `src/config.py` - Risk parameters and trading settings
+- **1Password Vault** - All credentials stored securely (REQUIRED)
+  - See `docs/1PASSWORD_INTEGRATION.md` for details
+  - See `CREDENTIALS.md` for quick reference
+- `Makefile` - All project commands
+- `scripts/` - Setup and credential management scripts
 
 ## Monitoring & Logs
 
@@ -395,17 +403,25 @@ The agent configuration can be extended. Common additions:
 
 ### What NOT to Share
 
-- Never commit `.env` file with real API keys
-- Never log private keys or API secrets
-- Never share Telegram bot tokens publicly
-- Never commit `config/revolut_private.pem`
+- **Never** create `.env` files with credentials (use 1Password only)
+- **Never** log private keys or API secrets
+- **Never** share Telegram bot tokens publicly
+- **Never** store keys in files (use 1Password exclusively)
+- **Never** bypass 1Password requirement
 
 ### What's Safe to Share
 
 - Strategy logic (without your specific parameters)
 - Code structure and architecture
 - Test cases and testing frameworks
-- Public key (`config/revolut_public.pem`)
+- Configuration templates (without actual credentials)
+
+### Security Architecture
+
+- **All credentials in 1Password**: No local storage
+- **Zero disk footprint**: Keys generated in temp, stored in vault, auto-deleted
+- **1Password required**: No fallback to .env or local files
+- **Audit trail**: All credential access logged in 1Password
 
 ## Support
 

@@ -4,15 +4,16 @@ Secure credential management using 1Password CLI for the Revolut Trading Bot.
 
 ## Overview
 
-This project integrates with 1Password CLI (`op`) to provide secure credential storage and retrieval. When 1Password is available, credentials are automatically synced from your vault instead of using plain text `.env` files.
+This project uses **1Password exclusively** for credential storage and retrieval. All sensitive data (API keys, private keys) are stored in your encrypted 1Password vault. **No .env files or local credential storage** is used.
 
 ## Benefits
 
-- **Security**: Credentials stored in encrypted 1Password vault
+- **Security**: All credentials stored in encrypted 1Password vault only
+- **No Disk Storage**: Private keys never written to disk
 - **Convenience**: Auto-sync credentials across machines
-- **Audit Trail**: 1Password tracks access to credentials
+- **Audit Trail**: 1Password tracks all credential access
 - **Team Collaboration**: Share credentials securely with team members
-- **Fallback**: Automatically falls back to `.env` if 1Password unavailable
+- **No Risk of Leaks**: No local files to accidentally commit to git
 
 ## Prerequisites
 
@@ -46,144 +47,111 @@ op account list
 
 ## Quick Start
 
-### Shorter Commands
+### Available Commands
 
-All 1Password commands have short aliases:
+All credential management is done through Makefile commands:
 
 ```bash
-# Long form (still works)
-make 1password-setup
-make 1password-store
-make 1password-retrieve
-
-# Short form (recommended)
-make ops        # Setup
-make opstore    # Store credentials
-make opget      # Get credentials
+make ops        # Setup (one-time: create vault, generate keys, store in 1Password)
 make opshow     # Show credentials (masked)
-make opstatus   # Check status
-make opsync     # Auto-sync
-make opdelete   # Delete credentials
+make opstatus   # Check 1Password status
+make opdelete   # Delete credentials (requires confirmation)
 ```
 
 ### Setup Wizard (One Command)
 
-Run the interactive setup wizard:
+Run the complete project setup:
 
 ```bash
-make ops
+make setup
 ```
 
 This will:
-1. Check if 1Password CLI is installed and signed in
-2. Create a vault `revolut-trader` (or use existing)
-3. Create a sample item `revolut-trader-credentials` with all required fields:
-   - **REVOLUT_API_KEY** (placeholder: "your-revolut-api-key-here")
-   - **REVOLUT_PRIVATE_KEY** (auto-populated from `config/revolut_private.pem` if exists)
-   - **TELEGRAM_BOT_TOKEN** (placeholder: "your-telegram-bot-token-here")
-   - **TELEGRAM_CHAT_ID** (placeholder: "your-telegram-chat-id-here")
+1. Check and install uv (Python package manager)
+2. Verify Python 3.11+ in uv virtual environment
+3. Check if 1Password CLI is installed and signed in
+4. Create a vault `revolut-trader` (or use existing)
+5. **Generate Ed25519 key pair in temporary directory**
+6. **Store keys in 1Password immediately**
+7. **Automatically delete temporary key files** (zero disk footprint)
+8. Create item `revolut-trader-credentials` with all required placeholder fields:
+   - **REVOLUT_API_KEY** (placeholder: `<your-revolut-api-key-here>`)
+   - **REVOLUT_PRIVATE_KEY** (auto-generated Ed25519 private key)
+   - **REVOLUT_PUBLIC_KEY** (auto-generated Ed25519 public key)
+   - **TELEGRAM_BOT_TOKEN** (placeholder: `<your-telegram-bot-token-optional>`)
+   - **TELEGRAM_CHAT_ID** (placeholder: `<your-telegram-chat-id-optional>`)
+   - **TRADING_MODE** (default: `paper`)
 
 **After setup:**
-1. Open 1Password app (or use CLI)
-2. Find the `revolut-trader-credentials` item
-3. Edit the placeholder values with your actual credentials
-4. Done! The bot will now use 1Password automatically
+1. Copy the public key displayed in terminal
+2. Register it on Revolut X: https://revolut.com/business/merchant-api
+3. Get your API key from Revolut X
+4. Store your API key: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_API_KEY[concealed]="your-api-key"`
+5. Done! The bot will now use 1Password automatically
+
+**Security Note:** Keys are generated in a temporary directory and immediately stored in 1Password. The temporary files are automatically deleted. No credentials ever touch your project directory.
 
 ### Verify Setup
 
 ```bash
-# Check status
-make 1password-status
+# Check 1Password status
+make opstatus
 
 # View stored credentials (masked)
-make 1password-show
+make opshow
 ```
 
 ## Usage
 
-### Store Credentials in 1Password
+### View Stored Credentials
+
+View credentials with masked values for verification:
 
 ```bash
-# Store all credentials from .env file
-make 1password-store
-```
-
-This reads your `.env` file and stores all credentials in 1Password vault `revolut-trader` under item `revolut-trader-credentials`.
-
-### Store Private Key in 1Password (Recommended)
-
-For enhanced security, store your Revolut private key PEM file in 1Password instead of keeping it in the `config/` folder:
-
-```bash
-# Store the private key in 1Password
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"
-```
-
-Or use the 1Password CLI to create a document field:
-
-```bash
-# Add private key as a concealed text field
-cat config/revolut_private.pem | op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  "REVOLUT_PRIVATE_KEY[concealed]=-"
-```
-
-**Benefits:**
-- Private key never stored in filesystem (more secure)
-- Encrypted in 1Password vault
-- Easy to rotate/update
-- Audit trail of access
-- No risk of accidental git commit
-
-**Note:** After storing in 1Password, you can safely delete the PEM file from `config/` folder. The application will automatically retrieve it from 1Password.
-
-### Retrieve Credentials from 1Password
-
-```bash
-# Retrieve and write to .env file
-make 1password-retrieve
-```
-
-This fetches all credentials from 1Password and creates/updates your `.env` file.
-
-### Auto-Sync (Recommended for Team Use)
-
-```bash
-# Sync from 1Password if available, otherwise use existing .env
-make 1password-sync
-```
-
-This is the safest option as it:
-- Uses 1Password if available and signed in
-- Falls back to existing `.env` if 1Password not available
-- Never fails if 1Password unavailable
-
-**Add to your workflow:**
-```bash
-# Before running the bot
-make 1password-sync && make run-paper
-```
-
-### View Stored Credentials (Masked)
-
-```bash
-# Show credential keys with masked values
-make 1password-show
+make opshow
 ```
 
 Output example:
 ```
-REVOLUT_API_KEY=sk_l***
-TRADING_MODE=pape***
-TELEGRAM_BOT_TOKEN=6891***
+ℹ Stored credentials in 1Password:
+
+✓ 1Password CLI is ready
+  REVOLUT_PRIVATE_KEY       = -----BEG***
+  REVOLUT_PUBLIC_KEY        = -----BEG***
+  REVOLUT_API_KEY           = <your-re***
+  TELEGRAM_BOT_TOKEN        = <your-te***
+  TELEGRAM_CHAT_ID          = <your-te***
+  TRADING_MODE              = pape***
 ```
 
-### Check 1Password Status
+### Update Credentials
+
+Update individual credentials using 1Password CLI:
 
 ```bash
-make 1password-status
+# Update API key
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  REVOLUT_API_KEY[concealed]="your-new-api-key"
+
+# Update Telegram credentials (optional)
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="your-bot-token" \
+  TELEGRAM_CHAT_ID[concealed]="your-chat-id"
+
+# Update trading mode
+op item edit revolut-trader-credentials \
+  --vault revolut-trader \
+  TRADING_MODE[text]="live"
+```
+
+### Check Status
+
+Check 1Password CLI and credentials status:
+
+```bash
+make opstatus
 ```
 
 Shows:
@@ -192,14 +160,26 @@ Shows:
 - Vault existence
 - Stored credentials status
 
-### Delete Credentials from 1Password
+### Delete Credentials
+
+Remove credentials from 1Password (requires confirmation):
 
 ```bash
-# Remove credentials from 1Password (requires confirmation)
-make 1password-delete
+make opdelete
 ```
 
-⚠️ **Warning**: This deletes credentials from 1Password vault. Your local `.env` file remains unchanged.
+⚠️ **Warning**: This deletes credentials from 1Password vault permanently.
+
+## How the Bot Uses 1Password
+
+The bot automatically retrieves credentials from 1Password when it starts:
+
+1. **On initialization**, the bot checks if 1Password is available
+2. **If 1Password is signed in**, credentials are retrieved from the vault
+3. **Private key is loaded directly into memory** (never written to disk)
+4. **If 1Password is unavailable**, the bot will fail with clear instructions
+
+**No fallback to .env files** - 1Password is required for this project.
 
 ## Configuration
 
@@ -208,11 +188,11 @@ make 1password-delete
 Customize 1Password integration using environment variables:
 
 ```bash
-# Set custom vault name
+# Set custom vault name (default: revolut-trader)
 export OP_VAULT_NAME="my-trading-vault"
 
 # Then run commands
-make 1password-store
+make opstatus
 ```
 
 ### Default Configuration
@@ -226,7 +206,7 @@ make 1password-store
 You can also use 1Password integration in your Python code:
 
 ```python
-from src.utils.onepassword import OnePasswordClient, get_credential, ensure_env_file
+from src.utils.onepassword import OnePasswordClient, get_credential
 
 # Check if 1Password is available
 client = OnePasswordClient()
@@ -234,28 +214,22 @@ if client.is_available():
     print("1Password CLI is ready!")
 
 # Get a specific credential
-api_key = get_credential("REVOLUT_API_KEY", use_1password=True)
+api_key = get_credential("REVOLUT_API_KEY")
 
 # Get all credentials
 fields = client.get_all_fields()
 for key, value in fields.items():
     print(f"{key}={value[:4]}***")
-
-# Ensure .env file exists (creates from 1Password if needed)
-ensure_env_file()
 ```
 
 ### Private Key Automatic Retrieval
 
-The Revolut API client automatically retrieves the private key from 1Password with the following priority:
-
-1. **1Password** (most secure): Retrieves from `REVOLUT_PRIVATE_KEY` field
-2. **File fallback**: Falls back to `config/revolut_private.pem` if 1Password unavailable
+The Revolut API client automatically retrieves the private key from 1Password:
 
 ```python
 from src.api.client import RevolutAPIClient
 
-# No code changes needed - automatically uses 1Password if available
+# Private key automatically loaded from 1Password
 async with RevolutAPIClient() as client:
     balance = await client.get_balance()
     print(balance)
@@ -268,53 +242,47 @@ The private key is **never** written to disk when using 1Password, providing max
 ### Development Workflow
 
 ```bash
-# 1. Setup 1Password (one-time)
-make 1password-setup
+# 1. Setup project (one-time)
+make setup
 
-# 2. Store your credentials
-make 1password-store
+# 2. Add your Revolut API credentials
+op item edit revolut-trader-credentials --vault revolut-trader \
+  REVOLUT_API_KEY[concealed]="your-api-key"
 
-# 3. On each new machine or session
-make 1password-sync
-
-# 4. Run the bot
+# 3. Run the bot
 make run-paper
 ```
 
 ### Team Collaboration Workflow
 
-1. **Team Lead**: Store credentials in shared 1Password vault
+1. **Team Lead**: Share the 1Password vault with team members
    ```bash
-   export OP_VAULT_NAME="team-trading-bot"
-   make 1password-store
+   # Team members get access to shared vault "revolut-trader"
    ```
 
-2. **Team Members**: Retrieve credentials from shared vault
+2. **Team Members**: Just run the bot
    ```bash
-   export OP_VAULT_NAME="team-trading-bot"
-   make 1password-retrieve
+   # Ensure signed in to 1Password
+   eval $(op signin)
+
+   # Run the bot (credentials auto-retrieved)
+   make run-paper
    ```
 
-3. **Everyone**: Run bot with synced credentials
-   ```bash
-   make 1password-sync && make run-paper
-   ```
+3. **Everyone**: Credentials automatically synced from shared vault
 
 ### CI/CD Workflow
 
-For automated deployments:
+For automated deployments using 1Password Service Accounts:
 
 ```bash
 # In your CI/CD pipeline
 # 1. Sign in to 1Password using service account
-eval $(op signin --account my-company.1password.com)
+export OP_SERVICE_ACCOUNT_TOKEN="your-service-account-token"
 
-# 2. Retrieve credentials
-make 1password-retrieve
-
-# 3. Run tests or deploy
+# 2. Run tests or deploy
 make test
-make deploy
+make run-paper
 ```
 
 **1Password Service Accounts**: https://developer.1password.com/docs/service-accounts/
@@ -323,24 +291,21 @@ make deploy
 
 ### ✅ DO
 
-- **Store private key PEM file in 1Password** (not in config folder)
-- Use 1Password for all production credentials
-- Store credentials once, retrieve as needed
-- Use `1password-sync` in scripts for automatic fallback
-- Set up 1Password service accounts for CI/CD
+- Use 1Password for all credentials (production and development)
+- Store credentials once in 1Password, retrieve as needed
 - Enable 1Password audit logging
 - Use shared vaults for team collaboration
-- Delete local PEM file after storing in 1Password
+- Set up 1Password service accounts for CI/CD
+- Sign in before running: `eval $(op signin)`
 
 ### ❌ DON'T
 
-- **Keep private key PEM files in config folder** (use 1Password instead)
-- Commit `.env` files or `.pem` files to git (already in `.gitignore`)
-- Share credentials via Slack/email
-- Keep credentials in plain text files
-- Use same credentials for dev/staging/production
-- Share your personal 1Password account
-- Email or message private keys to team members
+- Never create .env files with credentials
+- Never commit keys or secrets to git
+- Never share credentials via Slack/email/message
+- Never keep credentials in plain text files
+- Never use same credentials for dev/staging/production
+- Never bypass 1Password requirement
 
 ## Troubleshooting
 
@@ -371,17 +336,17 @@ op account list
 op vault list
 
 # Create vault if needed
-make 1password-setup
+make setup
 ```
 
 ### Item not found
 
 ```bash
 # Check status
-make 1password-status
+make opstatus
 
-# Store credentials
-make 1password-store
+# Re-run setup
+make ops
 ```
 
 ### Permission denied
@@ -394,23 +359,13 @@ op vault get revolut-trader
 # Ask vault owner to grant access
 ```
 
-### Rate limiting
-
-```bash
-# 1Password CLI has rate limits
-# Wait a few seconds between commands
-
-# Check rate limit status
-op account get
-```
-
 ## Advanced Usage
 
 ### Custom Vault and Item Names
 
 ```bash
 # Use custom names
-OP_VAULT_NAME="my-vault" bash scripts/1password-manager.sh store
+OP_VAULT_NAME="my-vault" bash scripts/1password-manager.sh status
 ```
 
 ### Update Single Credential
@@ -435,7 +390,7 @@ client = OnePasswordClient(
 
 # Check availability
 if not client.is_available():
-    print("1Password not available, using fallback")
+    print("1Password not available")
     exit(1)
 
 # Get specific fields
@@ -444,51 +399,33 @@ mode = client.get_field("TRADING_MODE")
 
 # Get all fields
 all_creds = client.get_all_fields()
-
-# Create .env file
-client.create_env_file(Path(".env"))
 ```
-
-## Integration with Existing Setup
-
-The 1Password integration is designed to be **non-intrusive**:
-
-- If 1Password unavailable, falls back to `.env` file
-- No changes required to existing code
-- Optional feature, not required
-- Can be enabled/disabled anytime
 
 ## FAQ
 
 **Q: Do I need 1Password to run the bot?**
-A: No, 1Password is optional. The bot works fine with `.env` files and local PEM file.
+A: Yes, 1Password is required. All credentials are stored exclusively in 1Password.
 
 **Q: What happens if 1Password is unavailable?**
-A: The bot automatically falls back to using the `.env` file and local PEM file from `config/` folder.
+A: The bot will fail to start and provide instructions to sign in to 1Password.
 
-**Q: Should I store the private key PEM file in 1Password or config folder?**
-A: **Always store in 1Password for production.** Storing in config folder is only acceptable for local development. 1Password provides encryption, audit trails, and eliminates risk of accidental commits.
+**Q: Can I use .env files instead?**
+A: No, this project uses 1Password exclusively for security. No .env file fallback exists.
 
-**Q: How do I store my private key in 1Password?**
-A: Use: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_PRIVATE_KEY[concealed]="$(cat config/revolut_private.pem)"`. See "Store Private Key in 1Password" section above.
-
-**Q: Can I delete the PEM file from config folder after storing in 1Password?**
-A: Yes! Once stored in 1Password, the application will automatically retrieve it from there. You can safely delete the local PEM file.
-
-**Q: Can I use 1Password for some credentials and .env for others?**
-A: Yes, `get_credential()` tries 1Password first, then falls back to environment variables.
+**Q: How do I rotate my API key?**
+A: Use: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_API_KEY[concealed]="new-key"`
 
 **Q: Is my 1Password master password stored?**
 A: No, you authenticate with 1Password separately using `op signin`.
 
 **Q: Can I share credentials with my team?**
-A: Yes, use a shared vault in 1Password and all team members can access it (including the private key).
+A: Yes, use a shared vault in 1Password and all team members can access it.
 
-**Q: How often should I sync credentials?**
-A: Use `make 1password-sync` before each run, or at the start of your session.
+**Q: Are private keys ever written to disk?**
+A: No, private keys are generated in temporary directories (automatically deleted) and stored only in 1Password. They're loaded directly into memory when needed.
 
-**Q: What if someone updates credentials in 1Password?**
-A: Run `make 1password-retrieve` to get the latest credentials. For the private key, it's retrieved automatically on each run.
+**Q: How do I verify my credentials are set correctly?**
+A: Run `make opshow` to see masked values, or `op item get revolut-trader-credentials --vault revolut-trader --format json` for full details.
 
 ## Resources
 
