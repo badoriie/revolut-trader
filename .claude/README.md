@@ -45,7 +45,7 @@ The trading bot skill is automatically available when working in this project di
 # Deployment
 "Walk me through the pre-deployment checklist"
 "Help me configure the bot for paper trading"
-"Validate my .env file before going live"
+"Validate my 1Password credentials before going live"
 ```
 
 ## Project Structure
@@ -81,7 +81,7 @@ Before deploying to live trading:
 - [ ] Code is formatted (`black src/` and `ruff check src/`)
 - [ ] Paper mode tested successfully for at least 24 hours
 - [ ] Risk parameters validated for account size
-- [ ] API credentials secured in .env (not in code)
+- [ ] API credentials secured in 1Password
 - [ ] Telegram notifications working
 - [ ] Stop loss and position limits tested
 - [ ] Emergency shutdown procedure documented
@@ -153,7 +153,7 @@ edge cases like conflicting signals and risk limit violations."
 ### 5. Deployment Support
 
 The agent assists with:
-- Configuration validation (.env, config.py)
+- Configuration validation (1Password, config.py)
 - Pre-deployment checklist verification
 - Paper trading validation
 - Live deployment gradual rollout
@@ -273,8 +273,7 @@ logs and find the root cause."
 ### Configuration Files
 
 - `config.py` - Risk parameters and settings
-- `.env` - API keys and environment variables (DO NOT COMMIT)
-- `.env.example` - Template for environment variables
+- 1Password - All credentials stored securely (see CREDENTIALS.md)
 
 ## Monitoring & Logs
 

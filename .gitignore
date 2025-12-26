@@ -177,7 +177,6 @@ config/*.key
 # Environment file variants (note: .env already ignored in Python template above)
 .env.local
 .env.*.local
-.env.example.deprecated
 
 # Database files
 *.db
