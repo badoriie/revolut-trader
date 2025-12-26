@@ -89,20 +89,37 @@ show_credentials() {
         return 1
     fi
 
-    # Get all fields and show them masked
-    fields=$(op item get "$ITEM_NAME" --vault "$VAULT_NAME" --fields label)
+    # Get item in JSON format
+    item_json=$(op item get "$ITEM_NAME" --vault "$VAULT_NAME" --format json)
 
-    for field in $fields; do
-        value=$(op item get "$ITEM_NAME" --vault "$VAULT_NAME" --fields "$field" 2>/dev/null)
-        if [ $? -eq 0 ] && [ -n "$value" ]; then
-            # Mask the value (show first 4 chars)
-            masked_value="${value:0:4}***"
-            echo "  ${field}=${masked_value}"
-        fi
-    done
+    # Parse fields using jq if available, otherwise use grep/sed
+    if command -v jq &> /dev/null; then
+        # Use jq to extract label and value pairs
+        echo "$item_json" | jq -r '.fields[] | select(.label and .value) | "\(.label)|\(.value)"' | while IFS='|' read -r label value; do
+            if [ -n "$label" ] && [ -n "$value" ]; then
+                # Determine masking based on value length
+                value_length=${#value}
+                if [ $value_length -gt 100 ]; then
+                    # Very long value (like PEM keys) - show it's set
+                    masked_value="<set, ${value_length} chars>"
+                elif [ $value_length -gt 20 ]; then
+                    # Long value - show first 8 chars
+                    masked_value="${value:0:8}***"
+                else
+                    # Short value - show first 4 chars
+                    masked_value="${value:0:4}***"
+                fi
+                printf "  %-25s = %s\n" "$label" "$masked_value"
+            fi
+        done
+    else
+        # Fallback without jq - basic parsing
+        print_warning "jq not found, showing field names only (install jq for better output)"
+        echo "$item_json" | grep -o '"label":"[^"]*"' | sed 's/"label":"\([^"]*\)"/  \1 = <value hidden>/g'
+    fi
 
     echo ""
-    print_info "To see full values, use: op item get $ITEM_NAME --vault $VAULT_NAME"
+    print_info "To see full values, use: op item get $ITEM_NAME --vault $VAULT_NAME --format json"
 }
 
 # Delete credentials from 1Password
