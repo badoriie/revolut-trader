@@ -200,9 +200,15 @@ else
     trap "rm -rf $TEMP_DIR" EXIT
 
     # Generate keys to temp location
-    openssl genpkey -algorithm Ed25519 -out "$TEMP_DIR/revolut_private.pem" 2>/dev/null
-    openssl pkey -in "$TEMP_DIR/revolut_private.pem" -pubout -out "$TEMP_DIR/revolut_public.pem" 2>/dev/null
+    if ! openssl genpkey -algorithm Ed25519 -out "$TEMP_DIR/revolut_private.pem" 2>/dev/null; then
+        echo -e "${RED}✗${NC} Failed to generate Ed25519 private key" >&2
+        exit 1
+    fi
 
+    if ! openssl pkey -in "$TEMP_DIR/revolut_private.pem" -pubout -out "$TEMP_DIR/revolut_public.pem" 2>/dev/null; then
+        echo -e "${RED}✗${NC} Failed to derive Ed25519 public key from private key" >&2
+        exit 1
+    fi
     echo -e "${GREEN}✓${NC} Keys generated"
 
     # Read key contents
