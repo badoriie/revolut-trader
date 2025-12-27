@@ -23,6 +23,7 @@ A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API
 - **Live Trading**: Execute real trades on Revolut X exchange
 
 ### Monitoring & Notifications
+- **Interactive Web Dashboard**: Visualize backtests, compare strategies, monitor performance
 - Telegram notifications for signals, orders, and alerts
 - Comprehensive logging system
 - Portfolio tracking and performance metrics
@@ -135,6 +136,23 @@ python backtest.py --strategy momentum --capital 50000 --days 90
 ```
 
 See [Backtesting Guide](docs/BACKTESTING.md) for detailed documentation.
+
+### Visualization Dashboard
+
+Launch the interactive web dashboard to visualize your results:
+
+```bash
+# Start the dashboard
+streamlit run dashboard.py
+```
+
+Features:
+- 📊 View backtest results with interactive charts
+- 🔬 Compare multiple strategies side-by-side
+- 📈 Analyze equity curves and P&L
+- 📝 Review trade history
+
+See [Dashboard Guide](docs/DASHBOARD.md) for full documentation.
 
 ### Paper Trading (Safe Testing)
 
