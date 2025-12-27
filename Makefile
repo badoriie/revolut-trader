@@ -1,4 +1,4 @@
-.PHONY: help setup install clean test lint format check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup
+.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup
 
 # Default target - show help
 help:
@@ -25,7 +25,8 @@ help:
 	@echo "  make test              - Run tests with coverage"
 	@echo "  make lint              - Check code with ruff"
 	@echo "  make format            - Format code with ruff"
-	@echo "  make check             - Run all quality checks (test + lint + format)"
+	@echo "  make typecheck         - Run mypy type checking"
+	@echo "  make check             - Run all quality checks (test + lint + typecheck)"
 	@echo ""
 	@echo "📋 Utilities:"
 	@echo "  make logs              - View recent logs"
@@ -136,8 +137,14 @@ format:
 	@uv run ruff check --fix src/ tests/ cli/
 	@echo "✅ Code formatted"
 
+# Type checking with mypy
+typecheck:
+	@echo "🔍 Running type checks with mypy..."
+	@uv run mypy src/ cli/
+	@echo "✅ Type checking complete"
+
 # Run all quality checks
-check: lint format test
+check: lint format typecheck test
 	@echo ""
 	@echo "✅ All quality checks passed!"
 

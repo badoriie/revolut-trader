@@ -9,14 +9,19 @@ from src.data.models import Order, OrderSide, Position
 class RiskManager:
     """Risk management system for controlling trading exposure."""
 
-    def __init__(self, risk_level: RiskLevel | None = None):
+    def __init__(self, risk_level: RiskLevel | None = None, max_order_value_usd: int = 10000):
         self.risk_level = risk_level or settings.risk_level
         self.risk_params = settings.get_risk_parameters()
         self.daily_pnl = Decimal("0")
         self.daily_loss_limit_hit = False
 
+        # Absolute safety limits to prevent catastrophic orders
+        self.max_order_value_usd = Decimal(str(max_order_value_usd))
+        self.max_quantity_multiplier = Decimal("1000")  # Max 1000x normal position size
+
         logger.info(f"Risk Manager initialized with {self.risk_level} risk level")
         logger.info(f"Risk parameters: {self.risk_params}")
+        logger.info(f"Safety limits: Max order value ${self.max_order_value_usd:,.0f}")
 
     def can_open_position(
         self,
@@ -80,6 +85,57 @@ class RiskManager:
 
         # Round to reasonable precision (8 decimal places for crypto)
         return quantity.quantize(Decimal("0.00000001"))
+
+    def validate_order_sanity(
+        self, order: Order, current_price: Decimal, portfolio_value: Decimal
+    ) -> tuple[bool, str]:
+        """Perform sanity checks to prevent catastrophic order mistakes.
+
+        Args:
+            order: Order to validate
+            current_price: Current market price for the symbol
+            portfolio_value: Total portfolio value
+
+        Returns:
+            (is_valid, reason) tuple
+        """
+        # Calculate order value in USD
+        order_value = order.quantity * current_price
+
+        # Check 1: Absolute maximum order value
+        if order_value > self.max_order_value_usd:
+            return (
+                False,
+                f"Order value ${float(order_value):,.2f} exceeds safety limit "
+                f"${float(self.max_order_value_usd):,.2f}",
+            )
+
+        # Check 2: Order value cannot exceed entire portfolio
+        if order_value > portfolio_value:
+            return (
+                False,
+                f"Order value ${float(order_value):,.2f} exceeds portfolio value "
+                f"${float(portfolio_value):,.2f}",
+            )
+
+        # Check 3: Quantity sanity check (prevent accidentally adding extra zeros)
+        max_reasonable_qty = portfolio_value / current_price * self.max_quantity_multiplier
+        if order.quantity > max_reasonable_qty:
+            return (
+                False,
+                f"Order quantity {float(order.quantity):,.8f} is unreasonably large "
+                f"(max reasonable: {float(max_reasonable_qty):,.8f})",
+            )
+
+        # Check 4: Minimum order value (prevent dust orders)
+        min_order_value = Decimal("10")  # $10 minimum
+        if order_value < min_order_value:
+            return (
+                False,
+                f"Order value ${float(order_value):,.2f} below minimum ${float(min_order_value):,.2f}",
+            )
+
+        return True, "Order passes sanity checks"
 
     def calculate_stop_loss(
         self, entry_price: Decimal, side: OrderSide, custom_pct: float | None = None

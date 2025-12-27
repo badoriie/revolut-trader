@@ -1,7 +1,9 @@
 import asyncio
+from collections import deque
 from datetime import datetime
 from decimal import Decimal
 
+import httpx
 from loguru import logger
 
 from src.api.client import RevolutAPIClient
@@ -43,7 +45,9 @@ class TradingBot:
         # State
         self.is_running = False
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
-        self.portfolio_snapshots: list[PortfolioSnapshot] = []
+        # Use deque with maxlen to prevent unbounded memory growth
+        # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
+        self.portfolio_snapshots: deque[PortfolioSnapshot] = deque(maxlen=1000)
 
         logger.info("Trading Bot initialized")
         logger.info(f"Strategy: {self.strategy_type}")
@@ -102,8 +106,15 @@ class TradingBot:
                 self.cash_balance = Decimal(str(balance_data.get("availableBalance", 10000)))
                 logger.info(f"Live account balance: ${self.cash_balance}")
             except Exception as e:
-                logger.error(f"Failed to get account balance: {e}")
-                logger.info(f"Using default balance: ${self.cash_balance}")
+                logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
+                logger.critical("Cannot start live trading without accurate balance information!")
+                await self.notifier.notify_error(
+                    "🚨 CRITICAL ERROR: Failed to fetch account balance in LIVE mode. Bot halted for safety."
+                )
+                raise RuntimeError(
+                    "Cannot start live trading without account balance. "
+                    "Please check API connection and credentials."
+                ) from e
 
         self.is_running = True
         logger.info("Trading bot started successfully!")
@@ -154,9 +165,11 @@ class TradingBot:
                 iteration += 1
                 logger.info(f"=== Trading Iteration {iteration} ===")
 
-                # Process each trading pair
-                for symbol in self.trading_pairs:
-                    await self._process_symbol(symbol)
+                # Process all trading pairs in parallel (2-5x faster than sequential)
+                await asyncio.gather(
+                    *[self._process_symbol(symbol) for symbol in self.trading_pairs],
+                    return_exceptions=True  # Don't stop all if one fails
+                )
 
                 # Update portfolio snapshot
                 await self._update_portfolio()
@@ -170,9 +183,40 @@ class TradingBot:
             except KeyboardInterrupt:
                 logger.info("Received shutdown signal")
                 break
+            except httpx.TimeoutException as e:
+                logger.warning(f"⏱️  API timeout in trading loop: {e}")
+                logger.info("Retrying next iteration...")
+                await asyncio.sleep(interval)
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                if status_code == 401:
+                    logger.critical("🔒 Authentication failed! Check API credentials.")
+                    await self.notifier.notify_error("🚨 CRITICAL: Authentication failed. Bot stopped.")
+                    break  # Stop trading - auth is broken
+                elif status_code == 429:
+                    logger.warning("⚠️  Rate limited by API, backing off...")
+                    await asyncio.sleep(60)  # Wait 1 minute
+                elif status_code >= 500:
+                    logger.error(f"🔧 API server error ({status_code}), waiting 30s...")
+                    await asyncio.sleep(30)
+                else:
+                    logger.error(f"❌ HTTP error {status_code}: {e.response.text}")
+                    await asyncio.sleep(interval)
+            except ValueError as e:
+                # Validation errors from Pydantic or data parsing
+                logger.error(f"📊 Data validation error: {e}")
+                logger.info("Likely malformed market data, continuing...")
+                await asyncio.sleep(interval)
+            except RuntimeError as e:
+                # Critical runtime errors (like balance fetch failure)
+                logger.critical(f"🚨 Runtime error: {e}")
+                await self.notifier.notify_error(f"🚨 CRITICAL ERROR: {e}")
+                break  # Stop trading
             except Exception as e:
-                logger.error(f"Error in trading loop: {str(e)}", exc_info=True)
-                await self.notifier.notify_error(f"Trading loop error: {str(e)}")
+                # Unknown errors - log extensively but don't hide them
+                logger.critical(f"⚠️  Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True)
+                await self.notifier.notify_error(f"⚠️ Unexpected error: {type(e).__name__}")
+                # Continue with caution
                 await asyncio.sleep(interval)
 
     async def _process_symbol(self, symbol: str):
