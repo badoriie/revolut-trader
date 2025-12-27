@@ -1,6 +1,5 @@
 """Backtesting engine for strategy validation using historical data."""
 
-import asyncio
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -9,7 +8,7 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.config import RiskLevel, StrategyType
-from src.data.models import MarketData, Order, OrderSide, OrderStatus, Position
+from src.data.models import MarketData, OrderSide, Position
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.market_making import MarketMakingStrategy
@@ -178,7 +177,9 @@ class BacktestEngine:
 
         if side == OrderSide.BUY:
             if self.cash_balance < order_value:
-                logger.warning(f"Insufficient funds for BUY: need ${order_value}, have ${self.cash_balance}")
+                logger.warning(
+                    f"Insufficient funds for BUY: need ${order_value}, have ${self.cash_balance}"
+                )
                 return False
 
             self.cash_balance -= order_value
@@ -208,7 +209,9 @@ class BacktestEngine:
                 return False
 
             if self.positions[symbol].quantity < quantity:
-                logger.warning(f"Insufficient position to SELL {symbol}: need {quantity}, have {self.positions[symbol].quantity}")
+                logger.warning(
+                    f"Insufficient position to SELL {symbol}: need {quantity}, have {self.positions[symbol].quantity}"
+                )
                 return False
 
             pos = self.positions[symbol]
@@ -218,14 +221,16 @@ class BacktestEngine:
             pnl = (price - pos.entry_price) * quantity
 
             # Record trade
-            self.results.trades.append({
-                "timestamp": timestamp,
-                "symbol": symbol,
-                "side": "SELL",
-                "quantity": float(quantity),
-                "price": float(price),
-                "pnl": float(pnl),
-            })
+            self.results.trades.append(
+                {
+                    "timestamp": timestamp,
+                    "symbol": symbol,
+                    "side": "SELL",
+                    "quantity": float(quantity),
+                    "price": float(price),
+                    "pnl": float(pnl),
+                }
+            )
 
             self.results.total_pnl += pnl
             self.results.total_trades += 1
@@ -280,7 +285,7 @@ class BacktestEngine:
             return self.results
 
         # Find common timestamps across all symbols
-        all_timestamps = set()
+        all_timestamps: set[Any] = set()
         for candles in historical_data.values():
             all_timestamps.update(c.get("start") for c in candles)
 
@@ -291,7 +296,9 @@ class BacktestEngine:
         # Iterate through time
         for idx, timestamp in enumerate(sorted_timestamps):
             if idx % 100 == 0:
-                logger.info(f"Progress: {idx}/{len(sorted_timestamps)} ({idx/len(sorted_timestamps)*100:.1f}%)")
+                logger.info(
+                    f"Progress: {idx}/{len(sorted_timestamps)} ({idx / len(sorted_timestamps) * 100:.1f}%)"
+                )
 
             # Process each symbol at this timestamp
             for symbol in symbols:
@@ -337,7 +344,8 @@ class BacktestEngine:
                     )
 
                     # Create temporary order for validation
-                    from src.data.models import Order, OrderType, OrderStatus
+                    from src.data.models import Order, OrderStatus, OrderType
+
                     temp_order = Order(
                         symbol=symbol,
                         side=side,
@@ -365,7 +373,9 @@ class BacktestEngine:
                     )
 
             # Record equity
-            positions_value = sum(pos.quantity * pos.current_price for pos in self.positions.values())
+            positions_value = sum(
+                pos.quantity * pos.current_price for pos in self.positions.values()
+            )
             equity = self.cash_balance + positions_value
             self.results.equity_curve.append((datetime.fromtimestamp(timestamp / 1000), equity))
 

@@ -46,9 +46,10 @@ class EMA:
 
         # Standard EMA calculation: EMA = Price * k + EMA(previous) * (1 - k)
         # where k = 2 / (period + 1)
-        self.ema = (price * self.multiplier) + (self.ema * (Decimal(1) - self.multiplier))
+        if self.ema is not None:  # Type guard for mypy
+            self.ema = (price * self.multiplier) + (self.ema * (Decimal(1) - self.multiplier))
 
-        return self.ema
+        return self.ema if self.ema is not None else price
 
     @property
     def value(self) -> Decimal | None:
@@ -60,7 +61,7 @@ class EMA:
         """Check if EMA has enough data to be reliable."""
         return self._warmup_complete
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the EMA calculator."""
         self.ema = None
         self._warmup_prices.clear()
@@ -125,15 +126,18 @@ class RSI:
                 return Decimal("50")
 
         # Wilder's smoothing: avg = (prev_avg * (period - 1) + current) / period
-        self.avg_gain = (self.avg_gain * Decimal(self.period - 1) + gain) / Decimal(self.period)
-        self.avg_loss = (self.avg_loss * Decimal(self.period - 1) + loss) / Decimal(self.period)
+        if self.avg_gain is not None and self.avg_loss is not None:  # Type guard for mypy
+            self.avg_gain = (self.avg_gain * Decimal(self.period - 1) + gain) / Decimal(self.period)
+            self.avg_loss = (self.avg_loss * Decimal(self.period - 1) + loss) / Decimal(self.period)
 
-        # Calculate RS and RSI
-        if self.avg_loss == 0:
-            rsi = Decimal("100")
+            # Calculate RS and RSI
+            if self.avg_loss == 0:
+                rsi = Decimal("100")
+            else:
+                rs = self.avg_gain / self.avg_loss
+                rsi = Decimal("100") - (Decimal("100") / (Decimal("1") + rs))
         else:
-            rs = self.avg_gain / self.avg_loss
-            rsi = Decimal("100") - (Decimal("100") / (Decimal("1") + rs))
+            rsi = Decimal("50")  # Fallback during initialization
 
         self.prev_price = price
         return rsi
@@ -141,7 +145,7 @@ class RSI:
     @property
     def value(self) -> Decimal | None:
         """Get current RSI value without updating."""
-        if not self._warmup_complete or self.avg_loss is None:
+        if not self._warmup_complete or self.avg_loss is None or self.avg_gain is None:
             return None
 
         if self.avg_loss == 0:
@@ -155,7 +159,7 @@ class RSI:
         """Check if RSI has enough data to be reliable."""
         return self._warmup_complete
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset the RSI calculator."""
         self.prev_price = None
         self.avg_gain = None

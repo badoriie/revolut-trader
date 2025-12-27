@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from loguru import logger
 
@@ -60,7 +61,11 @@ class MomentumStrategy(BaseStrategy):
         rsi = self.rsi_indicator[symbol].update(current_price)
 
         # Wait for indicators to warm up
-        if not (self.fast_ema[symbol].is_ready and self.slow_ema[symbol].is_ready and self.rsi_indicator[symbol].is_ready):
+        if not (
+            self.fast_ema[symbol].is_ready
+            and self.slow_ema[symbol].is_ready
+            and self.rsi_indicator[symbol].is_ready
+        ):
             logger.debug(f"{symbol}: Indicators warming up...")
             return None
 
@@ -121,7 +126,7 @@ class MomentumStrategy(BaseStrategy):
             },
         )
 
-    def get_parameters(self) -> dict:
+    def get_parameters(self) -> dict[str, Any]:
         return {
             "strategy": self.name,
             "fast_period": self.fast_period,

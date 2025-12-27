@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from loguru import logger
 
@@ -121,7 +122,7 @@ class MultiStrategy(BaseStrategy):
             },
         )
 
-    def get_parameters(self) -> dict:
+    def get_parameters(self) -> dict[str, Any]:
         return {
             "strategy": self.name,
             "weights": self.weights,
@@ -131,7 +132,7 @@ class MultiStrategy(BaseStrategy):
             ],
         }
 
-    def set_strategy_weight(self, strategy_name: str, weight: float):
+    def set_strategy_weight(self, strategy_name: str, weight: float) -> None:
         """Update weight for a specific strategy."""
         if strategy_name in self.weights:
             self.weights[strategy_name] = weight
@@ -140,13 +141,13 @@ class MultiStrategy(BaseStrategy):
             self.weights = {k: v / total for k, v in self.weights.items()}
             logger.info(f"Updated weights: {self.weights}")
 
-    def activate_strategy(self, strategy_name: str):
+    def activate_strategy(self, strategy_name: str) -> None:
         """Activate a sub-strategy."""
         if strategy_name in self.strategies:
             self.strategies[strategy_name].activate()
             logger.info(f"Activated {strategy_name}")
 
-    def deactivate_strategy(self, strategy_name: str):
+    def deactivate_strategy(self, strategy_name: str) -> None:
         """Deactivate a sub-strategy."""
         if strategy_name in self.strategies:
             self.strategies[strategy_name].deactivate()

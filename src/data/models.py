@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -41,7 +42,7 @@ class Position(BaseModel):
     opened_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    def update_price(self, new_price: Decimal):
+    def update_price(self, new_price: Decimal) -> None:
         """Update current price and calculate unrealized PnL."""
         self.current_price = new_price
         self.updated_at = datetime.utcnow()
@@ -114,7 +115,7 @@ class Signal(BaseModel):
     price: Decimal
     reason: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    metadata: dict = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PortfolioSnapshot(BaseModel):
@@ -132,6 +133,7 @@ class PortfolioSnapshot(BaseModel):
 
 
 # API Response Models for validation
+
 
 class OrderBookEntry(BaseModel):
     """Single order book entry (bid or ask)."""
@@ -192,36 +194,36 @@ class BalanceResponse(BaseModel):
 class CandleData(BaseModel):
     """Historical candle data."""
 
-    t: int  # Timestamp
-    o: str  # Open
-    h: str  # High
-    l: str  # Low
-    c: str  # Close
-    v: str  # Volume
+    start: int  # Timestamp
+    open: str | float  # Open price (API may return string or float)
+    high: str | float  # High price
+    low: str | float  # Low price
+    close: str | float  # Close price
+    volume: str | float  # Volume
 
     @property
     def timestamp(self) -> int:
-        return self.t
+        return self.start
 
     @property
     def open_price(self) -> Decimal:
-        return Decimal(self.o)
+        return Decimal(str(self.open))
 
     @property
     def high_price(self) -> Decimal:
-        return Decimal(self.h)
+        return Decimal(str(self.high))
 
     @property
     def low_price(self) -> Decimal:
-        return Decimal(self.l)
+        return Decimal(str(self.low))
 
     @property
     def close_price(self) -> Decimal:
-        return Decimal(self.c)
+        return Decimal(str(self.close))
 
     @property
-    def volume(self) -> Decimal:
-        return Decimal(self.v)
+    def volume_decimal(self) -> Decimal:
+        return Decimal(str(self.volume))
 
 
 class CandleResponse(BaseModel):

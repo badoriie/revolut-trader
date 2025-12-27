@@ -1,5 +1,6 @@
 from collections import deque
 from decimal import Decimal
+from typing import Any
 
 from loguru import logger
 
@@ -131,7 +132,7 @@ class MeanReversionStrategy(BaseStrategy):
             },
         )
 
-    def get_parameters(self) -> dict:
+    def get_parameters(self) -> dict[str, Any]:
         return {
             "strategy": self.name,
             "lookback_period": self.lookback_period,

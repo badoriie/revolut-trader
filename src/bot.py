@@ -168,7 +168,7 @@ class TradingBot:
                 # Process all trading pairs in parallel (2-5x faster than sequential)
                 await asyncio.gather(
                     *[self._process_symbol(symbol) for symbol in self.trading_pairs],
-                    return_exceptions=True  # Don't stop all if one fails
+                    return_exceptions=True,  # Don't stop all if one fails
                 )
 
                 # Update portfolio snapshot
@@ -191,7 +191,9 @@ class TradingBot:
                 status_code = e.response.status_code
                 if status_code == 401:
                     logger.critical("🔒 Authentication failed! Check API credentials.")
-                    await self.notifier.notify_error("🚨 CRITICAL: Authentication failed. Bot stopped.")
+                    await self.notifier.notify_error(
+                        "🚨 CRITICAL: Authentication failed. Bot stopped."
+                    )
                     break  # Stop trading - auth is broken
                 elif status_code == 429:
                     logger.warning("⚠️  Rate limited by API, backing off...")
@@ -214,7 +216,9 @@ class TradingBot:
                 break  # Stop trading
             except Exception as e:
                 # Unknown errors - log extensively but don't hide them
-                logger.critical(f"⚠️  Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True)
+                logger.critical(
+                    f"⚠️  Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True
+                )
                 await self.notifier.notify_error(f"⚠️ Unexpected error: {type(e).__name__}")
                 # Continue with caution
                 await asyncio.sleep(interval)
@@ -291,9 +295,9 @@ class TradingBot:
         """Update and save portfolio snapshot."""
         positions = self.executor.get_positions()
 
-        positions_value = sum(pos.quantity * pos.current_price for pos in positions)
-        unrealized_pnl = sum(pos.unrealized_pnl for pos in positions)
-        realized_pnl = sum(pos.realized_pnl for pos in positions)
+        positions_value = sum((pos.quantity * pos.current_price for pos in positions), Decimal("0"))
+        unrealized_pnl = sum((pos.unrealized_pnl for pos in positions), Decimal("0"))
+        realized_pnl = sum((pos.realized_pnl for pos in positions), Decimal("0"))
         total_value = self.cash_balance + positions_value
 
         snapshot = PortfolioSnapshot(

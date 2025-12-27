@@ -165,7 +165,7 @@ class RiskManager:
 
         return tp_price.quantize(Decimal("0.01"))
 
-    def update_daily_pnl(self, pnl: Decimal, initial_capital: Decimal):
+    def update_daily_pnl(self, pnl: Decimal, initial_capital: Decimal) -> None:
         """Update daily PnL and check if loss limit is exceeded."""
         self.daily_pnl = pnl
 
@@ -179,7 +179,7 @@ class RiskManager:
                 f"Trading suspended for the day."
             )
 
-    def reset_daily_limits(self):
+    def reset_daily_limits(self) -> None:
         """Reset daily limits (should be called at start of new trading day)."""
         self.daily_pnl = Decimal("0")
         self.daily_loss_limit_hit = False

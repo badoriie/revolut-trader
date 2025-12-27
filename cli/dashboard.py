@@ -5,13 +5,11 @@ Comprehensive web dashboard for backtesting, paper trading, and live trading
 """
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
 
 # Page config
 st.set_page_config(
@@ -53,7 +51,7 @@ st.markdown(
 def load_backtest_results(file_path: Path) -> dict | None:
     """Load backtest results from JSON file."""
     try:
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             return json.load(f)
     except Exception as e:
         st.error(f"Error loading {file_path}: {e}")
@@ -164,7 +162,9 @@ def create_trades_table(trades: list[dict]) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(trades)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601").dt.strftime("%Y-%m-%d %H:%M")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601").dt.strftime(
+        "%Y-%m-%d %H:%M"
+    )
 
     # Format numeric columns
     df["price"] = df["price"].apply(lambda x: f"${x:,.2f}")
@@ -183,7 +183,9 @@ def render_backtest_view():
 
     if not results_list:
         st.warning("No backtest results found in ./results/ directory")
-        st.info("Run a backtest with --output flag to generate results:\n\n`python backtest.py --strategy momentum --output ./results/test.json`")
+        st.info(
+            "Run a backtest with --output flag to generate results:\n\n`python backtest.py --strategy momentum --output ./results/test.json`"
+        )
         return
 
     # Sidebar: Select backtest

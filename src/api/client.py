@@ -1,6 +1,5 @@
 import base64
 import time
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -113,15 +112,17 @@ class RevolutAPIClient:
 
         # Load the private key from PEM content
         try:
-            self._private_key = serialization.load_pem_private_key(
+            loaded_key = serialization.load_pem_private_key(
                 pem_content.encode() if isinstance(pem_content, str) else pem_content,
                 password=None,
             )
         except Exception as e:
             raise ValueError(f"Failed to load private key: {e}") from e
 
-        if not isinstance(self._private_key, Ed25519PrivateKey):
+        if not isinstance(loaded_key, Ed25519PrivateKey):
             raise ValueError("Private key must be Ed25519 format")
+
+        self._private_key = loaded_key
 
         logger.info("Revolut API client initialized successfully")
 
@@ -339,7 +340,7 @@ class RevolutAPIClient:
 
     async def get_trades(self, symbol: str | None = None, limit: int = 100) -> dict[str, Any]:
         """Get recent trades."""
-        params = {"limit": limit}
+        params: dict[str, Any] = {"limit": limit}
         if symbol:
             params["symbol"] = symbol
         return await self._request("GET", "/trades", params=params)
@@ -388,7 +389,7 @@ class RevolutAPIClient:
             "last": last,
             "volume": volume,
             "high": last * 1.05,  # Estimated, not available in order book
-            "low": last * 0.95,   # Estimated, not available in order book
+            "low": last * 0.95,  # Estimated, not available in order book
             "symbol": symbol,
         }
 
@@ -429,17 +430,7 @@ class RevolutAPIClient:
                 raise ValueError(f"Malformed candle data from API: {e}") from e
 
             # Convert validated Pydantic models to dict format for backward compatibility
-            candles = []
-            for candle in candle_response.data:
-                candles.append({
-                    "start": candle.timestamp,
-                    "open": str(candle.open_price),
-                    "high": str(candle.high_price),
-                    "low": str(candle.low_price),
-                    "close": str(candle.close_price),
-                    "volume": str(candle.volume),
-                })
-
+            candles = [candle.model_dump() for candle in candle_response.data]
             return candles[:limit] if limit else candles
         except Exception as e:
             logger.error(f"Failed to fetch candles for {symbol}: {e}")
