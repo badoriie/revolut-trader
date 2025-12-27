@@ -299,3 +299,34 @@ class RevolutAPIClient:
             "low": last * 0.95,   # Estimated, not available in order book
             "symbol": symbol,
         }
+
+    async def get_candles(
+        self,
+        symbol: str,
+        interval: int = 60,
+        since: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Get historical OHLCV candles for a symbol.
+
+        Args:
+            symbol: Trading pair (e.g., "BTC-USD")
+            interval: Time interval in minutes. Accepted: 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320
+            since: Start timestamp in Unix milliseconds (optional)
+            limit: Maximum number of candles to return (default: 100)
+
+        Returns:
+            List of candle dictionaries with: start, open, high, low, close, volume
+        """
+        params = {"interval": interval}
+        if since:
+            params["since"] = since
+
+        # Try the likely endpoint path
+        try:
+            response = await self._request("GET", f"/candles/{symbol}", params=params)
+            candles = response.get("data", [])
+            return candles[:limit] if limit else candles
+        except Exception as e:
+            logger.error(f"Failed to fetch candles for {symbol}: {e}")
+            return []
