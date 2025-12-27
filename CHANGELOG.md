@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2025-12-27
+
+### Added
+- **Backtesting System**: Complete backtesting engine for strategy validation on historical data
+  - `backtest.py` CLI tool for running backtests
+  - `src/backtest/engine.py` - Backtesting engine with comprehensive metrics
+  - Historical data fetching via `get_candles()` API method
+  - Performance metrics: win rate, profit factor, max drawdown, Sharpe ratio
+  - JSON export for results analysis
+  - Support for multiple trading pairs and time periods
+  - Configurable candle intervals (5m, 15m, 30m, 1h, 4h, 1d)
+
+### Documentation
+- Created `docs/BACKTESTING.md` - Complete backtesting guide
+- Updated `README.md` with backtesting examples
+- Added usage examples for all backtesting scenarios
+
 ## [0.1.1] - 2025-12-27
 
 ### Fixed

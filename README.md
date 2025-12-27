@@ -18,7 +18,8 @@ A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API
 - Concentration risk controls
 
 ### Trading Modes
-- **Paper Trading**: Test strategies with simulated trading (no real money)
+- **Backtesting**: Validate strategies on historical data before deploying
+- **Paper Trading**: Test strategies with real-time data and simulated execution
 - **Live Trading**: Execute real trades on Revolut X exchange
 
 ### Monitoring & Notifications
@@ -110,6 +111,30 @@ uv run python run.py --help
 ```
 
 ## Usage Examples
+
+### Backtesting (Historical Data Validation)
+
+Test strategies on historical data before deploying:
+
+```bash
+# Basic backtest: 30 days of BTC-USD data
+python backtest.py --strategy market_making --pairs BTC-USD --days 30
+
+# Test multiple pairs over 90 days
+python backtest.py --strategy momentum --pairs BTC-USD,ETH-USD --days 90
+
+# Test with different risk levels and save results
+python backtest.py --strategy mean_reversion --risk moderate \
+  --days 60 --output ./results/backtest.json
+
+# Test different candle intervals
+python backtest.py --strategy multi_strategy --interval 60 --days 180
+
+# Custom initial capital
+python backtest.py --strategy momentum --capital 50000 --days 90
+```
+
+See [Backtesting Guide](docs/BACKTESTING.md) for detailed documentation.
 
 ### Paper Trading (Safe Testing)
 
