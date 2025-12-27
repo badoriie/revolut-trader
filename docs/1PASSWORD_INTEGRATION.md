@@ -19,9 +19,14 @@ This project uses **1Password exclusively** for credential storage and retrieval
 
 ### 1. Install 1Password CLI
 
+**Requirements:**
+- 1Password CLI v2.0 or higher (the bot uses the `--reveal` flag for concealed fields)
+
 **macOS (via Homebrew):**
 ```bash
 brew install --cask 1password-cli
+# Verify version
+op --version
 ```
 
 **Linux:**

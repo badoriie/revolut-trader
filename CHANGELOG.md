@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.1] - 2025-12-27
+
+### Fixed
+- **1Password CLI Integration**: Added `--reveal` flag to `get_field()` method in `src/utils/onepassword.py` to properly retrieve concealed fields from 1Password CLI v2
+- **Paper Mode Real Data**: Modified paper trading mode to use real market data from Revolut X API instead of generating fake random prices
+- **API Base URL**: Updated Revolut X API base URL from `https://api.revolut.com/api/1.0` to `https://revx.revolut.com/api/1.0`
+- **Market Data Endpoint**: Implemented `/public/order-book/{symbol}` endpoint for fetching real-time bid/ask prices
+- **API Client**: Fixed duplicate `/api/1.0` path construction in authenticated requests
+
+### Changed
+- Paper mode now fetches real market data while simulating order executions
+- `get_ticker()` method now uses public order book endpoint and normalizes response format
+- Both paper and live modes use identical market data source (only execution differs)
+
+### Technical Details
+- Paper mode provides realistic testing with actual market conditions
+- Order book data includes bid, ask, and calculated mid-price
+- Authentication required even for "public" endpoints on Revolut X API
+
 ## [0.1.0] - 2025-12-25
 
 ### Initial Release
