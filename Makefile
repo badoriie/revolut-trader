@@ -104,9 +104,15 @@ run-live:
 # Run backtesting
 backtest:
 	@echo "🔬 Running strategy backtesting..."
-	@echo "Usage: make backtest STRATEGY=market_making DAYS=30"
-	@uv run python cli/backtest.py --strategy $${STRATEGY:-market_making} --days $${DAYS:-30} --output ./results/backtest_$$(date +%Y%m%d_%H%M%S).json
-	@echo "✅ Backtest complete - view results with 'make dashboard'"
+	@mkdir -p results
+	@STRATEGY=$${STRATEGY:-market_making}; \
+	DAYS=$${DAYS:-30}; \
+	OUTPUT=./results/backtest_$$(date +%Y%m%d_%H%M%S).json; \
+	echo "Strategy: $$STRATEGY | Days: $$DAYS"; \
+	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS --output $$OUTPUT && \
+	echo "✅ Backtest complete: $$OUTPUT" && \
+	echo "📊 View results: make dashboard" || \
+	echo "❌ Backtest failed - check logs above"
 
 # Launch dashboard
 dashboard:
@@ -198,3 +204,4 @@ restore:
 	else \
 		echo "❌ Backup not found"; \
 	fi
+

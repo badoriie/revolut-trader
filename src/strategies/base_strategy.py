@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from decimal import Decimal
+from typing import Any
 
 from src.data.models import MarketData, Position, Signal
 
@@ -34,14 +35,14 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_parameters(self) -> dict:
+    def get_parameters(self) -> dict[str, Any]:
         """Return strategy parameters for logging and monitoring."""
         pass
 
-    def activate(self):
+    def activate(self) -> None:
         """Activate the strategy."""
         self.is_active = True
 
-    def deactivate(self):
+    def deactivate(self) -> None:
         """Deactivate the strategy."""
         self.is_active = False

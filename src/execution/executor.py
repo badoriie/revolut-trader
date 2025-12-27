@@ -150,7 +150,8 @@ class OrderExecutor:
                 if position.side == order.side:
                     total_qty = position.quantity + order.filled_quantity
                     total_cost = (
-                        position.entry_price * position.quantity + order.price * order.filled_quantity
+                        position.entry_price * position.quantity
+                        + order.price * order.filled_quantity
                     )
                     position.entry_price = total_cost / total_qty
                     position.quantity = total_qty

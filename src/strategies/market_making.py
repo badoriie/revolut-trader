@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from loguru import logger
 
@@ -88,7 +89,7 @@ class MarketMakingStrategy(BaseStrategy):
             },
         )
 
-    def get_parameters(self) -> dict:
+    def get_parameters(self) -> dict[str, Any]:
         return {
             "strategy": self.name,
             "spread_threshold": float(self.spread_threshold),
