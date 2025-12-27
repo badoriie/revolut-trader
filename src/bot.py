@@ -219,40 +219,25 @@ class TradingBot:
             logger.error(f"Error processing {symbol}: {str(e)}", exc_info=True)
 
     async def _fetch_market_data(self, symbol: str) -> MarketData | None:
-        """Fetch current market data for a symbol."""
+        """Fetch current market data for a symbol.
+
+        Both paper and live modes use real market data from the Revolut API.
+        The difference is in execution: paper mode simulates orders, live mode executes them.
+        """
         try:
-            if self.trading_mode == TradingMode.PAPER:
-                # In paper mode, simulate with random-ish data
-                # In production, you'd want to use historical data or a price feed
-                import random
+            # Fetch real market data from API (used in both paper and live modes)
+            ticker_data = await self.api_client.get_ticker(symbol)
 
-                base_price = Decimal(str(random.uniform(40000, 50000)))
-                spread = base_price * Decimal("0.001")
-
-                return MarketData(
-                    symbol=symbol,
-                    timestamp=datetime.utcnow(),
-                    bid=base_price - spread,
-                    ask=base_price + spread,
-                    last=base_price,
-                    volume_24h=Decimal("1000000"),
-                    high_24h=base_price * Decimal("1.05"),
-                    low_24h=base_price * Decimal("0.95"),
-                )
-            else:
-                # Live mode - fetch from API
-                ticker_data = await self.api_client.get_ticker(symbol)
-
-                return MarketData(
-                    symbol=symbol,
-                    timestamp=datetime.utcnow(),
-                    bid=Decimal(str(ticker_data.get("bid", 0))),
-                    ask=Decimal(str(ticker_data.get("ask", 0))),
-                    last=Decimal(str(ticker_data.get("last", 0))),
-                    volume_24h=Decimal(str(ticker_data.get("volume", 0))),
-                    high_24h=Decimal(str(ticker_data.get("high", 0))),
-                    low_24h=Decimal(str(ticker_data.get("low", 0))),
-                )
+            return MarketData(
+                symbol=symbol,
+                timestamp=datetime.utcnow(),
+                bid=Decimal(str(ticker_data.get("bid", 0))),
+                ask=Decimal(str(ticker_data.get("ask", 0))),
+                last=Decimal(str(ticker_data.get("last", 0))),
+                volume_24h=Decimal(str(ticker_data.get("volume", 0))),
+                high_24h=Decimal(str(ticker_data.get("high", 0))),
+                low_24h=Decimal(str(ticker_data.get("low", 0))),
+            )
 
         except Exception as e:
             logger.error(f"Failed to fetch market data for {symbol}: {str(e)}")

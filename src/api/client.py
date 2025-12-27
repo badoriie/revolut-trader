@@ -146,7 +146,7 @@ class RevolutAPIClient:
     ) -> dict[str, Any]:
         """Make authenticated request to Revolut API."""
         path = f"/api/1.0{endpoint}"
-        url = f"{self.base_url}{path}"
+        url = f"{self.base_url}{endpoint}"
 
         query = ""
         if params:
@@ -167,6 +167,36 @@ class RevolutAPIClient:
                 headers=headers,
                 params=params,
                 json=json_data,
+            )
+            response.raise_for_status()
+            return response.json() if response.content else {}
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Request failed: {str(e)}")
+            raise
+
+    async def _public_request(
+        self,
+        method: str,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Make public (unauthenticated) request to Revolut API.
+
+        Public endpoints don't require authentication headers.
+        """
+        # Public endpoints use just the base domain without /api/1.0
+        base_domain = self.base_url.replace("/api/1.0", "")
+        url = f"{base_domain}{endpoint}"
+
+        try:
+            response = await self.client.request(
+                method=method,
+                url=url,
+                params=params,
             )
             response.raise_for_status()
             return response.json() if response.content else {}
@@ -236,5 +266,36 @@ class RevolutAPIClient:
         return await self._request("GET", "/trades", params=params)
 
     async def get_ticker(self, symbol: str) -> dict[str, Any]:
-        """Get 24hr ticker price change statistics."""
-        return await self._request("GET", f"/ticker/{symbol}")
+        """Get current market data from public order book.
+
+        Returns a normalized ticker format with bid, ask, and last price.
+        Uses the /public/order-book endpoint (requires authentication despite being "public").
+        """
+        # Get order book data - requires authentication even though it's a "public" endpoint
+        order_book = await self._request("GET", f"/public/order-book/{symbol}")
+
+        # Extract data from response
+        data = order_book.get("data", {})
+        asks = data.get("asks", [])
+        bids = data.get("bids", [])
+
+        # Get best bid and ask prices
+        best_bid = float(bids[0]["p"]) if bids else 0.0
+        best_ask = float(asks[0]["p"]) if asks else 0.0
+
+        # Calculate mid price as "last"
+        last = (best_bid + best_ask) / 2 if (best_bid and best_ask) else 0.0
+
+        # Calculate 24h volume (sum of quantities from bids and asks)
+        volume = sum(float(bid.get("q", 0)) for bid in bids) + sum(float(ask.get("q", 0)) for ask in asks)
+
+        # Return normalized ticker format compatible with existing code
+        return {
+            "bid": best_bid,
+            "ask": best_ask,
+            "last": last,
+            "volume": volume,
+            "high": last * 1.05,  # Estimated, not available in order book
+            "low": last * 0.95,   # Estimated, not available in order book
+            "symbol": symbol,
+        }

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # Revolut API
     revolut_api_key: str = Field(default="")
     revolut_private_key_path: Path = Field(default=Path("./config/revolut_private.pem"))
-    revolut_api_base_url: str = Field(default="https://api.revolut.com/api/1.0")
+    revolut_api_base_url: str = Field(default="https://revx.revolut.com/api/1.0")
 
     # Trading
     trading_mode: TradingMode = Field(default=TradingMode.PAPER)
