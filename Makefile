@@ -1,4 +1,4 @@
-.PHONY: help setup install clean test lint format check run-paper run-live logs ops opshow opstatus opdelete backup
+.PHONY: help setup install clean test lint format check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup
 
 # Default target - show help
 help:
@@ -15,9 +15,11 @@ help:
 	@echo "  make opstatus          - Check 1Password status"
 	@echo "  make opdelete          - Delete credentials from 1Password"
 	@echo ""
-	@echo "🚀 Run Trading Bot:"
+	@echo "🚀 Trading & Analysis:"
 	@echo "  make run-paper         - Run in paper mode (safe, simulated trading)"
 	@echo "  make run-live          - Run in live mode (⚠️  REAL MONEY!)"
+	@echo "  make backtest          - Run strategy backtesting on historical data"
+	@echo "  make dashboard         - Launch web dashboard for visualization"
 	@echo ""
 	@echo "✅ Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -86,7 +88,7 @@ opdelete:
 # Run in paper trading mode (safe)
 run-paper:
 	@echo "📊 Starting bot in PAPER mode (simulated trading)"
-	@uv run python run.py --mode paper --strategy market_making --risk conservative
+	@uv run python cli/run.py --mode paper --strategy market_making --risk conservative
 
 # Run in live trading mode (real money!)
 run-live:
@@ -96,7 +98,20 @@ run-live:
 	@echo "⚠️  =================================================="
 	@echo ""
 	@read -p "Type 'I UNDERSTAND' to continue: " confirm && [ "$$confirm" = "I UNDERSTAND" ] || (echo "Cancelled" && exit 1)
-	@uv run python run.py --mode live --strategy market_making --risk conservative
+	@uv run python cli/run.py --mode live --strategy market_making --risk conservative
+
+# Run backtesting
+backtest:
+	@echo "🔬 Running strategy backtesting..."
+	@echo "Usage: make backtest STRATEGY=market_making DAYS=30"
+	@uv run python cli/backtest.py --strategy $${STRATEGY:-market_making} --days $${DAYS:-30} --output ./results/backtest_$$(date +%Y%m%d_%H%M%S).json
+	@echo "✅ Backtest complete - view results with 'make dashboard'"
+
+# Launch dashboard
+dashboard:
+	@echo "📊 Launching web dashboard..."
+	@echo "Dashboard will open at http://localhost:8501"
+	@uv run streamlit run cli/dashboard.py
 
 # ============================================================================
 # Code Quality
@@ -111,14 +126,14 @@ test:
 # Lint code (check only)
 lint:
 	@echo "🔍 Checking code with ruff..."
-	@uv run ruff check src/ tests/ run.py
+	@uv run ruff check src/ tests/ cli/
 	@echo "✅ Lint check complete"
 
 # Format code (auto-fix)
 format:
 	@echo "🎨 Formatting code with ruff..."
-	@uv run ruff format src/ tests/ run.py
-	@uv run ruff check --fix src/ tests/ run.py
+	@uv run ruff format src/ tests/ cli/
+	@uv run ruff check --fix src/ tests/ cli/
 	@echo "✅ Code formatted"
 
 # Run all quality checks
