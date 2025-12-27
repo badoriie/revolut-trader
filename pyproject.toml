@@ -62,13 +62,24 @@ testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.11"
+# Strict type checking for production code
+strict = true
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = true
-no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
+warn_unreachable = true
+# Allow gradual typing adoption
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_calls = false  # Too strict for external libraries
+# Type checking improvements
+no_implicit_optional = true
 strict_optional = true
+strict_equality = true
+# Error reporting
+show_error_codes = true
+show_column_numbers = true
+pretty = true

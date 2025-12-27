@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 
 from loguru import logger
@@ -9,7 +10,7 @@ from src.risk_management.risk_manager import RiskManager
 
 
 class OrderExecutor:
-    """Handles order execution and position management."""
+    """Handles order execution and position management with thread-safe operations."""
 
     def __init__(
         self,
@@ -24,6 +25,10 @@ class OrderExecutor:
         # Track positions and orders
         self.positions: dict[str, Position] = {}
         self.open_orders: dict[str, Order] = {}
+
+        # Thread safety locks for concurrent access
+        self._position_lock = asyncio.Lock()
+        self._order_lock = asyncio.Lock()
 
         logger.info(f"Order Executor initialized in {trading_mode} mode")
 
@@ -50,6 +55,18 @@ class OrderExecutor:
             price=signal.price,
             strategy=signal.strategy,
         )
+
+        # Sanity check: Prevent catastrophic order mistakes
+        is_sane, sanity_message = self.risk_manager.validate_order_sanity(
+            order=order,
+            current_price=signal.price,
+            portfolio_value=portfolio_value,
+        )
+
+        if not is_sane:
+            logger.error(f"❌ ORDER FAILED SANITY CHECK: {sanity_message}")
+            order.status = OrderStatus.REJECTED
+            return order
 
         # Validate order with risk manager
         is_valid, message = self.risk_manager.validate_order(
@@ -122,68 +139,91 @@ class OrderExecutor:
             return order
 
     async def _update_positions(self, order: Order):
-        """Update position tracking after order execution."""
-        symbol = order.symbol
+        """Update position tracking after order execution (thread-safe)."""
+        async with self._position_lock:
+            symbol = order.symbol
 
-        if symbol in self.positions:
-            position = self.positions[symbol]
+            if symbol in self.positions:
+                position = self.positions[symbol]
 
-            # Same side - add to position
-            if position.side == order.side:
-                total_qty = position.quantity + order.filled_quantity
-                total_cost = (
-                    position.entry_price * position.quantity + order.price * order.filled_quantity
-                )
-                position.entry_price = total_cost / total_qty
-                position.quantity = total_qty
+                # Same side - add to position
+                if position.side == order.side:
+                    total_qty = position.quantity + order.filled_quantity
+                    total_cost = (
+                        position.entry_price * position.quantity + order.price * order.filled_quantity
+                    )
+                    position.entry_price = total_cost / total_qty
+                    position.quantity = total_qty
 
-            # Opposite side - reduce or close position
-            else:
-                if order.filled_quantity >= position.quantity:
-                    # Close position
-                    realized_pnl = position.unrealized_pnl
-                    position.realized_pnl += realized_pnl
-                    logger.info(f"Position closed: {symbol}, Realized P&L: {realized_pnl}")
-                    del self.positions[symbol]
+                # Opposite side - reduce or close position
                 else:
-                    # Reduce position
-                    position.quantity -= order.filled_quantity
-                    realized_pnl = (order.price - position.entry_price) * order.filled_quantity
-                    position.realized_pnl += realized_pnl
-        else:
-            # Create new position
-            stop_loss = self.risk_manager.calculate_stop_loss(order.price, order.side)
-            take_profit = self.risk_manager.calculate_take_profit(order.price, order.side)
+                    if order.filled_quantity >= position.quantity:
+                        # Close position
+                        realized_pnl = position.unrealized_pnl
+                        position.realized_pnl += realized_pnl
+                        logger.info(f"Position closed: {symbol}, Realized P&L: {realized_pnl}")
+                        del self.positions[symbol]
+                    else:
+                        # Reduce position
+                        position.quantity -= order.filled_quantity
+                        realized_pnl = (order.price - position.entry_price) * order.filled_quantity
+                        position.realized_pnl += realized_pnl
+            else:
+                # Create new position
+                stop_loss = self.risk_manager.calculate_stop_loss(order.price, order.side)
+                take_profit = self.risk_manager.calculate_take_profit(order.price, order.side)
 
-            position = Position(
-                symbol=symbol,
-                side=order.side,
-                quantity=order.filled_quantity,
-                entry_price=order.price,
-                current_price=order.price,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-            )
-            self.positions[symbol] = position
+                position = Position(
+                    symbol=symbol,
+                    side=order.side,
+                    quantity=order.filled_quantity,
+                    entry_price=order.price,
+                    current_price=order.price,
+                    stop_loss=stop_loss,
+                    take_profit=take_profit,
+                )
+                self.positions[symbol] = position
 
-            logger.info(
-                f"New position opened: {symbol} {order.side} {order.filled_quantity} "
-                f"@ {order.price}, SL: {stop_loss}, TP: {take_profit}"
-            )
+                logger.info(
+                    f"New position opened: {symbol} {order.side} {order.filled_quantity} "
+                    f"@ {order.price}, SL: {stop_loss}, TP: {take_profit}"
+                )
 
     async def update_market_prices(self, symbol: str, current_price: Decimal):
-        """Update position with current market price."""
-        if symbol in self.positions:
-            position = self.positions[symbol]
-            position.update_price(current_price)
+        """Update position with current market price (thread-safe)."""
+        async with self._position_lock:
+            if symbol in self.positions:
+                position = self.positions[symbol]
+                position.update_price(current_price)
 
-            # Check if stop loss or take profit hit
-            should_close, reason = position.should_close()
-            if should_close:
-                logger.warning(
-                    f"Position {symbol} hit {reason} at {current_price}. Closing position."
-                )
-                await self._close_position(symbol, current_price, reason)
+                # Check if stop loss or take profit hit
+                should_close, reason = position.should_close()
+                if should_close:
+                    logger.warning(
+                        f"Position {symbol} hit {reason} at {current_price}. Closing position."
+                    )
+                    # Close position within the same lock to maintain consistency
+                    await self._close_position_locked(symbol, current_price, reason)
+
+    async def _close_position_locked(self, symbol: str, price: Decimal, reason: str):
+        """Close a position (assumes caller holds position lock)."""
+        if symbol not in self.positions:
+            return
+
+        position = self.positions[symbol]
+
+        # Create opposite order to close
+        close_order = Order(
+            symbol=symbol,
+            side=OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=position.quantity,
+            price=price,
+            strategy=f"close_{reason}",
+        )
+
+        logger.info(f"Closing position {symbol} due to {reason} at {price}")
+        del self.positions[symbol]
 
     async def _close_position(self, symbol: str, price: Decimal, reason: str):
         """Close a position."""

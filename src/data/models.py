@@ -129,3 +129,119 @@ class PortfolioSnapshot(BaseModel):
     total_pnl: Decimal
     daily_pnl: Decimal
     num_positions: int
+
+
+# API Response Models for validation
+
+class OrderBookEntry(BaseModel):
+    """Single order book entry (bid or ask)."""
+
+    p: str  # Price
+    q: str  # Quantity
+
+    @property
+    def price(self) -> Decimal:
+        return Decimal(self.p)
+
+    @property
+    def quantity(self) -> Decimal:
+        return Decimal(self.q)
+
+
+class OrderBookData(BaseModel):
+    """Order book data structure."""
+
+    asks: list[OrderBookEntry] = Field(default_factory=list)
+    bids: list[OrderBookEntry] = Field(default_factory=list)
+
+
+class OrderBookResponse(BaseModel):
+    """Revolut X API order book response."""
+
+    data: OrderBookData
+
+
+class BalanceData(BaseModel):
+    """Balance data structure."""
+
+    availableBalance: str
+    totalBalance: str | None = None
+    currency: str = "USD"
+
+    @property
+    def available(self) -> Decimal:
+        return Decimal(self.availableBalance)
+
+    @property
+    def total(self) -> Decimal:
+        if self.totalBalance:
+            return Decimal(self.totalBalance)
+        return self.available
+
+
+class BalanceResponse(BaseModel):
+    """Revolut X API balance response."""
+
+    data: BalanceData | None = None
+    # Direct response format (no data wrapper)
+    availableBalance: str | None = None
+    totalBalance: str | None = None
+    currency: str | None = None
+
+
+class CandleData(BaseModel):
+    """Historical candle data."""
+
+    t: int  # Timestamp
+    o: str  # Open
+    h: str  # High
+    l: str  # Low
+    c: str  # Close
+    v: str  # Volume
+
+    @property
+    def timestamp(self) -> int:
+        return self.t
+
+    @property
+    def open_price(self) -> Decimal:
+        return Decimal(self.o)
+
+    @property
+    def high_price(self) -> Decimal:
+        return Decimal(self.h)
+
+    @property
+    def low_price(self) -> Decimal:
+        return Decimal(self.l)
+
+    @property
+    def close_price(self) -> Decimal:
+        return Decimal(self.c)
+
+    @property
+    def volume(self) -> Decimal:
+        return Decimal(self.v)
+
+
+class CandleResponse(BaseModel):
+    """Revolut X API candle response."""
+
+    data: list[CandleData] = Field(default_factory=list)
+
+
+class OrderCreationData(BaseModel):
+    """Order creation response data."""
+
+    orderId: str
+    status: str
+    symbol: str
+    side: str
+    quantity: str
+    price: str | None = None
+
+
+class OrderCreationResponse(BaseModel):
+    """Revolut X API order creation response."""
+
+    data: OrderCreationData
