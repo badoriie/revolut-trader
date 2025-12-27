@@ -1,8 +1,8 @@
 {
-  "timestamp": "2025-12-27T18:10:33.829777",
+  "timestamp": "2025-12-27T18:53:01.068370",
   "config": {
-    "strategy": "multi_strategy",
-    "risk_level": "aggressive",
+    "strategy": "mean_reversion",
+    "risk_level": "conservative",
     "symbols": [
       "BTC-USD",
       "ETH-USD"
@@ -12,42 +12,17 @@
     "initial_capital": 10000.0
   },
   "results": {
-    "final_capital": 10001.0739402183,
-    "total_pnl": 1.0739402183,
-    "return_pct": 0.010739402183,
-    "total_trades": 3,
-    "winning_trades": 2,
-    "losing_trades": 1,
-    "win_rate": 66.66666666666666,
-    "profit_factor": 2.342431932679818,
-    "max_drawdown": 1.5523011858
+    "final_capital": 10000.0,
+    "total_pnl": 0.0,
+    "return_pct": 0.0,
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "win_rate": 0.0,
+    "profit_factor": 0.0,
+    "max_drawdown": 0.0
   },
-  "trades": [
-    {
-      "timestamp": "2025-12-26T13:00:00",
-      "symbol": "ETH-USD",
-      "side": "SELL",
-      "quantity": 0.02676191,
-      "price": 2971.19,
-      "pnl": 1.7863574925
-    },
-    {
-      "timestamp": "2025-12-27T18:10:33.828698",
-      "symbol": "ETH-USD",
-      "side": "SELL",
-      "quantity": 0.00426174,
-      "price": 2924.99,
-      "pnl": 0.087578757
-    },
-    {
-      "timestamp": "2025-12-27T18:10:33.828715",
-      "symbol": "BTC-USD",
-      "side": "SELL",
-      "quantity": 0.00051598,
-      "price": 87492.11,
-      "pnl": -0.7999960312
-    }
-  ],
+  "trades": [],
   "equity_curve": [
     {
       "timestamp": "2025-12-23T16:00:00",
@@ -279,175 +254,175 @@
     },
     {
       "timestamp": "2025-12-26T01:00:00",
-      "equity": 9999.9364015175
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T02:00:00",
-      "equity": 10000.3688711985
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T03:00:00",
-      "equity": 10002.113331038
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T04:00:00",
-      "equity": 10001.6888597804
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T05:00:00",
-      "equity": 10001.9249256213
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T06:00:00",
-      "equity": 10002.0225142722
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T07:00:00",
-      "equity": 10002.1755631321
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T08:00:00",
-      "equity": 10001.1863568673
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T09:00:00",
-      "equity": 10001.6023472182
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T10:00:00",
-      "equity": 10001.9458010444
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T11:00:00",
-      "equity": 10001.8556987558
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T12:00:00",
-      "equity": 10001.550832339
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T13:00:00",
-      "equity": 10001.8521872723
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T14:00:00",
-      "equity": 10002.0732460459
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T15:00:00",
-      "equity": 10000.9595777855
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T16:00:00",
-      "equity": 10000.8253587645
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T17:00:00",
-      "equity": 10000.6232619463
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T18:00:00",
-      "equity": 10000.8929925145
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T19:00:00",
-      "equity": 10000.9175410147
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T20:00:00",
-      "equity": 10001.0476707541
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T21:00:00",
-      "equity": 10001.1141354935
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T22:00:00",
-      "equity": 10001.0035589321
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-26T23:00:00",
-      "equity": 10001.0850661409
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T00:00:00",
-      "equity": 10000.9806763135
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T01:00:00",
-      "equity": 10001.0047944647
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T02:00:00",
-      "equity": 10001.0401136193
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T03:00:00",
-      "equity": 10001.0133504183
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T04:00:00",
-      "equity": 10001.0778761367
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T05:00:00",
-      "equity": 10001.0542165159
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T06:00:00",
-      "equity": 10001.0718972229
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T07:00:00",
-      "equity": 10001.0430320213
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T08:00:00",
-      "equity": 10001.0977113889
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T09:00:00",
-      "equity": 10001.1225562629
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T10:00:00",
-      "equity": 10001.1534179147
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T11:00:00",
-      "equity": 10001.0530108337
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T12:00:00",
-      "equity": 10001.0621944203
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T13:00:00",
-      "equity": 10001.0669077753
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T14:00:00",
-      "equity": 10001.0554541519
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T15:00:00",
-      "equity": 10001.0919934667
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T16:00:00",
-      "equity": 10001.0677597245
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T17:00:00",
-      "equity": 10001.0334460085
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T18:00:00",
-      "equity": 10001.0939010473
+      "equity": 10000.0
     },
     {
       "timestamp": "2025-12-27T19:00:00",
-      "equity": 10001.0739402183
+      "equity": 10000.0
     }
   ]
 }

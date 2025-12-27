@@ -3,6 +3,12 @@
 ## [0.2.0] - 2025-12-27
 
 ### Added
+- **Interactive Web Dashboard**: Comprehensive Streamlit dashboard for visualization
+  - `dashboard.py` - Web-based dashboard with interactive charts
+  - Backtest results viewer with equity curves and P&L charts
+  - Strategy comparison tools
+  - Trade history display
+  - Real-time monitoring (placeholder for future)
 - **Backtesting System**: Complete backtesting engine for strategy validation on historical data
   - `backtest.py` CLI tool for running backtests
   - `src/backtest/engine.py` - Backtesting engine with comprehensive metrics
