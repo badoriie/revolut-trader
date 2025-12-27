@@ -93,6 +93,7 @@ class OnePasswordClient:
                     self.vault_name,
                     "--fields",
                     field_name,
+                    "--reveal",
                 ],
                 capture_output=True,
                 text=True,
