@@ -4,7 +4,20 @@
 
 ### Added - Code Quality & Development Tools
 
+- **API Testing CLI**: Quick commands for testing API connectivity and fetching market data
+
+  - New `cli/api_test.py` - Standalone CLI tool for API operations
+  - `make api-test` - Test API connection and authentication
+  - `make api-balance` - Get account balances for all currencies (BTC, ETH, USD, etc.)
+  - `make api-ticker` - Get ticker/price for a symbol (SYMBOL=BTC-USD)
+  - `make api-tickers` - Get multiple tickers at once (SYMBOLS=BTC-USD,ETH-USD,SOL-USD)
+  - `make api-candles` - Get recent candles/historical data (SYMBOL, INTERVAL, LIMIT)
+  - Useful for quick market data checks without running the full bot
+  - Clean formatted output for easy reading
+  - Fixed balance endpoint to use correct `/balances` API path
+
 - **Database Persistence**: Hybrid SQLite + JSON backup system for trading data
+
   - **Primary Storage**: SQLite database for fast queries and analytics
     - New `src/models/db_models.py` - SQLAlchemy models (PortfolioSnapshotDB, TradeDB, SessionDB)
     - New `src/utils/db_persistence.py` - Database persistence layer
@@ -40,22 +53,30 @@
   - Trade history automatically saved after each filled order
   - Data stored in `data/trading.db` (SQLite) with JSON backup in `data/`
   - Migration path to PostgreSQL for production use
+
 - **Backtest Results Database**: Backtest results now stored in database
+
   - New `BacktestRunDB` model for backtest run tracking
   - Automatic save to database after each backtest run
   - Query backtest history with `make db-backtests`
   - Analytics across all backtest runs (success rate, avg return, best run)
   - Links to detailed JSON files for equity curves and trades
+
 - **Optional Log Storage**: Database storage for critical log events
+
   - New `LogEntryDB` model for log entries
   - Methods to save and query logs by level and time
   - Useful for tracking errors across sessions
+
 - **Deep Clean Command**: New `make deep-clean` for complete project reset
+
   - Removes ALL generated files (database, logs, backtest results, backups)
   - Removes virtual environment and all cache files
   - Confirmation prompt to prevent accidental data loss
   - Useful for starting completely fresh or troubleshooting
+
 - **Database Encryption**: Application-level field encryption for sensitive data
+
   - New `src/utils/db_encryption.py` - Fernet symmetric encryption infrastructure
   - Encryption key securely stored in 1Password vault
   - **Fully integrated** into `src/utils/db_persistence.py` - all sensitive fields automatically encrypted
@@ -67,7 +88,9 @@
   - Optional feature - gracefully falls back to plaintext if not enabled
   - Uses existing `cryptography` library (no additional dependencies)
   - **Important**: This is field-level encryption, not full database encryption (see README)
+
 - **Pre-commit Hooks**: Automated code quality checks on every commit
+
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)
   - Bandit security scanning (configured to skip false positives)

@@ -55,6 +55,7 @@ The trading bot skill is automatically available when working in this project di
 ├── README.md                 # This file (agent overview)
 ├── agent-config.json         # Agent configuration
 ├── CODING_STANDARDS.md       # Code quality standards (CRITICAL)
+├── API_REFERENCE.md          # Revolut X API reference (ALWAYS CONSULT)
 ├── QUICK_START.md            # Quick start guide
 ├── skills/
 │   └── trading-bot.md       # Trading bot specialist skill
@@ -64,6 +65,15 @@ The trading bot skill is automatically available when working in this project di
     ├── deployment-check.md  # Deployment checklist template
     └── testing-debug.md     # Testing and debugging template
 ```
+
+## API Development
+
+**🔴 CRITICAL**: When working with the Revolut X API, ALWAYS consult:
+
+- **[API_REFERENCE.md](.claude/API_REFERENCE.md)** - Internal API reference
+- **[Official Revolut X API Docs](https://developer.revolut.com/docs/x-api/revolut-x-crypto-exchange-rest-api)** - Primary source of truth
+
+Never guess API endpoints or formats - always verify against documentation first.
 
 ## Safety Guidelines
 

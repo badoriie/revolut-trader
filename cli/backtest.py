@@ -89,6 +89,18 @@ async def run_backtest(args):
                 for ts, equity in results.equity_curve
             ]
 
+            results_dict = {
+                "final_capital": float(results.final_capital),
+                "total_pnl": float(results.total_pnl),
+                "return_pct": results.return_pct,
+                "total_trades": results.total_trades,
+                "winning_trades": results.winning_trades,
+                "losing_trades": results.losing_trades,
+                "win_rate": results.win_rate,
+                "profit_factor": results.profit_factor,
+                "max_drawdown": float(results.max_drawdown),
+            }
+
             output_data = {
                 "timestamp": datetime.now(UTC).isoformat(),
                 "config": {
@@ -99,17 +111,7 @@ async def run_backtest(args):
                     "interval": args.interval,
                     "initial_capital": float(initial_capital),
                 },
-                "results": {
-                    "final_capital": float(results.final_capital),
-                    "total_pnl": float(results.total_pnl),
-                    "return_pct": results.return_pct,
-                    "total_trades": results.total_trades,
-                    "winning_trades": results.winning_trades,
-                    "losing_trades": results.losing_trades,
-                    "win_rate": results.win_rate,
-                    "profit_factor": results.profit_factor,
-                    "max_drawdown": float(results.max_drawdown),
-                },
+                "results": results_dict,
                 "trades": serializable_trades,
                 "equity_curve": equity_curve,
             }
@@ -129,7 +131,7 @@ async def run_backtest(args):
                 days=args.days,
                 interval=args.interval,
                 initial_capital=float(initial_capital),
-                results=output_data["results"],
+                results=results_dict,
                 equity_curve_file=str(output_file),
                 trades_file=str(output_file),
             )
