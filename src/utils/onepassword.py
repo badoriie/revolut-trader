@@ -202,6 +202,49 @@ class OnePasswordClient:
             return False
 
 
+def get_config(
+    key: str,
+    default: str | None = None,
+) -> str | None:
+    """Get a configuration value from 1Password with fallback to default.
+
+    Unlike credentials, config values are optional - if not found in 1Password,
+    the default is used without raising errors.
+
+    Looks for config in a separate item: "revolut-trader-config"
+
+    Args:
+        key: The configuration key (e.g., "TRADING_MODE", "BASE_CURRENCY")
+        default: Default value if not found in 1Password
+
+    Returns:
+        The configuration value from 1Password, or default if not found
+
+    Examples:
+        >>> get_config("TRADING_MODE", "paper")
+        "live"  # If set in 1Password
+        >>> get_config("BASE_CURRENCY", "EUR")
+        "EUR"  # Falls back to default if not in 1Password
+    """
+    # Use separate config item, not credentials item
+    config_client = OnePasswordClient(
+        vault_name="revolut-trader",
+        item_name="revolut-trader-config",
+    )
+
+    if not config_client.is_available():
+        logger.debug(f"1Password not available, using default for config {key}")
+        return default
+
+    value = config_client.get_field(key)
+    if value:
+        logger.debug(f"Loaded config {key} from 1Password (revolut-trader-config item)")
+        return value
+
+    logger.debug(f"Config {key} not in 1Password config item, using default: {default}")
+    return default
+
+
 def get_credential(
     key: str,
     default: str | None = None,

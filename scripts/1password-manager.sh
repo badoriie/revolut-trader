@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 # Configuration
 VAULT_NAME="${OP_VAULT_NAME:-revolut-trader}"
 ITEM_NAME="revolut-trader-credentials"
+CONFIG_ITEM_NAME="revolut-trader-config"
 
 # Function to print colored messages
 print_info() {
@@ -122,6 +123,77 @@ show_credentials() {
     print_info "To see full values, use: op item get $ITEM_NAME --vault $VAULT_NAME --format json"
 }
 
+# Create configuration item (separate from credentials)
+create_config_item() {
+    print_info "Creating configuration item in 1Password..."
+    echo ""
+
+    ensure_op_ready || return 1
+
+    # Check if config item already exists
+    if op item get "$CONFIG_ITEM_NAME" --vault "$VAULT_NAME" &> /dev/null; then
+        print_warning "Configuration item already exists: $CONFIG_ITEM_NAME"
+        read -p "Do you want to replace it with defaults? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+            print_info "Keeping existing configuration"
+            return 0
+        fi
+
+        # Delete existing config item
+        op item delete "$CONFIG_ITEM_NAME" --vault "$VAULT_NAME"
+        print_info "Deleted existing configuration"
+    fi
+
+    print_info "Creating configuration item with defaults..."
+
+    # Create config item with default values
+    op item create \
+        --category "Secure Note" \
+        --vault "$VAULT_NAME" \
+        --title "$CONFIG_ITEM_NAME" \
+        "TRADING_MODE[text]=paper" \
+        "RISK_LEVEL[text]=conservative" \
+        "BASE_CURRENCY[text]=EUR" \
+        "TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+        "DEFAULT_STRATEGY[text]=market_making" \
+        "INITIAL_CAPITAL[text]=10000" \
+        "notesPlain=Revolut Trading Bot Configuration - See docs/1PASSWORD_CONFIG.md"
+
+    if [ $? -eq 0 ]; then
+        print_success "Configuration item created in 1Password!"
+        echo ""
+        print_info "Item: $CONFIG_ITEM_NAME"
+        print_info "Vault: $VAULT_NAME"
+        echo ""
+        print_info "Default configuration:"
+        echo "  ⚙️  Trading Settings:"
+        echo "     - TRADING_MODE: paper (safe simulation mode)"
+        echo "     - RISK_LEVEL: conservative"
+        echo "     - BASE_CURRENCY: EUR"
+        echo "  📊 Trading Pairs:"
+        echo "     - TRADING_PAIRS: BTC-EUR,ETH-EUR"
+        echo "  🎯 Strategy:"
+        echo "     - DEFAULT_STRATEGY: market_making"
+        echo "  💰 Capital:"
+        echo "     - INITIAL_CAPITAL: 10000"
+        echo ""
+        print_warning "Next steps:"
+        echo "  1. View configuration:"
+        echo "     make opconfig-show"
+        echo ""
+        echo "  2. Modify as needed:"
+        echo "     make opconfig-set KEY=TRADING_MODE VALUE=live"
+        echo "     make opconfig-set KEY=RISK_LEVEL VALUE=moderate"
+        echo ""
+        echo "  3. Documentation:"
+        echo "     docs/1PASSWORD_CONFIG.md"
+        echo ""
+    else
+        print_error "Failed to create configuration item"
+        return 1
+    fi
+}
+
 # Delete credentials from 1Password
 delete_credentials() {
     print_warning "This will delete credentials from 1Password"
@@ -219,7 +291,7 @@ create_sample_item() {
     fi
 
     # Create item with sample values using op item create
-    print_info "Creating item with placeholder values..."
+    print_info "Creating credentials item..."
 
     if [ -n "$PEM_CONTENT" ]; then
         # If we have a PEM file, use it
@@ -231,7 +303,7 @@ create_sample_item() {
             "REVOLUT_PRIVATE_KEY[concealed]=$PEM_CONTENT" \
             "TELEGRAM_BOT_TOKEN[concealed]=your-telegram-bot-token-here" \
             "TELEGRAM_CHAT_ID[concealed]=your-telegram-chat-id-here" \
-            "notesPlain=Revolut Trading Bot Credentials - Edit these values with your actual credentials"
+            "notesPlain=Revolut Trading Bot Credentials - API keys and tokens"
     else
         # Otherwise use placeholder for PEM too
         op item create \
@@ -242,25 +314,32 @@ create_sample_item() {
             "REVOLUT_PRIVATE_KEY[concealed]=paste-your-pem-file-content-here" \
             "TELEGRAM_BOT_TOKEN[concealed]=your-telegram-bot-token-here" \
             "TELEGRAM_CHAT_ID[concealed]=your-telegram-chat-id-here" \
-            "notesPlain=Revolut Trading Bot Credentials - Edit these values with your actual credentials"
+            "notesPlain=Revolut Trading Bot Credentials - API keys and tokens"
     fi
 
-    print_success "Sample item created in 1Password!"
+    print_success "Credentials item created in 1Password!"
     echo ""
     print_info "Item: $ITEM_NAME"
     print_info "Vault: $VAULT_NAME"
     echo ""
+    print_info "Created credentials:"
+    echo "  📋 Required:"
+    echo "     - REVOLUT_API_KEY: (placeholder - update with your key)"
+    if [ -n "$PEM_CONTENT" ]; then
+        echo "     - REVOLUT_PRIVATE_KEY: ✓ Loaded from config/revolut_private.pem"
+    else
+        echo "     - REVOLUT_PRIVATE_KEY: (placeholder - update with PEM content)"
+    fi
+    echo "  📱 Optional (for notifications):"
+    echo "     - TELEGRAM_BOT_TOKEN"
+    echo "     - TELEGRAM_CHAT_ID"
+    echo ""
     print_warning "Next steps:"
-    echo "  1. Edit the item in 1Password app or CLI with your actual credentials:"
+    echo "  1. Update your credentials:"
     echo "     op item edit $ITEM_NAME --vault $VAULT_NAME"
     echo ""
-    echo "  2. Required fields to update:"
-    echo "     - REVOLUT_API_KEY: Your 64-character API key from Revolut X"
-    if [ -z "$PEM_CONTENT" ]; then
-        echo "     - REVOLUT_PRIVATE_KEY: Content of your config/revolut_private.pem file"
-    fi
-    echo "     - TELEGRAM_BOT_TOKEN: (Optional) From @BotFather"
-    echo "     - TELEGRAM_CHAT_ID: (Optional) From @userinfobot"
+    echo "  2. View stored values:"
+    echo "     make opshow"
     echo ""
 }
 
@@ -330,17 +409,21 @@ case "${1:-}" in
     setup)
         setup_wizard
         ;;
+    create-config)
+        create_config_item
+        ;;
     *)
-        echo "Usage: $0 {setup|show|status|delete}"
+        echo "Usage: $0 {setup|show|status|delete|create-config}"
         echo ""
         echo "Commands:"
-        echo "  setup     - Run setup wizard (create vault and store credentials)"
-        echo "  show      - Show stored credentials (masked)"
-        echo "  status    - Check 1Password CLI status and credentials"
-        echo "  delete    - Delete credentials from 1Password"
+        echo "  setup         - Run setup wizard (create vault and store credentials)"
+        echo "  show          - Show stored credentials (masked)"
+        echo "  status        - Check 1Password CLI status and credentials"
+        echo "  delete        - Delete credentials from 1Password"
+        echo "  create-config - Create configuration item (separate from credentials)"
         echo ""
-        echo "Note: This project uses 1Password exclusively for credentials."
-        echo "See CREDENTIALS.md for more information."
+        echo "Note: This project uses 1Password for credentials and configuration."
+        echo "See CREDENTIALS.md and docs/1PASSWORD_CONFIG.md for more information."
         exit 1
         ;;
 esac

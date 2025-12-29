@@ -93,6 +93,7 @@ echo -e "${GREEN}✓${NC} Signed in to 1Password"
 # Configuration
 VAULT_NAME="revolut-trader"
 ITEM_NAME="revolut-trader-credentials"
+CONFIG_ITEM_NAME="revolut-trader-config"
 
 # Check if vault exists
 echo ""
@@ -131,7 +132,6 @@ if ! op item get "$ITEM_NAME" --vault "$VAULT_NAME" &> /dev/null; then
         "REVOLUT_API_KEY[concealed]=<your-revolut-api-key-here>" \
         "TELEGRAM_BOT_TOKEN[concealed]=<your-telegram-bot-token-optional>" \
         "TELEGRAM_CHAT_ID[concealed]=<your-telegram-chat-id-optional>" \
-        "TRADING_MODE[text]=paper" \
         &> /dev/null
 
     echo -e "${GREEN}✓${NC} Credentials item created with placeholder fields"
@@ -142,7 +142,6 @@ if ! op item get "$ITEM_NAME" --vault "$VAULT_NAME" &> /dev/null; then
     echo "  • REVOLUT_PUBLIC_KEY (will be auto-generated)"
     echo "  • TELEGRAM_BOT_TOKEN (optional)"
     echo "  • TELEGRAM_CHAT_ID (optional)"
-    echo "  • TRADING_MODE (default: paper)"
 else
     echo -e "${GREEN}✓${NC} Credentials item exists"
 
@@ -165,12 +164,41 @@ else
             "TELEGRAM_CHAT_ID[concealed]=<your-telegram-chat-id-optional>" &> /dev/null
     fi
 
-    if ! op item get "$ITEM_NAME" --vault "$VAULT_NAME" --fields TRADING_MODE &> /dev/null; then
-        op item edit "$ITEM_NAME" --vault "$VAULT_NAME" \
-            "TRADING_MODE[text]=paper" &> /dev/null
-    fi
+    echo -e "${GREEN}✓${NC} All required credential fields are present"
+fi
 
-    echo -e "${GREEN}✓${NC} All required fields are present"
+# Check if config item exists (separate from credentials)
+echo ""
+echo "Checking 1Password configuration item: $CONFIG_ITEM_NAME..."
+
+if ! op item get "$CONFIG_ITEM_NAME" --vault "$VAULT_NAME" &> /dev/null; then
+    echo -e "${YELLOW}⚠${NC}  Configuration item does not exist"
+    echo "Creating configuration item with defaults..."
+
+    # Create config item with default values
+    op item create \
+        --category="Secure Note" \
+        --title="$CONFIG_ITEM_NAME" \
+        --vault="$VAULT_NAME" \
+        "TRADING_MODE[text]=paper" \
+        "RISK_LEVEL[text]=conservative" \
+        "BASE_CURRENCY[text]=EUR" \
+        "TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+        "DEFAULT_STRATEGY[text]=market_making" \
+        "INITIAL_CAPITAL[text]=10000" \
+        &> /dev/null
+
+    echo -e "${GREEN}✓${NC} Configuration item created with defaults"
+    echo ""
+    echo "Default configuration:"
+    echo "  • TRADING_MODE: paper"
+    echo "  • RISK_LEVEL: conservative"
+    echo "  • BASE_CURRENCY: EUR"
+    echo "  • TRADING_PAIRS: BTC-EUR,ETH-EUR"
+    echo "  • DEFAULT_STRATEGY: market_making"
+    echo "  • INITIAL_CAPITAL: 10000"
+else
+    echo -e "${GREEN}✓${NC} Configuration item exists"
 fi
 
 # Check if private key exists in 1Password
@@ -288,6 +316,8 @@ echo ""
 echo -e "${GREEN}✓${NC} uv virtual environment ready"
 echo -e "${GREEN}✓${NC} Python $python_version configured"
 echo -e "${GREEN}✓${NC} 1Password vault configured"
+echo -e "${GREEN}✓${NC} Credentials item created: $ITEM_NAME"
+echo -e "${GREEN}✓${NC} Configuration item created: $CONFIG_ITEM_NAME"
 echo -e "${GREEN}✓${NC} Ed25519 keys stored securely in 1Password"
 echo -e "${GREEN}✓${NC} Dependencies installed"
 echo ""
@@ -314,16 +344,21 @@ echo "   op item edit $ITEM_NAME --vault $VAULT_NAME \\"
 echo "     TELEGRAM_BOT_TOKEN[concealed]=\"your-bot-token\" \\"
 echo "     TELEGRAM_CHAT_ID[concealed]=\"your-chat-id\""
 echo ""
-echo "4. View your credentials (to verify):"
+echo "4. (Optional) Modify trading configuration:"
+echo "   make opconfig-show    # View current config"
+echo "   make opconfig-set KEY=TRADING_MODE VALUE=live"
+echo "   make opconfig-set KEY=RISK_LEVEL VALUE=moderate"
+echo ""
+echo "5. View your credentials (to verify):"
 echo "   make opshow"
 echo ""
-echo "5. Test in paper mode (REQUIRED before live trading):"
+echo "6. Test in paper mode (REQUIRED before live trading):"
 echo "   uv run python run.py --strategy market_making --mode paper"
 echo ""
-echo "6. View all bot options:"
+echo "7. View all bot options:"
 echo "   uv run python run.py --help"
 echo ""
-echo "7. Check 1Password status anytime:"
+echo "8. Check 1Password status anytime:"
 echo "   make opstatus"
 echo ""
 echo "================================================="
