@@ -1,3 +1,15 @@
+"""Revolut X API Client with Ed25519 authentication.
+
+This module handles all API communication with Revolut X exchange,
+including signature generation and request signing.
+
+IMPORTANT: When modifying this file, ALWAYS consult:
+- Official API Docs: https://developer.revolut.com/docs/x-api/revolut-x-crypto-exchange-rest-api
+- Internal Reference: .claude/API_REFERENCE.md
+
+Never guess API endpoints or formats - verify against official documentation first.
+"""
+
 import base64
 import time
 from pathlib import Path
@@ -11,7 +23,6 @@ from pydantic import ValidationError
 
 from src.config import settings
 from src.data.models import (
-    BalanceResponse,
     CandleResponse,
     OrderBookResponse,
     OrderCreationResponse,
@@ -158,7 +169,7 @@ class RevolutAPIClient:
         endpoint: str,
         params: dict[str, Any] | None = None,
         json_data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | list[Any]:
         """Make authenticated request to Revolut API with rate limiting."""
         # Apply rate limiting before making request
         await self.rate_limiter.acquire()
@@ -227,45 +238,66 @@ class RevolutAPIClient:
             raise
 
     async def get_balance(self) -> dict[str, Any]:
-        """Get account balance.
+        """Get account balances.
 
         Returns:
-            Dictionary with balance information
+            Dictionary with balance information for all currencies
 
         Raises:
             ValidationError: If API response doesn't match expected format
         """
-        raw_response = await self._request("GET", "/balance")
+        raw_response = await self._request("GET", "/balances")
 
-        # Validate response with Pydantic
-        try:
-            balance_response = BalanceResponse(**raw_response)
-        except ValidationError as e:
-            logger.error(f"Invalid balance response: {e}")
-            raise ValueError(f"Malformed balance data from API: {e}") from e
+        # Response is an array of balance objects
+        # Each balance has: currency, available, reserved, total
+        if not isinstance(raw_response, list):
+            logger.error(f"Expected array response, got: {type(raw_response)}")
+            raise ValueError(
+                f"Invalid balance response format: expected array, got {type(raw_response)}"
+            )
 
-        # Return normalized format
-        if balance_response.data:
-            return {
-                "availableBalance": str(balance_response.data.available),
-                "totalBalance": str(balance_response.data.total),
-                "currency": balance_response.data.currency,
+        # Type narrowing: raw_response is now confirmed to be a list
+        balance_list: list[Any] = raw_response
+
+        # Convert array to dictionary with currency as key
+        balances = {}
+        total_usd = 0.0
+
+        for balance_obj in balance_list:
+            currency = balance_obj.get("currency", "UNKNOWN")
+            available = float(balance_obj.get("available", "0"))
+            reserved = float(balance_obj.get("reserved", "0"))
+            total = float(balance_obj.get("total", "0"))
+
+            balances[currency] = {
+                "available": available,
+                "reserved": reserved,
+                "total": total,
             }
-        else:
-            # Direct format (no data wrapper)
-            return {
-                "availableBalance": balance_response.availableBalance or "0",
-                "totalBalance": balance_response.totalBalance or "0",
-                "currency": balance_response.currency or "USD",
-            }
+
+            # Sum up USD value (approximate)
+            if currency == "USD" or currency == "USDC" or currency == "USDT":
+                total_usd += total
+
+        return {
+            "balances": balances,
+            "total_usd": total_usd,
+            "currencies": list(balances.keys()),
+        }
 
     async def get_market_data(self, symbol: str) -> dict[str, Any]:
         """Get market data for a symbol."""
-        return await self._request("GET", f"/market-data/{symbol}")
+        response = await self._request("GET", f"/market-data/{symbol}")
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def get_order_book(self, symbol: str, depth: int = 10) -> dict[str, Any]:
         """Get order book for a symbol."""
-        return await self._request("GET", f"/orderbook/{symbol}", params={"depth": depth})
+        response = await self._request("GET", f"/orderbook/{symbol}", params={"depth": depth})
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def create_order(
         self,
@@ -307,6 +339,10 @@ class RevolutAPIClient:
         logger.info(f"Creating order: {order_data}")
         raw_response = await self._request("POST", "/orders", json_data=order_data)
 
+        # Ensure response is a dict (orders endpoint returns object, not array)
+        if not isinstance(raw_response, dict):
+            raise ValueError(f"Expected dict response, got {type(raw_response)}")
+
         # Validate response with Pydantic
         try:
             order_response = OrderCreationResponse(**raw_response)
@@ -327,23 +363,35 @@ class RevolutAPIClient:
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         """Cancel an existing order."""
         logger.info(f"Cancelling order: {order_id}")
-        return await self._request("DELETE", f"/orders/{order_id}")
+        response = await self._request("DELETE", f"/orders/{order_id}")
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def get_order(self, order_id: str) -> dict[str, Any]:
         """Get order details."""
-        return await self._request("GET", f"/orders/{order_id}")
+        response = await self._request("GET", f"/orders/{order_id}")
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def get_open_orders(self, symbol: str | None = None) -> dict[str, Any]:
         """Get all open orders."""
         params = {"symbol": symbol} if symbol else {}
-        return await self._request("GET", "/orders", params=params)
+        response = await self._request("GET", "/orders", params=params)
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def get_trades(self, symbol: str | None = None, limit: int = 100) -> dict[str, Any]:
         """Get recent trades."""
         params: dict[str, Any] = {"limit": limit}
         if symbol:
             params["symbol"] = symbol
-        return await self._request("GET", "/trades", params=params)
+        response = await self._request("GET", "/trades", params=params)
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
 
     async def get_ticker(self, symbol: str) -> dict[str, Any]:
         """Get current market data from public order book.
@@ -357,6 +405,10 @@ class RevolutAPIClient:
         """
         # Get order book data - requires authentication even though it's a "public" endpoint
         raw_response = await self._request("GET", f"/public/order-book/{symbol}")
+
+        # Ensure response is a dict
+        if not isinstance(raw_response, dict):
+            raise ValueError(f"Expected dict response, got {type(raw_response)}")
 
         # Validate response structure with Pydantic
         try:
@@ -421,6 +473,10 @@ class RevolutAPIClient:
         # Try the likely endpoint path
         try:
             raw_response = await self._request("GET", f"/candles/{symbol}", params=params)
+
+            # Ensure response is a dict
+            if not isinstance(raw_response, dict):
+                raise ValueError(f"Expected dict response, got {type(raw_response)}")
 
             # Validate response with Pydantic
             try:

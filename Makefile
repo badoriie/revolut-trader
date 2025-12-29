@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate db-encrypt-setup db-encrypt-status
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate db-encrypt-setup db-encrypt-status api-test api-balance api-ticker api-tickers api-candles
 
 # Default target - show help
 help:
@@ -21,6 +21,13 @@ help:
 	@echo "  make run-live          - Run in live mode (⚠️  REAL MONEY!)"
 	@echo "  make backtest          - Run strategy backtesting on historical data"
 	@echo "  make dashboard         - Launch web dashboard for visualization"
+	@echo ""
+	@echo "🔌 API Testing:"
+	@echo "  make api-test          - Test API connection"
+	@echo "  make api-balance       - Get account balance"
+	@echo "  make api-ticker        - Get ticker for symbol (SYMBOL=BTC-USD)"
+	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-USD,ETH-USD,SOL-USD)"
+	@echo "  make api-candles       - Get recent candles (SYMBOL=BTC-USD INTERVAL=60 LIMIT=10)"
 	@echo ""
 	@echo "✅ Code Quality:"
 	@echo "  make pre-commit-install - Install pre-commit hooks"
@@ -171,6 +178,40 @@ dashboard:
 	@echo "📊 Launching web dashboard..."
 	@echo "Dashboard will open at http://localhost:8501"
 	@uv run streamlit run cli/dashboard.py
+
+# ============================================================================
+# API Testing
+# ============================================================================
+
+# Test API connection
+api-test:
+	@echo "🔌 Testing API connection..."
+	@uv run python cli/api_test.py test
+
+# Get account balance
+api-balance:
+	@echo "💰 Getting account balance..."
+	@uv run python cli/api_test.py balance
+
+# Get ticker for a symbol
+api-ticker:
+	@SYMBOL=$${SYMBOL:-BTC-USD}; \
+	echo "📊 Getting ticker for $$SYMBOL..."; \
+	uv run python cli/api_test.py ticker --symbol $$SYMBOL
+
+# Get multiple tickers
+api-tickers:
+	@SYMBOLS=$${SYMBOLS:-BTC-USD,ETH-USD,SOL-USD}; \
+	echo "📊 Getting tickers for $$SYMBOLS..."; \
+	uv run python cli/api_test.py tickers --symbols $$SYMBOLS
+
+# Get recent candles
+api-candles:
+	@SYMBOL=$${SYMBOL:-BTC-USD}; \
+	INTERVAL=$${INTERVAL:-60}; \
+	LIMIT=$${LIMIT:-10}; \
+	echo "📈 Getting $$LIMIT candles for $$SYMBOL ($$INTERVAL min)..."; \
+	uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
 
 # ============================================================================
 # Code Quality

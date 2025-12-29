@@ -195,6 +195,30 @@ uv run python run.py --strategy momentum --risk moderate --mode live
 make run-live
 ```
 
+### API Testing
+
+Test API connectivity and fetch market data quickly:
+
+```bash
+# Test API connection
+make api-test
+
+# Get account balances (all currencies)
+make api-balance
+
+# Get current price for a symbol
+make api-ticker SYMBOL=BTC-USD
+make api-ticker SYMBOL=ETH-USD
+
+# Get multiple tickers at once
+make api-tickers
+make api-tickers SYMBOLS=BTC-USD,ETH-USD,SOL-USD,DOGE-USD
+
+# Get recent candles (historical data)
+make api-candles SYMBOL=BTC-USD INTERVAL=60 LIMIT=10
+make api-candles SYMBOL=ETH-USD INTERVAL=15 LIMIT=20
+```
+
 ### Advanced Options
 
 ```bash

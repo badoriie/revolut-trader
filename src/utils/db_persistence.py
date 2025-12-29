@@ -323,7 +323,7 @@ class DatabasePersistence:
 
             session.add(db_session)
             session.commit()
-            session_id = db_session.id
+            session_id: int = db_session.id  # type: ignore[assignment]
 
             logger.info(f"Created trading session: {session_id}")
             return session_id
@@ -487,7 +487,7 @@ class DatabasePersistence:
 
             session.add(backtest_run)
             session.commit()
-            run_id = backtest_run.id
+            run_id: int = backtest_run.id  # type: ignore[assignment]
 
             logger.info(
                 f"Saved backtest run: {run_id} ({strategy}, return={results['return_pct']:.2f}%)"
