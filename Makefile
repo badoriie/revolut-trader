@@ -102,7 +102,6 @@ deep-clean:
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@# Data and runtime files (completely remove directories)
 	@rm -rf data 2>/dev/null || true
-	@mkdir -p data && touch data/.gitkeep
 	@rm -rf logs 2>/dev/null || true
 	@rm -rf results 2>/dev/null || true
 	@rm -rf backups 2>/dev/null || true
