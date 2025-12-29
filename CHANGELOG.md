@@ -55,14 +55,18 @@
   - Removes virtual environment and all cache files
   - Confirmation prompt to prevent accidental data loss
   - Useful for starting completely fresh or troubleshooting
-- **Database Encryption**: Application-level encryption for sensitive data
-  - New `src/utils/db_encryption.py` - Fernet symmetric encryption
-  - Encryption key securely stored in 1Password
-  - Transparent encrypt/decrypt for sensitive database fields
-  - `make db-encrypt-setup` - Generate and store encryption key
-  - `make db-encrypt-status` - Check encryption status
+- **Database Encryption**: Application-level field encryption for sensitive data
+  - New `src/utils/db_encryption.py` - Fernet symmetric encryption infrastructure
+  - Encryption key securely stored in 1Password vault
+  - **Fully integrated** into `src/utils/db_persistence.py` - all sensitive fields automatically encrypted
+  - Encrypts: strategy names, risk levels, trading modes, symbol lists, log messages
+  - Does NOT encrypt: financial amounts (needed for SQL analytics), timestamps, counts
+  - Transparent encrypt on save, decrypt on load - no changes needed in bot code
+  - `make db-encrypt-setup` - Generate and store encryption key (one-time)
+  - `make db-encrypt-status` - Check encryption status and test functionality
   - Optional feature - gracefully falls back to plaintext if not enabled
   - Uses existing `cryptography` library (no additional dependencies)
+  - **Important**: This is field-level encryption, not full database encryption (see README)
 - **Pre-commit Hooks**: Automated code quality checks on every commit
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)
