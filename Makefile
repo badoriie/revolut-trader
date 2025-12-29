@@ -1,4 +1,4 @@
-.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup pre-commit-install pre-commit
+.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db-stats db-analytics db-export db-export-csv db-migrate
 
 # Default target - show help
 help:
@@ -33,6 +33,12 @@ help:
 	@echo "📋 Utilities:"
 	@echo "  make logs              - View recent logs"
 	@echo "  make backup            - Backup data and logs"
+	@echo ""
+	@echo "💾 Database Management:"
+	@echo "  make db-stats          - Show database statistics"
+	@echo "  make db-analytics      - Show trading analytics (last 30 days)"
+	@echo "  make db-export         - Export data to JSON files"
+	@echo "  make db-export-csv     - Export data to CSV for analysis"
 	@echo ""
 	@echo "💡 Quick Start:"
 	@echo "  1. make setup          (one-time setup)"
@@ -220,4 +226,41 @@ restore:
 		echo "✅ Restore complete"; \
 	else \
 		echo "❌ Backup not found"; \
+	fi
+
+# ============================================================================
+# Database Management
+# ============================================================================
+
+# Show database statistics
+db-stats:
+	@echo "📈 Database Statistics"
+	@uv run python cli/db_manage.py stats
+
+# Show trading analytics
+db-analytics:
+	@DAYS=$${DAYS:-30}; \
+	echo "📊 Trading Analytics (Last $$DAYS days)"; \
+	uv run python cli/db_manage.py analytics $$DAYS
+
+# Export data to JSON
+db-export:
+	@DIR=$${DIR:-data/exports}; \
+	echo "📤 Exporting data to $$DIR"; \
+	uv run python cli/db_manage.py export $$DIR
+
+# Export data to CSV
+db-export-csv:
+	@echo "📊 Exporting data to CSV..."
+	@uv run python cli/db_manage.py export-csv
+
+# Migrate SQLite to PostgreSQL
+db-migrate:
+	@echo "🔄 Migrate SQLite to PostgreSQL"
+	@echo ""
+	@read -p "Enter PostgreSQL URL (e.g., postgresql://user:pass@localhost/trading): " pgurl && \
+	if [ -n "$$pgurl" ]; then \
+		uv run python cli/db_manage.py migrate "$$pgurl"; \
+	else \
+		echo "❌ Migration cancelled"; \
 	fi
