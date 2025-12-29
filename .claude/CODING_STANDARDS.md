@@ -210,6 +210,31 @@ def test_position_size_rejects_zero_stop_loss_distance():
 
 All public functions need docstrings. Complex logic needs comments explaining WHY, not WHAT.
 
+**CRITICAL: Documentation must be updated with every change.**
+
+When you make ANY change to the codebase, you MUST update the relevant documentation:
+
+1. **Code Changes** → Update docstrings and inline comments
+1. **Feature Additions** → Update README.md and relevant docs/ files
+1. **Bug Fixes** → Update CHANGELOG.md
+1. **Configuration Changes** → Update README.md and config documentation
+1. **API Changes** → Update API documentation and examples
+1. **Dependency Changes** → Update README.md installation instructions
+1. **New Patterns/Standards** → Update CODING_STANDARDS.md
+
+**Examples of what to update:**
+
+- Add new feature → Update README.md usage section + CHANGELOG.md + feature docs
+- Fix bug → Update CHANGELOG.md with fix description
+- Change config → Update README.md setup section
+- Add new strategy → Update README.md strategy list + strategy documentation
+- Update dependencies → Update README.md + pyproject.toml
+- Change make commands → Update README.md + Makefile help text
+
+**Rule of thumb:** If you touched code, you must touch documentation.
+
+Outdated documentation is worse than no documentation - it actively misleads developers and can cause financial losses in a trading system.
+
 **Good:**
 
 ```python
@@ -447,6 +472,8 @@ Before submitting code, verify:
 - [ ] No sensitive data (API keys, passwords) in code
 - [ ] Logging is appropriate (not too verbose, not too sparse)
 - [ ] Complex logic has explanatory comments
+- [ ] **Documentation updated** (README.md, CHANGELOG.md, relevant docs/)
+- [ ] **Pre-commit hooks pass** (run `make pre-commit`)
 
 ## Anti-Patterns to Avoid
 

@@ -246,7 +246,13 @@ logs and find the root cause."
 
    - All public functions must have docstrings
    - Document assumptions and constraints
-   - Keep README and docs up to date
+   - **CRITICAL: Always update documentation when making changes**
+     - Update README.md for user-facing changes
+     - Update CHANGELOG.md for all changes
+     - Update relevant docs/ files for feature changes
+     - Update code comments for implementation changes
+     - Update CODING_STANDARDS.md for new patterns
+   - Documentation updates are NOT optional - they're required
 
 ## Best Practices
 
@@ -259,6 +265,7 @@ logs and find the root cause."
 1. Add comprehensive docstrings
 1. Write unit tests before deploying
 1. **Keep code clean and maintainable** - follow the Code Quality Standards above
+1. **Update documentation** - README.md, CHANGELOG.md, and relevant docs/ files
 
 ### When Modifying Risk Management
 

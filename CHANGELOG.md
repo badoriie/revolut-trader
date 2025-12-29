@@ -23,6 +23,18 @@
 - **Bandit Configuration**: Configured to skip false positive subprocess warnings
   - Skips B404, B603, B607 for safe 1Password CLI usage
 - **Development Dependencies**: Added pre-commit to dev dependencies in pyproject.toml
+- **Line Ending Configuration**: Removed redundant `mixed-line-ending` pre-commit hook
+  - `.gitattributes` already handles line ending normalization (`eol=lf`)
+  - Simplifies pre-commit configuration without losing functionality
+- **Git Attributes Cleanup**: Removed redundant binary file declarations from `.gitattributes`
+  - `.pem`, `.key`, and `.db` files already excluded via `.gitignore`
+  - All credentials stored in 1Password, not in repository
+  - Simplified configuration with same protection level
+- **Agent Instructions**: Added emphasis on documentation requirements
+  - Updated `.claude/README.md` and `.claude/CODING_STANDARDS.md`
+  - Documentation updates now mandatory for all code changes
+  - Added to code review checklist
+  - Includes examples of what documentation to update for different change types
 
 ### Fixed
 
