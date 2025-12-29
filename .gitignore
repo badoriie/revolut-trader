@@ -168,8 +168,7 @@ cython_debug/
 /logs/
 
 # Runtime trading data (root level only - NOT src/data/ which contains code)
-/data/*
-!/data/.gitkeep
+/data/
 
 # Private keys and credentials
 config/*.pem
