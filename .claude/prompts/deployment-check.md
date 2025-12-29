@@ -123,7 +123,9 @@ Validate my configuration before deployment:
 
 **Current Configuration**:
 ```
-[Paste your .env content, replacing sensitive values with [REDACTED]]
+
+\[Paste your .env content, replacing sensitive values with [REDACTED]\]
+
 ```
 
 **Account Details**:
@@ -149,7 +151,9 @@ Provide detailed recommendations for each configuration parameter.
 Review my .env configuration for issues:
 
 ```
+
 [Paste .env content with sensitive values redacted]
+
 ```
 
 Check for:

@@ -5,12 +5,14 @@ A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API
 ## Features
 
 ### Trading Strategies
+
 - **Market Making**: Profit from bid-ask spreads with intelligent inventory management
 - **Momentum**: Follow trends using moving averages and RSI indicators
 - **Mean Reversion**: Trade price deviations using Bollinger Bands
 - **Multi-Strategy**: Combine multiple strategies with weighted consensus
 
 ### Risk Management
+
 - Configurable risk levels (Conservative, Moderate, Aggressive)
 - Position size limits based on portfolio percentage
 - Stop loss and take profit automation
@@ -18,11 +20,13 @@ A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API
 - Concentration risk controls
 
 ### Trading Modes
+
 - **Backtesting**: Validate strategies on historical data before deploying
 - **Paper Trading**: Test strategies with real-time data and simulated execution
 - **Live Trading**: Execute real trades on Revolut X exchange
 
 ### Monitoring & Notifications
+
 - **Interactive Web Dashboard**: Visualize backtests, compare strategies, monitor performance
 - Telegram notifications for signals, orders, and alerts
 - Comprehensive logging system
@@ -43,6 +47,7 @@ make setup
 ```
 
 This single command will:
+
 - Install/verify uv (modern Python package manager)
 - Create Python 3.11+ virtual environment
 - Install 1Password CLI (if needed)
@@ -57,11 +62,11 @@ After running `make setup`, you'll have keys auto-generated and stored in 1Passw
 #### Register Public Key on Revolut X
 
 1. Copy the public key displayed during setup (or get it with `make opshow`)
-2. Log in to [Revolut X web app](https://www.revolut.com/business/merchant-api)
-3. Navigate to API settings
-4. Create new API key
-5. Paste your public key
-6. Copy the generated API key (64 characters)
+1. Log in to [Revolut X web app](https://www.revolut.com/business/merchant-api)
+1. Navigate to API settings
+1. Create new API key
+1. Paste your public key
+1. Copy the generated API key (64 characters)
 
 #### Store API Key in 1Password
 
@@ -73,6 +78,7 @@ op item edit revolut-trader-credentials \
 ```
 
 **Security Benefits:**
+
 - ✅ Private keys NEVER stored on disk
 - ✅ Generated in temp directory, immediately stored in 1Password
 - ✅ Auto-deleted after storage (zero disk footprint)
@@ -147,6 +153,7 @@ streamlit run dashboard.py
 ```
 
 Features:
+
 - 📊 View backtest results with interactive charts
 - 🔬 Compare multiple strategies side-by-side
 - 📈 Analyze equity curves and P&L
@@ -204,24 +211,28 @@ uv run python run.py --strategy momentum --log-level DEBUG
 ## Strategy Details
 
 ### Market Making
+
 - Places limit orders on both sides of order book
 - Profits from bid-ask spread
 - Best for: High liquidity pairs, stable markets
 - Parameters: spread threshold, inventory target
 
 ### Momentum
+
 - Follows price trends using technical indicators
 - Uses fast/slow moving averages and RSI
 - Best for: Trending markets
 - Parameters: MA periods, RSI thresholds
 
 ### Mean Reversion
+
 - Buys oversold, sells overbought
 - Uses Bollinger Bands for entry/exit
 - Best for: Range-bound markets
 - Parameters: lookback period, standard deviations
 
 ### Multi-Strategy
+
 - Combines all strategies with weighted voting
 - Requires consensus before trading
 - Best for: Diverse market conditions
@@ -230,18 +241,21 @@ uv run python run.py --strategy momentum --log-level DEBUG
 ## Risk Management
 
 ### Conservative (Recommended for Beginners)
+
 - Max 1.5% per position
 - Max 3% daily loss
 - Max 3 open positions
 - Tight stop losses (1.5%)
 
 ### Moderate
+
 - Max 3% per position
 - Max 5% daily loss
 - Max 5 open positions
 - Balanced stops (2.5%)
 
 ### Aggressive
+
 - Max 5% per position
 - Max 10% daily loss
 - Max 8 open positions
@@ -279,15 +293,16 @@ revolut-trader/
 ## Safety Features
 
 1. **Paper Trading Mode**: Test without risking real money
-2. **Position Limits**: Prevent over-exposure
-3. **Daily Loss Limits**: Auto-stop on bad days
-4. **Stop Loss/Take Profit**: Automatic exits
-5. **Real-time Monitoring**: Telegram alerts
-6. **Comprehensive Logging**: Full audit trail
+1. **Position Limits**: Prevent over-exposure
+1. **Daily Loss Limits**: Auto-stop on bad days
+1. **Stop Loss/Take Profit**: Automatic exits
+1. **Real-time Monitoring**: Telegram alerts
+1. **Comprehensive Logging**: Full audit trail
 
 ## Monitoring
 
 ### Logs
+
 Check `logs/trading.log` for detailed activity:
 
 ```bash
@@ -295,7 +310,9 @@ tail -f logs/trading.log
 ```
 
 ### Telegram Alerts
+
 Receive real-time notifications for:
+
 - Trading signals generated
 - Orders placed/filled
 - Position updates
@@ -305,6 +322,7 @@ Receive real-time notifications for:
 ## Important Warnings
 
 ⚠️ **LIVE TRADING RISKS**:
+
 - Cryptocurrency trading is highly risky
 - You can lose your entire investment
 - Past performance doesn't guarantee future results
@@ -313,6 +331,7 @@ Receive real-time notifications for:
 - This software is provided as-is with no guarantees
 
 ⚠️ **SECURITY**:
+
 - **1Password Required**: All credentials stored exclusively in 1Password
 - **Zero Disk Footprint**: Private keys never written to disk
 - **Sign In First**: Always run `eval $(op signin)` before using the bot
@@ -323,6 +342,7 @@ Receive real-time notifications for:
 ## Troubleshooting
 
 ### API Connection Issues
+
 ```bash
 # Verify 1Password is signed in
 make opstatus
@@ -337,12 +357,14 @@ op item get revolut-trader-credentials --vault revolut-trader --format json
 ```
 
 ### No Signals Generated
+
 - Strategies need time to collect data (especially Momentum/Mean Reversion)
 - Check if market conditions match strategy (e.g., trends for Momentum)
 - Verify trading pairs are correct
 - Check logs for specific errors: `make logs`
 
 ### Telegram Not Working
+
 ```bash
 # Verify credentials are in 1Password
 make opshow
@@ -369,6 +391,7 @@ make clean     # Remove cache files
 ```
 
 ### Running Tests
+
 ```bash
 make test
 
@@ -377,6 +400,7 @@ uv run pytest --cov=src
 ```
 
 ### Code Formatting
+
 ```bash
 make format
 
@@ -386,6 +410,7 @@ uv run ruff check --fix src/ tests/
 ```
 
 ### Type Checking
+
 ```bash
 uv run mypy src/
 ```
@@ -393,14 +418,15 @@ uv run mypy src/
 ## Performance Tips
 
 1. Start with conservative risk in paper mode
-2. Test each strategy separately before using multi-strategy
-3. Monitor for at least 24 hours in paper mode
-4. Start live trading with small amounts
-5. Gradually increase position sizes as confidence grows
+1. Test each strategy separately before using multi-strategy
+1. Monitor for at least 24 hours in paper mode
+1. Start live trading with small amounts
+1. Gradually increase position sizes as confidence grows
 
 ## Future Enhancements
 
 Potential additions:
+
 - Web dashboard for visual monitoring
 - Backtesting engine with historical data
 - Advanced strategies (arbitrage, grid trading)
@@ -411,6 +437,7 @@ Potential additions:
 ## Support
 
 For issues and questions:
+
 - Check logs: `logs/trading.log`
 - Review Revolut API docs: https://developer.revolut.com/docs/x-api/
 - File issues on GitHub
@@ -423,6 +450,6 @@ MIT License - use at your own risk
 
 This software is for educational purposes. Cryptocurrency trading carries substantial risk of loss. The authors and contributors are not responsible for any financial losses incurred through use of this software. Always do your own research and consult with financial advisors before trading.
 
----
+______________________________________________________________________
 
 **Happy Trading! 🚀** (But seriously, start with paper mode!)

@@ -88,7 +88,7 @@ def create_equity_curve_chart(equity_curve: list[dict]) -> go.Figure:
             y=df["equity"],
             mode="lines",
             name="Portfolio Value",
-            line=dict(color="#1f77b4", width=2),
+            line={"color": "#1f77b4", "width": 2},
             fill="tozeroy",
             fillcolor="rgba(31, 119, 180, 0.1)",
         )
@@ -125,8 +125,8 @@ def create_pnl_chart(trades: list[dict]) -> go.Figure:
             y=df["cumulative_pnl"],
             mode="lines+markers",
             name="Cumulative P&L",
-            line=dict(color="#00b050", width=2),
-            marker=dict(size=6),
+            line={"color": "#00b050", "width": 2},
+            marker={"size": 6},
         )
     )
 
@@ -137,7 +137,7 @@ def create_pnl_chart(trades: list[dict]) -> go.Figure:
             x=df["timestamp"],
             y=df["pnl"],
             name="Trade P&L",
-            marker=dict(color=colors),
+            marker={"color": colors},
             opacity=0.6,
             yaxis="y2",
         )
@@ -147,7 +147,7 @@ def create_pnl_chart(trades: list[dict]) -> go.Figure:
         title="Profit & Loss",
         xaxis_title="Time",
         yaxis_title="Cumulative P&L ($)",
-        yaxis2=dict(title="Trade P&L ($)", overlaying="y", side="right"),
+        yaxis2={"title": "Trade P&L ($)", "overlaying": "y", "side": "right"},
         hovermode="x unified",
         template="plotly_white",
         height=400,
@@ -220,7 +220,6 @@ def render_backtest_view():
 
     with col1:
         pnl = metrics["total_pnl"]
-        pnl_color = "positive" if pnl > 0 else "negative"
         st.metric(
             "Total P&L",
             f"${pnl:,.2f}",

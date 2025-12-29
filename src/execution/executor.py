@@ -211,18 +211,6 @@ class OrderExecutor:
         if symbol not in self.positions:
             return
 
-        position = self.positions[symbol]
-
-        # Create opposite order to close
-        close_order = Order(
-            symbol=symbol,
-            side=OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY,
-            order_type=OrderType.MARKET,
-            quantity=position.quantity,
-            price=price,
-            strategy=f"close_{reason}",
-        )
-
         logger.info(f"Closing position {symbol} due to {reason} at {price}")
         del self.positions[symbol]
 

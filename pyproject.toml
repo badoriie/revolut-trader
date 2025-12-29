@@ -23,6 +23,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.6.0",
     "mypy>=1.8.0",
+    "pre-commit>=3.0.0",
 ]
 
 [build-system]
@@ -100,5 +101,23 @@ strict_optional = false
 
 # Ignore missing stubs for visualization and external libraries
 [[tool.mypy.overrides]]
-module = ["pandas", "plotly.*", "streamlit", "watchdog.*", "telegram.*"]
+module = [
+    "pandas",
+    "plotly.*",
+    "streamlit",
+    "watchdog.*",
+    "telegram.*",
+    "loguru",
+    "httpx",
+    "cryptography.*",
+]
 ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "venv"]
+skips = [
+    "B101",  # Skip assert_used check (common in tests)
+    "B404",  # Import subprocess - safe usage for 1Password CLI
+    "B603",  # Subprocess without shell - safe, using list arguments
+    "B607",  # Partial executable path - safe, using op CLI tool
+]

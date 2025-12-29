@@ -5,6 +5,7 @@ Interactive web dashboard for visualizing backtest results, monitoring live trad
 ## Features
 
 ### 📊 Backtest Results Viewer
+
 - Interactive equity curves
 - Profit & Loss charts
 - Performance metrics display
@@ -12,12 +13,14 @@ Interactive web dashboard for visualizing backtest results, monitoring live trad
 - Compare different backtests
 
 ### 🔬 Strategy Comparison
+
 - Side-by-side strategy comparison
 - Performance metrics comparison
 - Visual charts comparing returns
 - Filter by risk level, time period
 
 ### 🔴 Live Monitor (Coming Soon)
+
 - Real-time portfolio tracking
 - Open positions display
 - Live P&L updates
@@ -55,6 +58,7 @@ The dashboard automatically loads all JSON files from the `./results/` directory
 ### Backtest Results
 
 **What it shows:**
+
 - Strategy configuration (strategy type, risk level, days, interval)
 - Performance metrics (P&L, return %, win rate, profit factor, max drawdown)
 - Equity curve chart (portfolio value over time)
@@ -62,27 +66,31 @@ The dashboard automatically loads all JSON files from the `./results/` directory
 - Trade history table (all executed trades)
 
 **How to use:**
+
 1. Select a backtest file from the sidebar dropdown
-2. View performance metrics at the top
-3. Analyze equity curve and P&L charts
-4. Review individual trades in the table
+1. View performance metrics at the top
+1. Analyze equity curve and P&L charts
+1. Review individual trades in the table
 
 ### Strategy Comparison
 
 **What it shows:**
+
 - Comparison table of all backtests
 - Side-by-side performance metrics
 - Returns comparison chart
 
 **How to use:**
+
 1. Run multiple backtests with different strategies/parameters
-2. Navigate to "Strategy Comparison" page
-3. Compare metrics across all runs
-4. Identify best-performing strategy
+1. Navigate to "Strategy Comparison" page
+1. Compare metrics across all runs
+1. Identify best-performing strategy
 
 ### Live Monitor
 
 **What it shows (Placeholder):**
+
 - Real-time portfolio value
 - Open positions
 - Today's P&L
@@ -145,12 +153,14 @@ streamlit run dashboard.py
 ### Interactive Charts
 
 **Equity Curve:**
+
 - Shows portfolio value over time
 - Hover to see exact values
 - Zoom and pan controls
 - Fill area shows growth visually
 
 **P&L Chart:**
+
 - Dual-axis chart
 - Line: Cumulative P&L
 - Bars: Individual trade P&L
@@ -160,6 +170,7 @@ streamlit run dashboard.py
 ### Performance Metrics
 
 **Key Metrics Displayed:**
+
 - **Total P&L**: Net profit/loss
 - **Return %**: Percentage return on capital
 - **Total Trades**: Number of completed trades
@@ -170,6 +181,7 @@ streamlit run dashboard.py
 ### Trade History
 
 **Columns:**
+
 - Timestamp: When trade was executed
 - Symbol: Trading pair (BTC-USD, ETH-USD)
 - Side: BUY or SELL
@@ -190,6 +202,7 @@ While the dashboard is running:
 ### Dashboard shows "No backtest results found"
 
 **Solution:** Run a backtest with `--output` flag:
+
 ```bash
 python backtest.py --strategy momentum --output ./results/test.json
 ```
@@ -205,6 +218,7 @@ python backtest.py --strategy momentum --output ./results/test.json
 ### Port 8501 already in use
 
 **Solution:** Stop other Streamlit apps or use different port:
+
 ```bash
 streamlit run dashboard.py --server.port 8502
 ```
@@ -257,19 +271,21 @@ Planned features for live monitoring:
 ## Best Practices
 
 1. **Organize Results**: Use descriptive filenames
+
    ```bash
    ./results/momentum_moderate_30d_btc.json
    ./results/market_making_conservative_7d.json
    ```
 
-2. **Regular Cleanup**: Remove old backtest files to keep dashboard fast
+1. **Regular Cleanup**: Remove old backtest files to keep dashboard fast
+
    ```bash
    rm ./results/old_*.json
    ```
 
-3. **Compare Fairly**: Use same time period and pairs when comparing strategies
+1. **Compare Fairly**: Use same time period and pairs when comparing strategies
 
-4. **Document Parameters**: Include strategy/risk/period in filename
+1. **Document Parameters**: Include strategy/risk/period in filename
 
 ## Tips
 
@@ -281,11 +297,12 @@ Planned features for live monitoring:
 ## Support
 
 For issues or feature requests:
+
 - Check logs: `tail -f logs/dashboard.log`
 - Review backtest JSON files for data issues
 - Ensure all dependencies installed: `uv pip install streamlit plotly pandas`
 
----
+______________________________________________________________________
 
 **Dashboard Version**: 1.0
 **Last Updated**: December 27, 2025

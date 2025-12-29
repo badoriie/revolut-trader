@@ -45,7 +45,9 @@ Help me debug this trading issue:
 
 **Relevant Logs**:
 ```
+
 [Paste relevant log entries]
+
 ```
 
 **Steps to Reproduce**:
@@ -267,12 +269,16 @@ Debug API integration issues:
 
 **Request Details**:
 ```
+
 [Paste sanitized request details - NO API KEYS]
+
 ```
 
 **Response**:
 ```
+
 [Paste response]
+
 ```
 
 **Expected**:
@@ -302,7 +308,9 @@ Debug position management issue:
 
 **Recent Activity**:
 ```
+
 [Paste relevant logs showing position changes]
+
 ```
 
 **Questions**:
@@ -347,7 +355,9 @@ Analyze test coverage and suggest improvements:
 
 **Current Coverage**:
 ```
+
 [Paste pytest --cov output]
+
 ```
 
 **Uncovered Critical Areas**:
@@ -478,7 +488,9 @@ Debug Telegram notification issues:
 
 **Error Messages**:
 ```
+
 [Paste any error messages]
+
 ```
 
 **Expected**:

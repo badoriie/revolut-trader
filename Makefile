@@ -1,4 +1,4 @@
-.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup
+.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup pre-commit-install pre-commit
 
 # Default target - show help
 help:
@@ -22,6 +22,8 @@ help:
 	@echo "  make dashboard         - Launch web dashboard for visualization"
 	@echo ""
 	@echo "✅ Code Quality:"
+	@echo "  make pre-commit-install - Install pre-commit hooks"
+	@echo "  make pre-commit        - Run pre-commit hooks manually on all files"
 	@echo "  make test              - Run tests with coverage"
 	@echo "  make lint              - Check code with ruff"
 	@echo "  make format            - Format code with ruff"
@@ -49,7 +51,7 @@ setup:
 # Install/update dependencies
 install:
 	@echo "📦 Installing dependencies with uv..."
-	@uv sync
+	@uv sync --extra dev
 	@echo "✅ Dependencies installed"
 
 # Clean Python cache and build artifacts
@@ -123,6 +125,21 @@ dashboard:
 # ============================================================================
 # Code Quality
 # ============================================================================
+
+# Install pre-commit hooks
+pre-commit-install:
+	@echo "🔧 Installing pre-commit hooks..."
+	@echo "📦 Ensuring dev dependencies are installed..."
+	@uv sync --extra dev --quiet
+	@uv run pre-commit install
+	@echo "✅ Pre-commit hooks installed"
+	@echo "ℹ️  Hooks will now run automatically on git commit"
+	@echo "ℹ️  To run manually: make pre-commit"
+
+# Run pre-commit hooks manually on all files
+pre-commit:
+	@echo "🔍 Running pre-commit hooks on all files..."
+	@uv run pre-commit run --all-files
 
 # Run tests with coverage
 test:
@@ -204,4 +221,3 @@ restore:
 	else \
 		echo "❌ Backup not found"; \
 	fi
-

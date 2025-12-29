@@ -20,9 +20,11 @@ This project uses **1Password exclusively** for credential storage and retrieval
 ### 1. Install 1Password CLI
 
 **Requirements:**
+
 - 1Password CLI v2.0 or higher (the bot uses the `--reveal` flag for concealed fields)
 
 **macOS (via Homebrew):**
+
 ```bash
 brew install --cask 1password-cli
 # Verify version
@@ -30,6 +32,7 @@ op --version
 ```
 
 **Linux:**
+
 ```bash
 # Download from https://developer.1password.com/docs/cli/get-started/
 wget https://downloads.1password.com/linux/tar/stable/x86_64/op_linux_amd64_latest.tar.gz
@@ -72,14 +75,15 @@ make setup
 ```
 
 This will:
+
 1. Check and install uv (Python package manager)
-2. Verify Python 3.11+ in uv virtual environment
-3. Check if 1Password CLI is installed and signed in
-4. Create a vault `revolut-trader` (or use existing)
-5. **Generate Ed25519 key pair in temporary directory**
-6. **Store keys in 1Password immediately**
-7. **Automatically delete temporary key files** (zero disk footprint)
-8. Create item `revolut-trader-credentials` with all required placeholder fields:
+1. Verify Python 3.11+ in uv virtual environment
+1. Check if 1Password CLI is installed and signed in
+1. Create a vault `revolut-trader` (or use existing)
+1. **Generate Ed25519 key pair in temporary directory**
+1. **Store keys in 1Password immediately**
+1. **Automatically delete temporary key files** (zero disk footprint)
+1. Create item `revolut-trader-credentials` with all required placeholder fields:
    - **REVOLUT_API_KEY** (placeholder: `<your-revolut-api-key-here>`)
    - **REVOLUT_PRIVATE_KEY** (auto-generated Ed25519 private key)
    - **REVOLUT_PUBLIC_KEY** (auto-generated Ed25519 public key)
@@ -88,11 +92,12 @@ This will:
    - **TRADING_MODE** (default: `paper`)
 
 **After setup:**
+
 1. Copy the public key displayed in terminal
-2. Register it on Revolut X: https://revolut.com/business/merchant-api
-3. Get your API key from Revolut X
-4. Store your API key: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_API_KEY[concealed]="your-api-key"`
-5. Done! The bot will now use 1Password automatically
+1. Register it on Revolut X: https://revolut.com/business/merchant-api
+1. Get your API key from Revolut X
+1. Store your API key: `op item edit revolut-trader-credentials --vault revolut-trader REVOLUT_API_KEY[concealed]="your-api-key"`
+1. Done! The bot will now use 1Password automatically
 
 **Security Note:** Keys are generated in a temporary directory and immediately stored in 1Password. The temporary files are automatically deleted. No credentials ever touch your project directory.
 
@@ -117,6 +122,7 @@ make opshow
 ```
 
 Output example:
+
 ```
 ℹ Stored credentials in 1Password:
 
@@ -160,6 +166,7 @@ make opstatus
 ```
 
 Shows:
+
 - 1Password CLI installation status
 - Sign-in status
 - Vault existence
@@ -180,9 +187,9 @@ make opdelete
 The bot automatically retrieves credentials from 1Password when it starts:
 
 1. **On initialization**, the bot checks if 1Password is available
-2. **If 1Password is signed in**, credentials are retrieved from the vault
-3. **Private key is loaded directly into memory** (never written to disk)
-4. **If 1Password is unavailable**, the bot will fail with clear instructions
+1. **If 1Password is signed in**, credentials are retrieved from the vault
+1. **Private key is loaded directly into memory** (never written to disk)
+1. **If 1Password is unavailable**, the bot will fail with clear instructions
 
 **No fallback to .env files** - 1Password is required for this project.
 
@@ -261,11 +268,13 @@ make run-paper
 ### Team Collaboration Workflow
 
 1. **Team Lead**: Share the 1Password vault with team members
+
    ```bash
    # Team members get access to shared vault "revolut-trader"
    ```
 
-2. **Team Members**: Just run the bot
+1. **Team Members**: Just run the bot
+
    ```bash
    # Ensure signed in to 1Password
    eval $(op signin)
@@ -274,7 +283,7 @@ make run-paper
    make run-paper
    ```
 
-3. **Everyone**: Credentials automatically synced from shared vault
+1. **Everyone**: Credentials automatically synced from shared vault
 
 ### CI/CD Workflow
 
@@ -388,10 +397,7 @@ client.set_field("REVOLUT_API_KEY", "new-api-key-value")
 from src.utils.onepassword import OnePasswordClient
 
 # Initialize client
-client = OnePasswordClient(
-    vault_name="my-vault",
-    item_name="my-credentials"
-)
+client = OnePasswordClient(vault_name="my-vault", item_name="my-credentials")
 
 # Check availability
 if not client.is_available():
@@ -441,5 +447,6 @@ A: Run `make opshow` to see masked values, or `op item get revolut-trader-creden
 ## Support
 
 For issues related to:
+
 - **1Password CLI**: https://support.1password.com/
 - **This Integration**: Create an issue in the project repository

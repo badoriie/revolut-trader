@@ -9,11 +9,13 @@ This document details the critical fixes and improvements made to the Revolut Tr
 ### 1. 1Password CLI Integration (--reveal Flag)
 
 **Problem:**
+
 - The bot was failing to load private keys from 1Password
 - Error: "MalformedFraming" when trying to parse PEM content
 - Root cause: 1Password CLI v2 returns placeholder text instead of actual values for concealed fields
 
 **Diagnosis:**
+
 ```bash
 $ op item get revolut-trader-credentials --vault revolut-trader --fields REVOLUT_PRIVATE_KEY
 [use 'op item get x67qzfd4cd23zaqmavquh42yli --reveal' to reveal]
@@ -45,19 +47,22 @@ result = subprocess.run(
 ```
 
 **Impact:**
+
 - Private keys now load correctly from 1Password
 - Secure credential management works as intended
 - No need for local credential files
 
----
+______________________________________________________________________
 
 ### 2. Paper Mode Using Fake Data
 
 **Problem:**
+
 - Paper mode was generating random fake prices instead of using real market data
 - This made backtesting and strategy validation unrealistic
 
 **Original Code (bot.py:224-241):**
+
 ```python
 if self.trading_mode == TradingMode.PAPER:
     # In paper mode, simulate with random-ish data
@@ -105,15 +110,17 @@ async def _fetch_market_data(self, symbol: str) -> MarketData | None:
 ```
 
 **Impact:**
+
 - Paper mode now provides realistic testing with actual market conditions
 - Strategy backtesting is more accurate
 - Both paper and live modes use identical data sources
 
----
+______________________________________________________________________
 
 ### 3. Incorrect API Base URL
 
 **Problem:**
+
 - Base URL was set to `https://api.revolut.com/api/1.0`
 - Revolut X API actually uses `https://revx.revolut.com/api/1.0`
 - All API calls were returning 404 errors
@@ -127,6 +134,7 @@ revolut_api_base_url: str = Field(default="https://revx.revolut.com/api/1.0")
 ```
 
 **Verification:**
+
 ```bash
 # Correct URL structure
 curl -s "https://revx.revolut.com/api/1.0/balances"
@@ -136,40 +144,46 @@ curl -s "https://api.revolut.com/api/1.0/balances"  # 404
 ```
 
 **Impact:**
+
 - All API endpoints now accessible
 - Authentication working correctly
 - Market data loading successfully
 
----
+______________________________________________________________________
 
 ### 4. Duplicate /api/1.0 Path Construction
 
 **Problem:**
+
 - Base URL included `/api/1.0`
 - Request method was also adding `/api/1.0` to the path
 - Result: URLs like `https://revx.revolut.com/api/1.0/api/1.0/public/order-book/BTC-USD`
 
 **Original Code (client.py:148-149):**
+
 ```python
 path = f"/api/1.0{endpoint}"
 url = f"{self.base_url}{path}"  # Double /api/1.0!
 ```
 
 **Solution:**
+
 ```python
 path = f"/api/1.0{endpoint}"  # Used for signature
 url = f"{self.base_url}{endpoint}"  # Correct URL construction
 ```
 
 **Impact:**
+
 - URLs now correctly formatted
 - API requests successful
 
----
+______________________________________________________________________
 
 ### 5. Missing Market Data Endpoint
 
 **Problem:**
+
 - Code was trying to use `/ticker/{symbol}` endpoint
 - Revolut X API doesn't have this endpoint
 - Documentation shows `/public/order-book/{symbol}` for market data
@@ -200,7 +214,9 @@ async def get_ticker(self, symbol: str) -> dict[str, Any]:
     last = (best_bid + best_ask) / 2 if (best_bid and best_ask) else 0.0
 
     # Calculate 24h volume (sum of quantities from bids and asks)
-    volume = sum(float(bid.get("q", 0)) for bid in bids) + sum(float(ask.get("q", 0)) for ask in asks)
+    volume = sum(float(bid.get("q", 0)) for bid in bids) + sum(
+        float(ask.get("q", 0)) for ask in asks
+    )
 
     # Return normalized ticker format compatible with existing code
     return {
@@ -209,12 +225,13 @@ async def get_ticker(self, symbol: str) -> dict[str, Any]:
         "last": last,
         "volume": volume,
         "high": last * 1.05,  # Estimated, not available in order book
-        "low": last * 0.95,   # Estimated, not available in order book
+        "low": last * 0.95,  # Estimated, not available in order book
         "symbol": symbol,
     }
 ```
 
 **API Response Format:**
+
 ```json
 {
   "data": {
@@ -240,38 +257,45 @@ async def get_ticker(self, symbol: str) -> dict[str, Any]:
 ```
 
 **Impact:**
+
 - Real-time bid/ask prices available
 - Market data flowing correctly
 - Normalized response format works with existing strategies
 
----
+______________________________________________________________________
 
 ## Revolut X API Insights
 
 ### Base URLs
+
 - **Production**: `https://revx.revolut.com`
 - **Alternative**: `https://revx.revolut.codes` (also works)
 - **NOT**: `https://api.revolut.com` (different service)
 
 ### Authentication
+
 All endpoints require Ed25519 signature authentication, even "public" ones:
+
 - Header: `X-Revx-API-Key`
 - Header: `X-Revx-Timestamp`
 - Header: `X-Revx-Signature`
 
 ### Key Endpoints
+
 - **Order Book**: `GET /public/order-book/{symbol}`
 - **Balances**: `GET /api/1.0/balances`
 - **Orders**: `POST /api/1.0/orders`
 
 ### Symbol Format
+
 Use hyphenated format: `BTC-USD`, `ETH-USD`, etc.
 
----
+______________________________________________________________________
 
 ## Testing Results
 
 ### Before Fixes
+
 ```
 ERROR | HTTP error 404: {"message":"The requested resource was not found"}
 ERROR | Failed to fetch market data for BTC-USD
@@ -279,6 +303,7 @@ ERROR | Failed to load private key: MalformedFraming
 ```
 
 ### After Fixes
+
 ```
 INFO | ✓ 1Password configured and available (secure mode)
 INFO | ✓ Using private key from 1Password (secure storage)
@@ -288,77 +313,83 @@ INFO | === Trading Iteration 1 ===
 INFO | Portfolio: $10000.00 | Cash: $10000.00 | Positions: $0.00 | P&L: $0.00
 ```
 
----
+______________________________________________________________________
 
 ## Files Modified
 
 1. `src/utils/onepassword.py` - Added `--reveal` flag
-2. `src/bot.py` - Real data for paper mode
-3. `src/config.py` - Correct API base URL
-4. `src/api/client.py` - Fixed URL construction and added order book endpoint
-5. `CHANGELOG.md` - Documented all changes
-6. `docs/1PASSWORD_INTEGRATION.md` - Added CLI v2 requirements
+1. `src/bot.py` - Real data for paper mode
+1. `src/config.py` - Correct API base URL
+1. `src/api/client.py` - Fixed URL construction and added order book endpoint
+1. `CHANGELOG.md` - Documented all changes
+1. `docs/1PASSWORD_INTEGRATION.md` - Added CLI v2 requirements
 
----
+______________________________________________________________________
 
 ## Migration Notes
 
 ### For Existing Users
 
 1. **Update 1Password CLI** (if needed):
+
    ```bash
    brew upgrade 1password-cli
    op --version  # Should be v2.0+
    ```
 
-2. **No config changes needed** - The base URL is updated in code
+1. **No config changes needed** - The base URL is updated in code
 
-3. **Test paper mode**:
+1. **Test paper mode**:
+
    ```bash
    python run.py --mode paper
    ```
 
-4. **Verify real data**:
+1. **Verify real data**:
+
    - Check logs for market data fetching (no errors)
    - Confirm prices are realistic (not random 40k-50k range)
 
----
+______________________________________________________________________
 
 ## Key Learnings
 
 1. **1Password CLI v2 Changes**: Concealed fields require `--reveal` flag
-2. **Revolut X vs Revolut Business**: Different APIs with different base URLs
-3. **Public Endpoints Aren't Public**: "Public" endpoints still need authentication
-4. **Order Book for Prices**: No dedicated ticker endpoint; use order book
-5. **Paper Mode Best Practice**: Always use real data for realistic testing
+1. **Revolut X vs Revolut Business**: Different APIs with different base URLs
+1. **Public Endpoints Aren't Public**: "Public" endpoints still need authentication
+1. **Order Book for Prices**: No dedicated ticker endpoint; use order book
+1. **Paper Mode Best Practice**: Always use real data for realistic testing
 
----
+______________________________________________________________________
 
 ## Future Considerations
 
 ### Potential Improvements
+
 1. **Caching**: Add short-lived cache for order book data to reduce API calls
-2. **Fallback Data Source**: Consider adding CoinGecko/Binance as backup for paper mode
-3. **Better Volume Calculation**: Current method sums order book quantities (not 24h volume)
-4. **Error Handling**: Add retry logic for transient API failures
-5. **Rate Limiting**: Implement request throttling to avoid hitting API limits
+1. **Fallback Data Source**: Consider adding CoinGecko/Binance as backup for paper mode
+1. **Better Volume Calculation**: Current method sums order book quantities (not 24h volume)
+1. **Error Handling**: Add retry logic for transient API failures
+1. **Rate Limiting**: Implement request throttling to avoid hitting API limits
 
 ### Monitoring
+
 - Watch for changes in Revolut X API documentation
 - Monitor 1Password CLI updates (breaking changes)
 - Track API response times and add alerting
 
----
+______________________________________________________________________
 
 ## Contact & Support
 
 For issues related to these changes:
+
 - Check `/logs/trading.log` for detailed error messages
 - Verify 1Password CLI version: `op --version`
 - Test API connectivity: `curl https://revx.revolut.com/api/1.0/balances`
 - Review this document for troubleshooting steps
 
----
+______________________________________________________________________
 
 **Document Version**: 1.0
 **Date**: December 27, 2025
