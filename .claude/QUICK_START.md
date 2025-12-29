@@ -20,16 +20,19 @@ claude
 ### For Beginners
 
 **1. First Time Setup**
+
 ```
 "Help me set up the trading bot for the first time. I want to start with paper trading."
 ```
 
 **2. Configuration Help**
+
 ```
 "Explain the configuration options in .env and help me choose appropriate settings for my account size of $[AMOUNT]."
 ```
 
 **3. Run in Paper Mode**
+
 ```
 "Help me start the bot in paper trading mode and explain what I should monitor."
 ```
@@ -37,16 +40,19 @@ claude
 ### For Strategy Development
 
 **4. Understand Existing Strategies**
+
 ```
 "Explain how the momentum strategy works and when I should use it."
 ```
 
 **5. Modify a Strategy**
+
 ```
 "Help me adjust the mean reversion strategy to be more conservative."
 ```
 
 **6. Create New Strategy**
+
 ```
 "I want to create a Bollinger Bands strategy. Guide me through the implementation."
 ```
@@ -54,16 +60,19 @@ claude
 ### For Testing & Validation
 
 **7. Run Tests**
+
 ```
 "Run all tests and fix any failures."
 ```
 
 **8. Security Review**
+
 ```
 "Perform a security audit before I deploy to live trading."
 ```
 
 **9. Validate Configuration**
+
 ```
 "Review my .env configuration and check if my risk parameters are appropriate for a $10,000 account."
 ```
@@ -71,11 +80,13 @@ claude
 ### For Deployment
 
 **10. Pre-Deployment Check**
+
 ```
 "I want to deploy to live trading. Walk me through the pre-deployment checklist."
 ```
 
 **11. Gradual Rollout**
+
 ```
 "Create a gradual rollout plan for going live, starting with minimal risk."
 ```
@@ -83,16 +94,19 @@ claude
 ### For Debugging
 
 **12. Analyze Logs**
+
 ```
 "Analyze the logs from today and tell me if there were any issues."
 ```
 
 **13. Debug Issue**
+
 ```
 "The bot is placing duplicate orders. Help me debug this issue."
 ```
 
 **14. Performance Issues**
+
 ```
 "The bot seems slow. Help me profile and optimize performance."
 ```
@@ -111,9 +125,10 @@ For complex requests, use the templates in `.claude/prompts/`:
 ### Safety First
 
 Always follow this progression:
+
 1. **Paper Trading** (test with simulated money)
-2. **Small Live** (minimal position sizes)
-3. **Full Live** (normal operation)
+1. **Small Live** (minimal position sizes)
+1. **Full Live** (normal operation)
 
 ### Ask Specific Questions
 
@@ -156,16 +171,19 @@ Agent: [Reviews logs, analyzes performance, provides recommendations]
 ## Emergency Commands
 
 ### Stop the Bot Immediately
+
 ```
 "How do I stop the bot immediately?"
 ```
 
 ### Cancel All Orders
+
 ```
 "Help me cancel all open orders right now."
 ```
 
 ### Check Current Status
+
 ```
 "Show me the current positions and recent activity."
 ```
@@ -173,16 +191,19 @@ Agent: [Reviews logs, analyzes performance, provides recommendations]
 ## Best Practices
 
 ### Daily Checks
+
 ```
 "Analyze today's trading and summarize performance."
 ```
 
 ### Weekly Reviews
+
 ```
 "Review this week's trading performance and suggest any parameter adjustments."
 ```
 
 ### Before Any Changes
+
 ```
 "I'm about to modify [COMPONENT]. What should I test to ensure it's safe?"
 ```
@@ -190,16 +211,19 @@ Agent: [Reviews logs, analyzes performance, provides recommendations]
 ## Get More Help
 
 ### View Available Templates
+
 ```
 "What prompt templates are available?"
 ```
 
 ### Understand a Component
+
 ```
 "Explain how the risk manager works."
 ```
 
 ### Learn About Features
+
 ```
 "What strategies are available and when should I use each one?"
 ```
@@ -207,6 +231,7 @@ Agent: [Reviews logs, analyzes performance, provides recommendations]
 ## Project-Specific Knowledge
 
 The agent understands:
+
 - ✅ Revolut Crypto X API integration
 - ✅ Ed25519 authentication
 - ✅ All four trading strategies
@@ -219,6 +244,7 @@ The agent understands:
 ## What the Agent Can Do
 
 ### Code Tasks
+
 - Write new trading strategies
 - Add technical indicators
 - Create tests
@@ -227,6 +253,7 @@ The agent understands:
 - Review security
 
 ### Analysis Tasks
+
 - Review strategy logic
 - Validate risk parameters
 - Analyze trading logs
@@ -234,12 +261,14 @@ The agent understands:
 - Identify issues
 
 ### Planning Tasks
+
 - Design new features
 - Plan deployments
 - Create testing strategies
 - Suggest improvements
 
 ### Educational Tasks
+
 - Explain code
 - Teach concepts
 - Document systems
@@ -248,11 +277,11 @@ The agent understands:
 ## What Makes This Agent Special
 
 1. **Financial Safety Focus**: Prioritizes preventing losses over features
-2. **Risk-Aware**: Understands trading risks and recommends conservative approaches
-3. **Testing Emphasis**: Insists on thorough testing before deployment
-4. **Security Conscious**: Actively looks for vulnerabilities
-5. **Project Context**: Knows your codebase structure and patterns
-6. **Practical**: Provides actionable, specific advice
+1. **Risk-Aware**: Understands trading risks and recommends conservative approaches
+1. **Testing Emphasis**: Insists on thorough testing before deployment
+1. **Security Conscious**: Actively looks for vulnerabilities
+1. **Project Context**: Knows your codebase structure and patterns
+1. **Practical**: Provides actionable, specific advice
 
 ## Common Workflows
 
@@ -297,10 +326,11 @@ The agent understands:
 ## Support
 
 If you encounter issues:
+
 1. Ask the agent for help (it's designed for troubleshooting)
-2. Check the main README.md
-3. Review the CHANGELOG.md
-4. Check Revolut API documentation
+1. Check the main README.md
+1. Review the CHANGELOG.md
+1. Check Revolut API documentation
 
 ## Version
 
@@ -308,6 +338,6 @@ Current agent version: **1.0.0**
 
 Last updated: December 2024
 
----
+______________________________________________________________________
 
 **Remember**: This agent is designed to help you trade safely and profitably. Always follow its safety recommendations, especially regarding testing and risk management. When in doubt, ask!

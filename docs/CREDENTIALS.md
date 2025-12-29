@@ -66,19 +66,19 @@ make run-paper
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `make ops` | Setup 1Password and store credentials |
-| `make opshow` | Show stored credentials (masked) |
-| `make opstatus` | Check 1Password connection status |
-| `make opdelete` | Delete credentials from 1Password |
+| Command         | Description                           |
+| --------------- | ------------------------------------- |
+| `make ops`      | Setup 1Password and store credentials |
+| `make opshow`   | Show stored credentials (masked)      |
+| `make opstatus` | Check 1Password connection status     |
+| `make opdelete` | Delete credentials from 1Password     |
 
 ## How It Works
 
 1. **No .env File**: The bot reads credentials directly from 1Password at runtime
-2. **Private Key**: Retrieved from 1Password field `REVOLUT_PRIVATE_KEY` (never touches disk)
-3. **API Key**: Retrieved from field `REVOLUT_API_KEY`
-4. **Telegram**: Retrieved from `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+1. **Private Key**: Retrieved from 1Password field `REVOLUT_PRIVATE_KEY` (never touches disk)
+1. **API Key**: Retrieved from field `REVOLUT_API_KEY`
+1. **Telegram**: Retrieved from `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
 
 ## Configuration
 
@@ -132,9 +132,9 @@ make opstatus
 If bot fails with "1Password required" error:
 
 1. Check 1Password CLI is installed: `op --version`
-2. Check you're signed in: `op account list`
-3. Check credentials exist: `make opstatus`
-4. Re-run setup if needed: `make ops`
+1. Check you're signed in: `op account list`
+1. Check credentials exist: `make opstatus`
+1. Re-run setup if needed: `make ops`
 
 ## Security Best Practices
 
@@ -159,8 +159,8 @@ If bot fails with "1Password required" error:
 ### Sharing Credentials
 
 1. Create shared vault in 1Password
-2. Store credentials in shared vault
-3. Team members can access via their 1Password accounts
+1. Store credentials in shared vault
+1. Team members can access via their 1Password accounts
 
 ```bash
 # Team lead stores credentials

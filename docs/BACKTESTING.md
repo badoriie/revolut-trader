@@ -5,6 +5,7 @@ Test your trading strategies on historical data before risking real money.
 ## Overview
 
 The backtesting system allows you to:
+
 - **Validate strategies** using real historical market data from Revolut X
 - **Measure performance** with comprehensive metrics (win rate, profit factor, Sharpe ratio, etc.)
 - **Test different configurations** (risk levels, trading pairs, time periods)
@@ -73,18 +74,21 @@ python backtest.py --strategy multi_strategy \
 The backtest provides comprehensive performance analysis:
 
 ### Core Metrics
+
 - **Initial Capital**: Starting balance
 - **Final Capital**: Ending balance after all trades
 - **Total P&L**: Net profit/loss in USD
 - **Return %**: Percentage return on initial capital
 
 ### Trade Statistics
+
 - **Total Trades**: Number of completed round-trip trades
 - **Winning Trades**: Trades that closed with profit
 - **Losing Trades**: Trades that closed with loss
 - **Win Rate**: Percentage of winning trades
 
 ### Risk Metrics
+
 - **Profit Factor**: Gross profit / Gross loss (higher is better)
 - **Max Drawdown**: Largest peak-to-trough decline
 - **Sharpe Ratio**: Risk-adjusted return
@@ -111,17 +115,20 @@ Max Drawdown:       $342.15
 ## Understanding Results
 
 ### Win Rate
+
 - **> 50%**: Strategy has positive edge
 - **40-50%**: Acceptable with good profit factor
 - **< 40%**: Needs improvement
 
 ### Profit Factor
+
 - **> 2.0**: Excellent
 - **1.5-2.0**: Good
 - **1.0-1.5**: Break-even to marginal
 - **< 1.0**: Losing strategy
 
 ### Max Drawdown
+
 - Lower is better
 - Should be acceptable relative to returns
 - Consider your risk tolerance
@@ -129,24 +136,28 @@ Max Drawdown:       $342.15
 ## Interpreting Different Strategies
 
 ### Market Making
+
 - **Expected**: High trade volume, lower profit per trade
 - **Good Win Rate**: 55-65%
 - **Profit Factor**: 1.3-1.8
 - **Works Best**: In ranging markets with tight spreads
 
 ### Momentum
+
 - **Expected**: Moderate trade volume, larger wins
 - **Good Win Rate**: 45-55%
 - **Profit Factor**: 1.8-2.5
 - **Works Best**: In trending markets
 
 ### Mean Reversion
+
 - **Expected**: High trade frequency, quick profits
 - **Good Win Rate**: 60-70%
 - **Profit Factor**: 1.5-2.0
 - **Works Best**: In sideways/oscillating markets
 
 ### Multi-Strategy
+
 - **Expected**: Balanced performance
 - **Good Win Rate**: 55-60%
 - **Profit Factor**: 1.6-2.2
@@ -162,6 +173,7 @@ python backtest.py --strategy momentum \
 ```
 
 The JSON file includes:
+
 - Configuration settings
 - Performance metrics
 - Individual trade details
@@ -198,6 +210,7 @@ The JSON file includes:
 ## Best Practices
 
 ### 1. Test Multiple Time Periods
+
 ```bash
 # Test different periods
 python backtest.py --days 30    # Recent performance
@@ -207,6 +220,7 @@ python backtest.py --days 365   # Annual
 ```
 
 ### 2. Compare Different Strategies
+
 ```bash
 # Run all strategies on same data
 for strategy in market_making momentum mean_reversion multi_strategy; do
@@ -216,6 +230,7 @@ done
 ```
 
 ### 3. Test Different Risk Levels
+
 ```bash
 # Compare risk levels
 python backtest.py --risk conservative --output ./results/conservative.json
@@ -224,6 +239,7 @@ python backtest.py --risk aggressive --output ./results/aggressive.json
 ```
 
 ### 4. Optimize Timeframes
+
 ```bash
 # Test different candle intervals
 python backtest.py --interval 15   # 15-minute candles
@@ -234,17 +250,20 @@ python backtest.py --interval 240  # 4-hour candles
 ## Limitations & Considerations
 
 ### Data Limitations
+
 - **Maximum History**: Limited by Revolut X API (typically 100 candles per request)
 - **Candle Gaps**: Some periods may have missing data
 - **Slippage Not Modeled**: Assumes instant fills at exact prices
 
 ### Execution Differences
+
 - **No Market Impact**: Assumes orders don't move the market
 - **Perfect Fills**: All orders execute immediately
 - **No Latency**: Instant data and execution
 - **No Fees**: Trading fees not included (add manually if needed)
 
 ### Overfitting Risk
+
 - Don't over-optimize to historical data
 - Test on multiple time periods
 - Use out-of-sample testing
@@ -253,21 +272,27 @@ python backtest.py --interval 240  # 4-hour candles
 ## Troubleshooting
 
 ### No Historical Data Available
+
 ```
 ERROR | No historical data available
 ```
+
 **Solution**: Check your API credentials and ensure the symbol is correct
 
 ### API Endpoint Not Found
+
 ```
 ERROR | Failed to fetch candles: 404 Not Found
 ```
+
 **Solution**: The candles endpoint may use a different path. Check the implementation notes.
 
 ### Insufficient Data
+
 ```
 WARNING | Retrieved only 50 candles
 ```
+
 **Solution**: The API may have limited historical data. Try a shorter time period or different interval.
 
 ## Next Steps
@@ -275,9 +300,9 @@ WARNING | Retrieved only 50 candles
 After backtesting:
 
 1. **Analyze Results**: Review metrics and trade details
-2. **Optimize Parameters**: Adjust strategy settings if needed
-3. **Paper Trade**: Test with live data in paper mode
-4. **Live Trade**: Only after consistent positive results
+1. **Optimize Parameters**: Adjust strategy settings if needed
+1. **Paper Trade**: Test with live data in paper mode
+1. **Live Trade**: Only after consistent positive results
 
 ```bash
 # After successful backtest, test in paper mode
@@ -291,6 +316,6 @@ python run.py --mode paper --strategy momentum --risk moderate
 - [API Client Documentation](../src/api/)
 - [Implementation Notes](./IMPLEMENTATION_NOTES_2025-12-27.md)
 
----
+______________________________________________________________________
 
 **Note**: Past performance does not guarantee future results. Always start with paper trading before risking real capital.

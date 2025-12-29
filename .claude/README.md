@@ -70,10 +70,10 @@ The trading bot skill is automatically available when working in this project di
 ### Critical Safety Rules
 
 1. **Always test in paper mode first** before live trading
-2. **Never bypass risk limits** in code or configuration
-3. **Validate all financial calculations** before deployment
-4. **Protect API credentials** - never commit to git
-5. **Review security implications** of all changes
+1. **Never bypass risk limits** in code or configuration
+1. **Validate all financial calculations** before deployment
+1. **Protect API credentials** - never commit to git
+1. **Review security implications** of all changes
 
 ### Pre-Deployment Checklist
 
@@ -96,6 +96,7 @@ Before deploying to live trading:
 ### 1. Strategy Development
 
 The agent can help you:
+
 - Implement new trading strategies following the `BaseStrategy` pattern
 - Optimize existing strategy parameters
 - Add technical indicators (RSI, MACD, Bollinger Bands, etc.)
@@ -103,6 +104,7 @@ The agent can help you:
 - Suggest improvements based on market conditions
 
 Example:
+
 ```
 "I want to add a Bollinger Bands strategy. Help me implement it following
 the existing strategy pattern, with proper risk controls and tests."
@@ -111,6 +113,7 @@ the existing strategy pattern, with proper risk controls and tests."
 ### 2. Risk Management
 
 The agent validates:
+
 - Position sizing calculations
 - Stop loss and take profit logic
 - Maximum daily loss limits
@@ -118,6 +121,7 @@ The agent validates:
 - Risk-adjusted position sizing
 
 Example:
+
 ```
 "Review my risk parameters for a $50,000 account. I want to use
 moderate risk level but be extra conservative on stop losses."
@@ -126,6 +130,7 @@ moderate risk level but be extra conservative on stop losses."
 ### 3. Security Auditing
 
 The agent checks for:
+
 - API authentication vulnerabilities
 - Order validation and size limits
 - Race conditions in order execution
@@ -134,6 +139,7 @@ The agent checks for:
 - Cryptographic implementation (Ed25519)
 
 Example:
+
 ```
 "Perform a comprehensive security audit before I deploy to live trading.
 Focus on order execution and API authentication."
@@ -142,6 +148,7 @@ Focus on order execution and API authentication."
 ### 4. Testing & Quality
 
 The agent helps with:
+
 - Writing unit tests for strategies and risk management
 - Creating integration tests for API client
 - Setting up backtesting frameworks
@@ -149,6 +156,7 @@ The agent helps with:
 - Improving test coverage
 
 Example:
+
 ```
 "Write comprehensive tests for the MultiStrategy class, including
 edge cases like conflicting signals and risk limit violations."
@@ -157,6 +165,7 @@ edge cases like conflicting signals and risk limit violations."
 ### 5. Deployment Support
 
 The agent assists with:
+
 - Configuration validation (1Password, config.py)
 - Pre-deployment checklist verification
 - Paper trading validation
@@ -164,6 +173,7 @@ The agent assists with:
 - Monitoring setup
 
 Example:
+
 ```
 "I'm ready to deploy to live trading. Walk me through the deployment
 checklist and validate my configuration."
@@ -172,6 +182,7 @@ checklist and validate my configuration."
 ### 6. Debugging & Analysis
 
 The agent can:
+
 - Analyze log files for errors and issues
 - Debug trading logic and execution problems
 - Investigate position management issues
@@ -179,6 +190,7 @@ The agent can:
 - Identify performance bottlenecks
 
 Example:
+
 ```
 "The bot placed duplicate orders this morning. Help me analyze the
 logs and find the root cause."
@@ -189,6 +201,7 @@ logs and find the root cause."
 ### Clean and Maintainable Code is CRITICAL
 
 **This is a financial trading system handling real money. Code quality is not optional - it's essential for:**
+
 - **Safety**: Bugs can cause financial losses
 - **Reliability**: Trading systems must be dependable 24/7
 - **Auditability**: Code must be reviewable for compliance
@@ -199,32 +212,38 @@ logs and find the root cause."
 ### Core Principles
 
 1. **Readability First**
+
    - Code is read 10x more than it's written
    - Use descriptive variable names (`position_size` not `ps`)
    - Keep functions short and focused (< 50 lines)
    - Avoid nested complexity (max 3 levels)
 
-2. **Explicit Over Clever**
+1. **Explicit Over Clever**
+
    - Simple, obvious code beats clever one-liners
    - Prefer clarity over performance micro-optimizations
    - Document "why" not "what" in comments
 
-3. **Type Safety**
+1. **Type Safety**
+
    - Use type hints for all function signatures
    - Leverage Pydantic models for data validation
    - Run mypy type checking before commits
 
-4. **Error Handling**
+1. **Error Handling**
+
    - Handle errors explicitly, never swallow exceptions
    - Use specific exception types
    - Log errors with context for debugging
 
-5. **Testing is Mandatory**
+1. **Testing is Mandatory**
+
    - Write tests before deploying to production
    - Test edge cases and failure scenarios
    - Maintain >80% code coverage
 
-6. **Documentation**
+1. **Documentation**
+
    - All public functions must have docstrings
    - Document assumptions and constraints
    - Keep README and docs up to date
@@ -234,28 +253,28 @@ logs and find the root cause."
 ### When Developing Strategies
 
 1. Always inherit from `BaseStrategy` in `src/strategies/base_strategy.py`
-2. Implement required methods: `analyze()`, `initialize()`, `cleanup()`
-3. Use the `Signal` model for consistency
-4. Include proper logging at DEBUG and INFO levels
-5. Add comprehensive docstrings
-6. Write unit tests before deploying
-7. **Keep code clean and maintainable** - follow the Code Quality Standards above
+1. Implement required methods: `analyze()`, `initialize()`, `cleanup()`
+1. Use the `Signal` model for consistency
+1. Include proper logging at DEBUG and INFO levels
+1. Add comprehensive docstrings
+1. Write unit tests before deploying
+1. **Keep code clean and maintainable** - follow the Code Quality Standards above
 
 ### When Modifying Risk Management
 
 1. Never reduce safety limits without thorough testing
-2. Validate calculations with multiple test cases
-3. Consider edge cases (market gaps, flash crashes)
-4. Test with small positions first
-5. Document reasoning for parameter changes
+1. Validate calculations with multiple test cases
+1. Consider edge cases (market gaps, flash crashes)
+1. Test with small positions first
+1. Document reasoning for parameter changes
 
 ### When Working with API Client
 
 1. Never log API keys or private keys
-2. Always validate responses before using data
-3. Handle rate limits gracefully
-4. Implement proper retry logic with exponential backoff
-5. Test authentication thoroughly
+1. Always validate responses before using data
+1. Handle rate limits gracefully
+1. Implement proper retry logic with exponential backoff
+1. Test authentication thoroughly
 
 ## File Organization
 
@@ -293,6 +312,7 @@ logs and find the root cause."
 ### Log Analysis
 
 Ask the agent to help analyze logs:
+
 ```
 "Analyze the last 24 hours of logs and summarize trading activity"
 "Find any ERROR level logs from today"
@@ -304,36 +324,42 @@ Ask the agent to help analyze logs:
 ### Custom Strategy Development Workflow
 
 1. **Design Phase**
+
    ```
    "I want to create a strategy that trades based on order flow imbalance.
    Help me design the signal generation logic and risk parameters."
    ```
 
-2. **Implementation Phase**
+1. **Implementation Phase**
+
    ```
    "Implement the order flow imbalance strategy we designed, following
    the BaseStrategy pattern."
    ```
 
-3. **Testing Phase**
+1. **Testing Phase**
+
    ```
    "Write comprehensive unit tests for the new strategy and create
    test cases for edge conditions."
    ```
 
-4. **Backtesting Phase**
+1. **Backtesting Phase**
+
    ```
    "Help me set up a backtesting framework to validate the strategy
    on historical data."
    ```
 
-5. **Paper Trading Phase**
+1. **Paper Trading Phase**
+
    ```
    "Configure the bot to run the new strategy in paper mode and
    set up monitoring."
    ```
 
-6. **Live Deployment Phase**
+1. **Live Deployment Phase**
+
    ```
    "Review the paper trading results and help me deploy to live
    with conservative position sizing."
@@ -367,24 +393,28 @@ Suggest appropriate position sizing, stop losses, and position limits."
 ### Common Issues
 
 **Issue**: Strategy not generating signals
+
 ```
 "Debug why my mean reversion strategy isn't generating any signals.
 Check the analyze() method and market data processing."
 ```
 
 **Issue**: Orders being rejected
+
 ```
 "My orders are being rejected by the Revolut API. Help me analyze
 the API responses and validate order formatting."
 ```
 
 **Issue**: Risk limits triggering unexpectedly
+
 ```
 "The daily loss limit is triggering even though I'm profitable.
 Debug the risk calculation logic."
 ```
 
 **Issue**: Telegram notifications not working
+
 ```
 "Telegram notifications aren't being sent. Validate my configuration
 and test the notification system."
@@ -395,9 +425,9 @@ and test the notification system."
 The agent configuration can be extended. Common additions:
 
 1. **New Strategy Templates**: Add strategy templates to `prompts/`
-2. **Custom Indicators**: Document custom technical indicators
-3. **Backtest Frameworks**: Add backtesting utilities
-4. **Performance Metrics**: Add profit/loss analysis tools
+1. **Custom Indicators**: Document custom technical indicators
+1. **Backtest Frameworks**: Add backtesting utilities
+1. **Performance Metrics**: Add profit/loss analysis tools
 
 ## Security Notes
 
@@ -426,10 +456,11 @@ The agent configuration can be extended. Common additions:
 ## Support
 
 For issues or questions:
+
 1. Ask the Claude Code agent for help
-2. Review the main README.md for project documentation
-3. Check CHANGELOG.md for recent changes
-4. Review Revolut API documentation: https://developer.revolut.com
+1. Review the main README.md for project documentation
+1. Check CHANGELOG.md for recent changes
+1. Review Revolut API documentation: https://developer.revolut.com
 
 ## Version History
 

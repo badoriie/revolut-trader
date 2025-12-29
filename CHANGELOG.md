@@ -3,6 +3,7 @@
 ## [0.3.0] - 2025-12-27
 
 ### Added - Production Optimization & Safety
+
 - **Input Validation**: Pydantic models for all API responses
   - `OrderBookResponse`, `BalanceResponse`, `CandleResponse`, `OrderCreationResponse`
   - Prevents crashes from malformed API data
@@ -61,6 +62,7 @@
   - Zero type errors in 28 source files
 
 ### Changed
+
 - **API Client**: All API methods now validate responses with Pydantic
   - `get_ticker()` validates order book structure
   - `get_balance()` validates balance data
@@ -77,11 +79,13 @@
 - **Dependencies**: Added watchdog for better Streamlit performance
 
 ### Documentation
+
 - Created `docs/OPTIMIZATION_REPORT_2025-12-27.md` - Comprehensive optimization report
 - Moved `CREDENTIALS.md` to `docs/` folder for better organization
 - Updated Makefile with new commands: `make backtest`, `make dashboard`
 
 ### Fixed
+
 - **Dashboard**: Fixed datetime parsing with microseconds (ISO8601 format)
 - **Dashboard**: Updated deprecated `use_container_width` to `width="stretch"`
 - **Thread Safety**: Eliminated race conditions in position tracking
@@ -90,6 +94,7 @@
 ## [0.2.0] - 2025-12-27
 
 ### Added
+
 - **Interactive Web Dashboard**: Comprehensive Streamlit dashboard for visualization
   - `dashboard.py` - Web-based dashboard with interactive charts
   - Backtest results viewer with equity curves and P&L charts
@@ -106,6 +111,7 @@
   - Configurable candle intervals (5m, 15m, 30m, 1h, 4h, 1d)
 
 ### Documentation
+
 - Created `docs/BACKTESTING.md` - Complete backtesting guide
 - Updated `README.md` with backtesting examples
 - Added usage examples for all backtesting scenarios
@@ -113,6 +119,7 @@
 ## [0.1.1] - 2025-12-27
 
 ### Fixed
+
 - **1Password CLI Integration**: Added `--reveal` flag to `get_field()` method in `src/utils/onepassword.py` to properly retrieve concealed fields from 1Password CLI v2
 - **Paper Mode Real Data**: Modified paper trading mode to use real market data from Revolut X API instead of generating fake random prices
 - **API Base URL**: Updated Revolut X API base URL from `https://api.revolut.com/api/1.0` to `https://revx.revolut.com/api/1.0`
@@ -120,11 +127,13 @@
 - **API Client**: Fixed duplicate `/api/1.0` path construction in authenticated requests
 
 ### Changed
+
 - Paper mode now fetches real market data while simulating order executions
 - `get_ticker()` method now uses public order book endpoint and normalizes response format
 - Both paper and live modes use identical market data source (only execution differs)
 
 ### Technical Details
+
 - Paper mode provides realistic testing with actual market conditions
 - Order book data includes bid, ask, and calculated mid-price
 - Authentication required even for "public" endpoints on Revolut X API
@@ -134,6 +143,7 @@
 ### Initial Release
 
 #### Core Features
+
 - 4 trading strategies: Market Making, Momentum, Mean Reversion, Multi-Strategy
 - 3 configurable risk levels: Conservative, Moderate, Aggressive
 - Paper trading mode for safe testing
@@ -144,6 +154,7 @@
 - Real-time position monitoring
 
 #### Technical Stack
+
 - Python 3.11+ support
 - Async/await architecture
 - Type hints with Pydantic models
@@ -151,12 +162,14 @@
 - Comprehensive logging with Loguru
 
 #### Security
+
 - Environment-based configuration
 - Secure API key storage
 - .gitignore for sensitive files
 - No hardcoded credentials
 
 ### Cleaned Up
+
 - Removed unused dependencies (pandas, numpy, fastapi, etc.)
 - Removed unimplemented features (database, dashboard, backtesting modules)
 - Streamlined configuration
