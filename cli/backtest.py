@@ -15,6 +15,7 @@ from loguru import logger
 from src.api.client import RevolutAPIClient
 from src.backtest.engine import BacktestEngine
 from src.config import RiskLevel, StrategyType
+from src.utils.db_persistence import DatabasePersistence
 
 
 def setup_logging(log_level: str):
@@ -118,6 +119,21 @@ async def run_backtest(args):
                 json.dump(output_data, f, indent=2)
 
             logger.info(f"Results saved to {output_file}")
+
+            # Also save to database for analytics
+            db = DatabasePersistence()
+            run_id = db.save_backtest_run(
+                strategy=strategy_type.value,
+                risk_level=risk_level.value,
+                symbols=symbols,
+                days=args.days,
+                interval=args.interval,
+                initial_capital=float(initial_capital),
+                results=output_data["results"],
+                equity_curve_file=str(output_file),
+                trades_file=str(output_file),
+            )
+            logger.info(f"Backtest run saved to database: ID={run_id}")
 
     finally:
         await api_client.close()

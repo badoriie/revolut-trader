@@ -114,6 +114,71 @@ class SessionDB(Base):
         )
 
 
+class BacktestRunDB(Base):
+    """Backtest run records with configuration and results."""
+
+    __tablename__ = "backtest_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    strategy = Column(String(50), nullable=False)
+    risk_level = Column(String(20), nullable=False)
+    symbols = Column(Text, nullable=False)  # JSON array
+    days = Column(Integer, nullable=False)
+    interval = Column(String(10), nullable=False)
+    initial_capital = Column(Float, nullable=False)
+
+    # Results
+    final_capital = Column(Float, nullable=False)
+    total_pnl = Column(Float, nullable=False)
+    return_pct = Column(Float, nullable=False)
+    total_trades = Column(Integer, nullable=False)
+    winning_trades = Column(Integer, nullable=False)
+    losing_trades = Column(Integer, nullable=False)
+    win_rate = Column(Float, nullable=False)
+    profit_factor = Column(Float, nullable=True)
+    max_drawdown = Column(Float, nullable=False)
+    sharpe_ratio = Column(Float, nullable=True)
+
+    # Storage paths (for detailed data)
+    equity_curve_file = Column(String(255), nullable=True)  # Path to equity curve JSON
+    trades_file = Column(String(255), nullable=True)  # Path to trades JSON
+
+    __table_args__ = (
+        Index("idx_run_at_desc", run_at.desc()),
+        Index("idx_strategy_run_at", "strategy", "run_at"),
+        Index("idx_symbols", "symbols"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<BacktestRun(id={self.id}, strategy={self.strategy}, "
+            f"return={self.return_pct:.2f}%, trades={self.total_trades})>"
+        )
+
+
+class LogEntryDB(Base):
+    """Optional log storage in database for critical events."""
+
+    __tablename__ = "log_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    level = Column(String(10), nullable=False)  # INFO, WARNING, ERROR, CRITICAL
+    module = Column(String(100), nullable=True)
+    message = Column(Text, nullable=False)
+    session_id = Column(Integer, nullable=True)  # Link to session if applicable
+
+    __table_args__ = (
+        Index("idx_timestamp_desc", timestamp.desc()),
+        Index("idx_level_timestamp", "level", "timestamp"),
+        Index("idx_session", "session_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<LogEntry(id={self.id}, level={self.level}, timestamp={self.timestamp})>"
+
+
 def create_db_engine(database_url: str = "sqlite:///data/trading.db"):
     """Create database engine.
 

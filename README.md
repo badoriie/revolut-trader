@@ -319,6 +319,8 @@ The bot uses a **hybrid persistence system** combining SQLite database (primary)
 - **Portfolio Snapshots**: Time-series data saved immediately for real-time analytics
 - **Trade History**: All completed trades with indexed queries
 - **Session Tracking**: Each bot run is tracked with start/end metrics
+- **Backtest Results**: All backtest runs with performance metrics and analytics
+- **Log Entries** (optional): Critical events and errors stored for analysis
 
 #### JSON Backup (Secondary)
 
@@ -335,6 +337,9 @@ make db-stats
 # Show trading analytics (last 30 days)
 make db-analytics
 
+# Show backtest results (last 10 runs)
+make db-backtests
+
 # Export data to JSON files
 make db-export
 
@@ -347,10 +352,11 @@ make db-migrate
 
 #### Data Saving Schedule
 
-- **Database**: Immediately after each trade and snapshot
+- **Database**: Immediately after each trade, snapshot, and backtest run
 - **JSON Backup**: Daily at midnight (last 7 days)
 - **Periodic Save**: Every 10 iterations (~10 minutes)
 - **On Shutdown**: Final state saved to both systems
+- **Backtest Results**: Saved to database and JSON after each backtest run
 
 #### Migration to PostgreSQL
 

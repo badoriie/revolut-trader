@@ -1,4 +1,4 @@
-.PHONY: help setup install clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db-stats db-analytics db-export db-export-csv db-migrate
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db-stats db-analytics db-backtests db-export db-export-csv db-migrate
 
 # Default target - show help
 help:
@@ -8,6 +8,7 @@ help:
 	@echo "  make setup             - Complete project setup (uv + 1Password + dependencies)"
 	@echo "  make install           - Install/update dependencies with uv"
 	@echo "  make clean             - Remove cache files and artifacts"
+	@echo "  make deep-clean        - ⚠️  Remove ALL generated files (data, logs, venv)"
 	@echo ""
 	@echo "🔐 Credentials (1Password):"
 	@echo "  make ops               - Setup and store credentials in 1Password"
@@ -37,6 +38,7 @@ help:
 	@echo "💾 Database Management:"
 	@echo "  make db-stats          - Show database statistics"
 	@echo "  make db-analytics      - Show trading analytics (last 30 days)"
+	@echo "  make db-backtests      - Show backtest results (last 10 runs)"
 	@echo "  make db-export         - Export data to JSON files"
 	@echo "  make db-export-csv     - Export data to CSV for analysis"
 	@echo ""
@@ -73,6 +75,44 @@ clean:
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
 	@echo "✅ Clean complete"
+
+# Deep clean - remove ALL generated files (data, logs, cache, venv)
+deep-clean:
+	@echo "🚨 WARNING: This will delete ALL generated files including:"
+	@echo "  - Database (data/trading.db)"
+	@echo "  - All logs (logs/)"
+	@echo "  - Backtest results (results/)"
+	@echo "  - Backups (backups/)"
+	@echo "  - Data files (data/)"
+	@echo "  - Virtual environment (.venv/)"
+	@echo "  - All cache and build files"
+	@echo ""
+	@read -p "Type 'YES' to confirm deep clean: " confirm && [ "$$confirm" = "YES" ] || (echo "❌ Cancelled" && exit 1)
+	@echo ""
+	@echo "🧹 Performing deep clean..."
+	@# Python cache and build artifacts
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
+	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name ".coverage" -delete 2>/dev/null || true
+	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
+	@# Data and runtime files (completely remove directories)
+	@rm -rf data 2>/dev/null || true
+	@mkdir -p data && touch data/.gitkeep
+	@rm -rf logs 2>/dev/null || true
+	@rm -rf results 2>/dev/null || true
+	@rm -rf backups 2>/dev/null || true
+	@# Virtual environment
+	@rm -rf .venv 2>/dev/null || true
+	@# uv cache
+	@rm -rf .uv 2>/dev/null || true
+	@echo ""
+	@echo "✅ Deep clean complete - project is now in fresh state"
+	@echo "ℹ️  Run 'make install' to reinstall dependencies"
 
 # ============================================================================
 # 1Password Credentials
@@ -242,6 +282,12 @@ db-analytics:
 	@DAYS=$${DAYS:-30}; \
 	echo "📊 Trading Analytics (Last $$DAYS days)"; \
 	uv run python cli/db_manage.py analytics $$DAYS
+
+# Show backtest results
+db-backtests:
+	@LIMIT=$${LIMIT:-10}; \
+	echo "📊 Backtest Results (Last $$LIMIT runs)"; \
+	uv run python cli/db_manage.py backtests $$LIMIT
 
 # Export data to JSON
 db-export:

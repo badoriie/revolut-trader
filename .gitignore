@@ -187,6 +187,9 @@ config/*.key
 # Configuration backups (may contain sensitive data)
 /backups/
 
+# Backtest results (generated files)
+/results/
+
 # 1Password Only
 # This project uses 1Password exclusively for credentials
 # See CREDENTIALS.md for setup instructions
