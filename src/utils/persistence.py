@@ -1,7 +1,7 @@
 """Data persistence module for portfolio snapshots and trade history."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -122,7 +122,7 @@ class DataPersistence:
         """
         try:
             data = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "cash_balance": str(cash_balance),
                 "total_pnl": str(total_pnl),
                 "metadata": metadata,

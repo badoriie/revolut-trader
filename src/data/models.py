@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -39,13 +39,13 @@ class Position(BaseModel):
     realized_pnl: Decimal = Decimal("0")
     stop_loss: Decimal | None = None
     take_profit: Decimal | None = None
-    opened_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    opened_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     def update_price(self, new_price: Decimal) -> None:
         """Update current price and calculate unrealized PnL."""
         self.current_price = new_price
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(UTC)
 
         if self.side == OrderSide.BUY:
             self.unrealized_pnl = (new_price - self.entry_price) * self.quantity
@@ -74,8 +74,8 @@ class Order(BaseModel):
     price: Decimal | None = None
     filled_quantity: Decimal = Decimal("0")
     status: OrderStatus = OrderStatus.PENDING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     strategy: str | None = None
 
 
@@ -89,7 +89,7 @@ class Trade(BaseModel):
     quantity: Decimal
     price: Decimal
     commission: Decimal = Decimal("0")
-    executed_at: datetime = Field(default_factory=datetime.utcnow)
+    executed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class MarketData(BaseModel):
@@ -114,14 +114,14 @@ class Signal(BaseModel):
     strength: float = Field(ge=0.0, le=1.0)
     price: Decimal
     reason: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class PortfolioSnapshot(BaseModel):
     """Portfolio state snapshot."""
 
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     total_value: Decimal
     cash_balance: Decimal
     positions_value: Decimal

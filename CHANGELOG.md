@@ -51,6 +51,10 @@
   - Replaced `dict()` calls with dictionary literals in dashboard.py (5 instances)
   - Removed unused variables: `pnl_color` in dashboard.py, `close_order` and `position` in executor.py
   - All pre-commit hooks now pass successfully
+- **Python 3.12+ Compatibility**: Replaced deprecated `datetime.utcnow()` with `datetime.now(UTC)`
+  - Updated all files: bot.py, persistence.py, models.py, backtest/engine.py
+  - Used modern `UTC` constant instead of `timezone.utc`
+  - Updated Field default_factory to use lambda for datetime fields
 
 ## [0.3.0] - 2025-12-27
 

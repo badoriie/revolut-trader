@@ -1,6 +1,6 @@
 import asyncio
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import httpx
@@ -297,7 +297,7 @@ class TradingBot:
 
             return MarketData(
                 symbol=symbol,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(UTC),
                 bid=Decimal(str(ticker_data.get("bid", 0))),
                 ask=Decimal(str(ticker_data.get("ask", 0))),
                 last=Decimal(str(ticker_data.get("last", 0))),

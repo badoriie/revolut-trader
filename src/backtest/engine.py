@@ -1,6 +1,6 @@
 """Backtesting engine for strategy validation using historical data."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -125,7 +125,7 @@ class BacktestEngine:
             List of candle data
         """
         # Calculate start timestamp
-        since = int((datetime.utcnow() - timedelta(days=days)).timestamp() * 1000)
+        since = int((datetime.now(UTC) - timedelta(days=days)).timestamp() * 1000)
 
         logger.info(f"Fetching {days} days of historical data for {symbol} ({interval}min candles)")
         candles = await self.api_client.get_candles(
@@ -393,7 +393,7 @@ class BacktestEngine:
                 side=OrderSide.SELL if pos.side == OrderSide.BUY else OrderSide.BUY,
                 quantity=pos.quantity,
                 price=pos.current_price,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(UTC),
             )
 
         # Calculate final capital
