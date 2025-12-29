@@ -358,6 +358,38 @@ make db-migrate
 - **On Shutdown**: Final state saved to both systems
 - **Backtest Results**: Saved to database and JSON after each backtest run
 
+#### Database Encryption
+
+**Protect sensitive trading data** with application-level encryption:
+
+```bash
+# Setup encryption (one-time)
+make db-encrypt-setup
+
+# Check encryption status
+make db-encrypt-status
+```
+
+**How it works:**
+
+- 🔐 Generates Fernet encryption key
+- 🔑 Stores key securely in 1Password
+- ✅ Transparently encrypts sensitive data
+- 🔄 Gracefully falls back to plaintext if not enabled
+- 📊 No performance impact on queries
+
+**What gets encrypted:**
+
+- Sensitive configuration data
+- User-specific trading parameters
+- Any field marked for encryption
+
+**Key management:**
+
+- Encryption key never stored in code or config files
+- Retrieved from 1Password on bot startup
+- Automatic key rotation support
+
 #### Migration to PostgreSQL
 
 The bot is designed for easy migration from SQLite to PostgreSQL:

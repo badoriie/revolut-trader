@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate db-encrypt-setup db-encrypt-status
 
 # Default target - show help
 help:
@@ -42,6 +42,10 @@ help:
 	@echo "  make db-backtests      - Show backtest results (LIMIT=10 to customize)"
 	@echo "  make db-export         - Export data to JSON (DIR=data/exports to customize)"
 	@echo "  make db-export-csv     - Export data to CSV for analysis"
+	@echo ""
+	@echo "🔐 Database Encryption:"
+	@echo "  make db-encrypt-setup  - Setup database encryption (1Password key storage)"
+	@echo "  make db-encrypt-status - Check encryption status"
 	@echo ""
 	@echo "💡 Quick Start:"
 	@echo "  1. make setup          (one-time setup)"
@@ -313,3 +317,11 @@ db-migrate:
 	else \
 		echo "❌ Migration cancelled"; \
 	fi
+
+# Setup database encryption
+db-encrypt-setup:
+	@uv run python cli/db_encrypt.py setup
+
+# Check database encryption status
+db-encrypt-status:
+	@uv run python cli/db_encrypt.py status

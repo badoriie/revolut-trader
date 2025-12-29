@@ -44,8 +44,8 @@ class PortfolioSnapshotDB(Base):
     trading_mode = Column(String(20), nullable=True)
 
     __table_args__ = (
-        Index("idx_timestamp_desc", timestamp.desc()),
-        Index("idx_strategy_timestamp", "strategy", "timestamp"),
+        Index("idx_portfolio_timestamp_desc", timestamp.desc()),
+        Index("idx_portfolio_strategy_timestamp", "strategy", "timestamp"),
     )
 
     def __repr__(self) -> str:
@@ -75,9 +75,9 @@ class TradeDB(Base):
     pnl = Column(Float, nullable=True)  # Realized P&L for closed trades
 
     __table_args__ = (
-        Index("idx_symbol_created", "symbol", "created_at"),
-        Index("idx_created_desc", created_at.desc()),
-        Index("idx_status", "status"),
+        Index("idx_trade_symbol_created", "symbol", "created_at"),
+        Index("idx_trade_created_desc", created_at.desc()),
+        Index("idx_trade_status", "status"),
     )
 
     def __repr__(self) -> str:
@@ -105,7 +105,7 @@ class SessionDB(Base):
     total_pnl = Column(Float, nullable=True)
     status = Column(String(20), nullable=False, default="ACTIVE")  # ACTIVE/STOPPED/CRASHED
 
-    __table_args__ = (Index("idx_started_desc", started_at.desc()),)
+    __table_args__ = (Index("idx_session_started_desc", started_at.desc()),)
 
     def __repr__(self) -> str:
         return (
@@ -145,9 +145,9 @@ class BacktestRunDB(Base):
     trades_file = Column(String(255), nullable=True)  # Path to trades JSON
 
     __table_args__ = (
-        Index("idx_run_at_desc", run_at.desc()),
-        Index("idx_strategy_run_at", "strategy", "run_at"),
-        Index("idx_symbols", "symbols"),
+        Index("idx_backtest_run_at_desc", run_at.desc()),
+        Index("idx_backtest_strategy_run_at", "strategy", "run_at"),
+        Index("idx_backtest_symbols", "symbols"),
     )
 
     def __repr__(self) -> str:
@@ -170,9 +170,9 @@ class LogEntryDB(Base):
     session_id = Column(Integer, nullable=True)  # Link to session if applicable
 
     __table_args__ = (
-        Index("idx_timestamp_desc", timestamp.desc()),
-        Index("idx_level_timestamp", "level", "timestamp"),
-        Index("idx_session", "session_id"),
+        Index("idx_log_timestamp_desc", timestamp.desc()),
+        Index("idx_log_level_timestamp", "level", "timestamp"),
+        Index("idx_log_session", "session_id"),
     )
 
     def __repr__(self) -> str:
