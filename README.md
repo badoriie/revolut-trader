@@ -309,6 +309,27 @@ Check `logs/trading.log` for detailed activity:
 tail -f logs/trading.log
 ```
 
+### Trading Data
+
+The bot automatically saves trading data to the `data/` directory:
+
+- **Portfolio Snapshots**: `data/portfolio_snapshots.json` - Historical portfolio values
+- **Trade History**: `data/trade_history.json` - All completed trades
+- **Session Data**: `data/current_session.json` - Current session state
+
+Data is saved:
+
+- Every ~10 minutes during trading
+- After each completed trade
+- On bot shutdown
+
+This data persists across bot restarts and can be used for:
+
+- Performance analysis
+- Backtesting validation
+- Trade journal
+- Tax reporting
+
 ### Telegram Alerts
 
 Receive real-time notifications for:

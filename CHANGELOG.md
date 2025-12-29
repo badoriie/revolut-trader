@@ -4,6 +4,15 @@
 
 ### Added - Code Quality & Development Tools
 
+- **Data Persistence**: Portfolio snapshots and trade history now saved to disk
+  - New `src/utils/persistence.py` module for data management
+  - Portfolio snapshots saved periodically (every ~10 minutes) and on shutdown
+  - Trade history automatically saved after each filled order
+  - Session data saved for potential bot restarts
+  - Historical data loaded on bot startup
+  - Data stored in `data/` directory (gitignored, structure preserved)
+  - JSON format for easy analysis and portability
+  - Automatic error handling and logging
 - **Pre-commit Hooks**: Automated code quality checks on every commit
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)

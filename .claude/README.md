@@ -314,7 +314,10 @@ logs and find the root cause."
 ### Log Locations
 
 - `logs/` - Trading bot logs (rotated daily, 30-day retention)
-- `data/` - Portfolio snapshots and trading history
+- `data/` - Persistent trading data
+  - `portfolio_snapshots.json` - Historical portfolio values (saved every ~10 min)
+  - `trade_history.json` - All completed trades
+  - `current_session.json` - Current session state
 
 ### Log Analysis
 
