@@ -115,6 +115,48 @@ def show_stats():
     print("=" * 50)
 
 
+def show_backtest_results(limit: int = 10):
+    """Show recent backtest results."""
+    db = DatabasePersistence()
+    runs = db.load_backtest_runs(limit=limit)
+
+    if not runs:
+        print("No backtest results found")
+        return
+
+    print(f"\n📊 Recent Backtest Runs (Last {len(runs)})")
+    print("=" * 80)
+
+    for run in runs:
+        print(f"\nID: {run['id']} | {run['run_at']}")
+        print(f"Strategy: {run['strategy']} | Risk: {run['risk_level']}")
+        print(f"Symbols: {', '.join(run['symbols'])} | Days: {run['days']}")
+        print(f"Return: {run['return_pct']:.2f}% | Trades: {run['total_trades']}")
+        print(f"Win Rate: {run['win_rate']:.1f}% | Max DD: {run['max_drawdown']:.2f}%")
+        if run["profit_factor"]:
+            print(f"Profit Factor: {run['profit_factor']:.2f}")
+
+    print("=" * 80)
+
+    # Show analytics
+    analytics = db.get_backtest_analytics()
+    if analytics:
+        print("\n📈 Backtest Analytics")
+        print("=" * 50)
+        print(f"Total Runs: {analytics['total_runs']}")
+        print(f"Profitable: {analytics['profitable_runs']} ({analytics['success_rate']:.1f}%)")
+        print(f"Average Return: {analytics['avg_return_pct']:.2f}%")
+
+        if "best_run" in analytics:
+            best = analytics["best_run"]
+            print(f"\n🏆 Best Run: ID {best['id']}")
+            print(f"   Strategy: {best['strategy']}")
+            print(f"   Return: {best['return_pct']:.2f}%")
+            print(f"   Win Rate: {best['win_rate']:.1f}%")
+
+        print("=" * 50)
+
+
 def main():
     """Main entry point for database management CLI."""
     if len(sys.argv) < 2:
@@ -124,12 +166,14 @@ def main():
         print("\nCommands:")
         print("  stats              - Show database statistics")
         print("  analytics [days]   - Show trading analytics (default: 30 days)")
+        print("  backtests [limit]  - Show backtest results (default: 10)")
         print("  export [dir]       - Export data to JSON (default: data/exports)")
         print("  export-csv         - Export data to CSV for analysis")
         print("  migrate <pg_url>   - Migrate SQLite to PostgreSQL")
         print("\nExamples:")
         print("  python cli/db_manage.py stats")
         print("  python cli/db_manage.py analytics 7")
+        print("  python cli/db_manage.py backtests 20")
         print("  python cli/db_manage.py export data/backup")
         print("  python cli/db_manage.py migrate postgresql://user:pass@localhost/trading")
         sys.exit(1)
@@ -143,6 +187,10 @@ def main():
         elif command == "analytics":
             days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
             show_analytics(days)
+
+        elif command == "backtests":
+            limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+            show_backtest_results(limit)
 
         elif command == "export":
             output_dir = sys.argv[2] if len(sys.argv) > 2 else "data/exports"

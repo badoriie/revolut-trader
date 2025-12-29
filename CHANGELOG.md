@@ -40,6 +40,21 @@
   - Trade history automatically saved after each filled order
   - Data stored in `data/trading.db` (SQLite) with JSON backup in `data/`
   - Migration path to PostgreSQL for production use
+- **Backtest Results Database**: Backtest results now stored in database
+  - New `BacktestRunDB` model for backtest run tracking
+  - Automatic save to database after each backtest run
+  - Query backtest history with `make db-backtests`
+  - Analytics across all backtest runs (success rate, avg return, best run)
+  - Links to detailed JSON files for equity curves and trades
+- **Optional Log Storage**: Database storage for critical log events
+  - New `LogEntryDB` model for log entries
+  - Methods to save and query logs by level and time
+  - Useful for tracking errors across sessions
+- **Deep Clean Command**: New `make deep-clean` for complete project reset
+  - Removes ALL generated files (database, logs, backtest results, backups)
+  - Removes virtual environment and all cache files
+  - Confirmation prompt to prevent accidental data loss
+  - Useful for starting completely fresh or troubleshooting
 - **Pre-commit Hooks**: Automated code quality checks on every commit
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)

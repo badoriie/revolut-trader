@@ -15,6 +15,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.data.models import Order, PortfolioSnapshot
 from src.models.db_models import (
+    BacktestRunDB,
+    LogEntryDB,
     PortfolioSnapshotDB,
     SessionDB,
     TradeDB,
@@ -398,5 +400,248 @@ class DatabasePersistence:
         except SQLAlchemyError as e:
             logger.error(f"Failed to get analytics: {e}")
             return {}
+        finally:
+            session.close()
+
+    def save_backtest_run(
+        self,
+        strategy: str,
+        risk_level: str,
+        symbols: list[str],
+        days: int,
+        interval: str,
+        initial_capital: float,
+        results: dict[str, Any],
+        equity_curve_file: str | None = None,
+        trades_file: str | None = None,
+    ) -> int:
+        """Save backtest run results to database.
+
+        Args:
+            strategy: Strategy name
+            risk_level: Risk level used
+            symbols: List of trading symbols
+            days: Number of days tested
+            interval: Candle interval
+            initial_capital: Starting capital
+            results: Backtest results dictionary
+            equity_curve_file: Path to equity curve JSON
+            trades_file: Path to trades JSON
+
+        Returns:
+            Backtest run ID
+        """
+        session = self.Session()
+        try:
+            backtest_run = BacktestRunDB(
+                run_at=datetime.now(UTC),
+                strategy=strategy,
+                risk_level=risk_level,
+                symbols=json.dumps(symbols),
+                days=days,
+                interval=interval,
+                initial_capital=initial_capital,
+                final_capital=results["final_capital"],
+                total_pnl=results["total_pnl"],
+                return_pct=results["return_pct"],
+                total_trades=results["total_trades"],
+                winning_trades=results["winning_trades"],
+                losing_trades=results["losing_trades"],
+                win_rate=results["win_rate"],
+                profit_factor=results.get("profit_factor"),
+                max_drawdown=results["max_drawdown"],
+                sharpe_ratio=results.get("sharpe_ratio"),
+                equity_curve_file=equity_curve_file,
+                trades_file=trades_file,
+            )
+
+            session.add(backtest_run)
+            session.commit()
+            run_id = backtest_run.id
+
+            logger.info(
+                f"Saved backtest run: {run_id} ({strategy}, return={results['return_pct']:.2f}%)"
+            )
+            return run_id
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Failed to save backtest run: {e}")
+            return -1
+        finally:
+            session.close()
+
+    def load_backtest_runs(
+        self, strategy: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Load backtest run history.
+
+        Args:
+            strategy: Filter by strategy (optional)
+            limit: Maximum number of runs to load
+
+        Returns:
+            List of backtest run dictionaries
+        """
+        session = self.Session()
+        try:
+            query = session.query(BacktestRunDB).order_by(desc(BacktestRunDB.run_at))
+
+            if strategy:
+                query = query.filter(BacktestRunDB.strategy == strategy)
+
+            runs = query.limit(limit).all()
+
+            results = [
+                {
+                    "id": r.id,
+                    "run_at": r.run_at.isoformat(),
+                    "strategy": r.strategy,
+                    "risk_level": r.risk_level,
+                    "symbols": json.loads(r.symbols),
+                    "days": r.days,
+                    "interval": r.interval,
+                    "initial_capital": r.initial_capital,
+                    "final_capital": r.final_capital,
+                    "total_pnl": r.total_pnl,
+                    "return_pct": r.return_pct,
+                    "total_trades": r.total_trades,
+                    "winning_trades": r.winning_trades,
+                    "losing_trades": r.losing_trades,
+                    "win_rate": r.win_rate,
+                    "profit_factor": r.profit_factor,
+                    "max_drawdown": r.max_drawdown,
+                    "sharpe_ratio": r.sharpe_ratio,
+                    "equity_curve_file": r.equity_curve_file,
+                    "trades_file": r.trades_file,
+                }
+                for r in runs
+            ]
+
+            logger.info(f"Loaded {len(results)} backtest runs from database")
+            return results
+
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to load backtest runs: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_backtest_analytics(self) -> dict[str, Any]:
+        """Get analytics across all backtest runs.
+
+        Returns:
+            Dictionary with backtest analytics
+        """
+        session = self.Session()
+        try:
+            total_runs = session.query(func.count(BacktestRunDB.id)).scalar()
+
+            profitable_runs = (
+                session.query(func.count(BacktestRunDB.id))
+                .filter(BacktestRunDB.return_pct > 0)
+                .scalar()
+            )
+
+            avg_return = session.query(func.avg(BacktestRunDB.return_pct)).scalar()
+
+            best_run = session.query(BacktestRunDB).order_by(desc(BacktestRunDB.return_pct)).first()
+
+            analytics = {
+                "total_runs": total_runs or 0,
+                "profitable_runs": profitable_runs or 0,
+                "avg_return_pct": float(avg_return) if avg_return else 0.0,
+                "success_rate": (profitable_runs / total_runs * 100) if total_runs else 0.0,
+            }
+
+            if best_run:
+                analytics["best_run"] = {
+                    "id": best_run.id,
+                    "strategy": best_run.strategy,
+                    "return_pct": best_run.return_pct,
+                    "total_trades": best_run.total_trades,
+                    "win_rate": best_run.win_rate,
+                }
+
+            return analytics
+
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to get backtest analytics: {e}")
+            return {}
+        finally:
+            session.close()
+
+    def save_log_entry(
+        self, level: str, message: str, module: str | None = None, session_id: int | None = None
+    ) -> None:
+        """Save a log entry to database (optional, for critical events).
+
+        Args:
+            level: Log level (INFO, WARNING, ERROR, CRITICAL)
+            message: Log message
+            module: Module name
+            session_id: Associated session ID
+        """
+        session = self.Session()
+        try:
+            log_entry = LogEntryDB(
+                timestamp=datetime.now(UTC),
+                level=level,
+                module=module,
+                message=message,
+                session_id=session_id,
+            )
+
+            session.add(log_entry)
+            session.commit()
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Failed to save log entry: {e}")
+        finally:
+            session.close()
+
+    def load_log_entries(
+        self, level: str | None = None, since: datetime | None = None, limit: int = 1000
+    ) -> list[dict[str, Any]]:
+        """Load log entries from database.
+
+        Args:
+            level: Filter by log level (optional)
+            since: Load logs since this datetime
+            limit: Maximum number of entries to load
+
+        Returns:
+            List of log entry dictionaries
+        """
+        session = self.Session()
+        try:
+            query = session.query(LogEntryDB).order_by(desc(LogEntryDB.timestamp))
+
+            if level:
+                query = query.filter(LogEntryDB.level == level)
+
+            if since:
+                query = query.filter(LogEntryDB.timestamp >= since)
+
+            entries = query.limit(limit).all()
+
+            results = [
+                {
+                    "id": e.id,
+                    "timestamp": e.timestamp.isoformat(),
+                    "level": e.level,
+                    "module": e.module,
+                    "message": e.message,
+                    "session_id": e.session_id,
+                }
+                for e in entries
+            ]
+
+            return results
+
+        except SQLAlchemyError as e:
+            logger.error(f"Failed to load log entries: {e}")
+            return []
         finally:
             session.close()
