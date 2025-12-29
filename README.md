@@ -380,14 +380,39 @@ op item edit revolut-trader-credentials --vault revolut-trader \
 ### Available Make Commands
 
 ```bash
-make help      # Show all commands
-make setup     # Complete project setup
-make install   # Install/update dependencies
-make test      # Run tests with coverage
-make lint      # Check code quality
-make format    # Format code
-make check     # Run all quality checks
-make clean     # Remove cache files
+make help               # Show all commands
+make setup              # Complete project setup
+make install            # Install/update dependencies
+make pre-commit-install # Install pre-commit hooks
+make pre-commit         # Run pre-commit hooks manually
+make test               # Run tests with coverage
+make lint               # Check code quality
+make format             # Format code
+make typecheck          # Run mypy type checking
+make check              # Run all quality checks
+make clean              # Remove cache files
+```
+
+### Pre-commit Hooks
+
+The project uses pre-commit hooks to maintain code quality. Install them once:
+
+```bash
+make pre-commit-install
+```
+
+The hooks will automatically run on every commit and check:
+
+- Code formatting (ruff)
+- Linting (ruff)
+- Type checking (mypy)
+- Security issues (bandit)
+- Common issues (trailing whitespace, merge conflicts, etc.)
+
+To run hooks manually on all files:
+
+```bash
+make pre-commit
 ```
 
 ### Running Tests
@@ -405,14 +430,17 @@ uv run pytest --cov=src
 make format
 
 # Or directly
-uv run ruff format src/ tests/
-uv run ruff check --fix src/ tests/
+uv run ruff format src/ tests/ cli/
+uv run ruff check --fix src/ tests/ cli/
 ```
 
 ### Type Checking
 
 ```bash
-uv run mypy src/
+make typecheck
+
+# Or directly
+uv run mypy src/ cli/
 ```
 
 ## Performance Tips
