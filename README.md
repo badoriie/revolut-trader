@@ -372,23 +372,41 @@ make db-encrypt-status
 
 **How it works:**
 
-- 🔐 Generates Fernet encryption key
-- 🔑 Stores key securely in 1Password
-- ✅ Transparently encrypts sensitive data
-- 🔄 Gracefully falls back to plaintext if not enabled
-- 📊 No performance impact on queries
+- 🔐 Generates Fernet encryption key using industry-standard cryptography
+- 🔑 Stores key securely in 1Password vault (never in files or code)
+- ✅ Automatically encrypts sensitive text fields before database storage
+- 🔄 Transparently decrypts when loading data for bot operations
+- 📊 Financial metrics remain queryable for analytics (not encrypted)
+- ⚠️ Gracefully falls back to plaintext if encryption not enabled
 
 **What gets encrypted:**
 
-- Sensitive configuration data
-- User-specific trading parameters
-- Any field marked for encryption
+- Trading strategy names (e.g., "market_making", "momentum")
+- Risk level settings (e.g., "conservative", "aggressive")
+- Trading mode (e.g., "paper", "live")
+- Symbol lists (e.g., ["BTC-USD", "ETH-USD"])
+- Log messages and module names (may contain sensitive details)
+
+**What is NOT encrypted (needed for SQL analytics):**
+
+- Financial amounts (balances, P&L, prices, quantities)
+- Timestamps and dates
+- Trade counts and statistics
+- Order IDs and status codes
 
 **Key management:**
 
-- Encryption key never stored in code or config files
-- Retrieved from 1Password on bot startup
-- Automatic key rotation support
+- Encryption key never stored in code, config files, or database
+- Retrieved from 1Password on each bot startup
+- If encryption key is lost, encrypted data becomes unreadable
+- To regenerate key: run `make db-encrypt-setup` again (loses old data)
+
+**Important notes:**
+
+- This is **field-level encryption**, not full database encryption
+- The database file itself is still readable in IDE tools (schema visible)
+- Encrypted fields appear as gibberish in database browsers
+- For full database encryption (entire .db file), use SQLCipher instead
 
 #### Migration to PostgreSQL
 

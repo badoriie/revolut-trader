@@ -24,6 +24,7 @@ from src.models.db_models import (
     get_session_factory,
     init_database,
 )
+from src.utils.db_encryption import DatabaseEncryption
 
 
 class DatabasePersistence:
@@ -49,7 +50,12 @@ class DatabasePersistence:
         # Initialize schema
         init_database(self.engine)
 
+        # Initialize encryption for sensitive fields
+        self.encryption = DatabaseEncryption()
+
         logger.info(f"Database persistence initialized: {database_url}")
+        if self.encryption.is_enabled:
+            logger.info("✓ Database field encryption enabled")
 
     def save_portfolio_snapshot(
         self,
@@ -68,6 +74,11 @@ class DatabasePersistence:
         """
         session = self.Session()
         try:
+            # Encrypt sensitive text fields
+            encrypted_strategy = self.encryption.encrypt(strategy)
+            encrypted_risk_level = self.encryption.encrypt(risk_level)
+            encrypted_trading_mode = self.encryption.encrypt(trading_mode)
+
             db_snapshot = PortfolioSnapshotDB(
                 timestamp=snapshot.timestamp,
                 total_value=float(snapshot.total_value),
@@ -78,9 +89,9 @@ class DatabasePersistence:
                 total_pnl=float(snapshot.total_pnl),
                 daily_pnl=float(snapshot.daily_pnl),
                 num_positions=snapshot.num_positions,
-                strategy=strategy,
-                risk_level=risk_level,
-                trading_mode=trading_mode,
+                strategy=encrypted_strategy,
+                risk_level=encrypted_risk_level,
+                trading_mode=encrypted_trading_mode,
             )
 
             session.add(db_snapshot)
@@ -107,6 +118,11 @@ class DatabasePersistence:
 
         session = self.Session()
         try:
+            # Encrypt metadata once for all snapshots
+            encrypted_strategy = self.encryption.encrypt(metadata.get("strategy", ""))
+            encrypted_risk_level = self.encryption.encrypt(metadata.get("risk_level", ""))
+            encrypted_trading_mode = self.encryption.encrypt(metadata.get("trading_mode", ""))
+
             db_snapshots = [
                 PortfolioSnapshotDB(
                     timestamp=s.timestamp,
@@ -118,9 +134,9 @@ class DatabasePersistence:
                     total_pnl=float(s.total_pnl),
                     daily_pnl=float(s.daily_pnl),
                     num_positions=s.num_positions,
-                    strategy=metadata.get("strategy"),
-                    risk_level=metadata.get("risk_level"),
-                    trading_mode=metadata.get("trading_mode"),
+                    strategy=encrypted_strategy,
+                    risk_level=encrypted_risk_level,
+                    trading_mode=encrypted_trading_mode,
                 )
                 for s in snapshots
             ]
@@ -167,8 +183,8 @@ class DatabasePersistence:
                     "total_pnl": str(s.total_pnl),
                     "daily_pnl": str(s.daily_pnl),
                     "num_positions": s.num_positions,
-                    "strategy": s.strategy,
-                    "risk_level": s.risk_level,
+                    "strategy": self.encryption.decrypt(s.strategy) if s.strategy else None,
+                    "risk_level": self.encryption.decrypt(s.risk_level) if s.risk_level else None,
                 }
                 for s in reversed(snapshots)  # Chronological order
             ]
@@ -190,6 +206,9 @@ class DatabasePersistence:
         """
         session = self.Session()
         try:
+            # Encrypt strategy field
+            encrypted_strategy = self.encryption.encrypt(order.strategy) if order.strategy else None
+
             db_trade = TradeDB(
                 order_id=order.order_id or f"order_{datetime.now(UTC).timestamp()}",
                 symbol=order.symbol,
@@ -199,7 +218,7 @@ class DatabasePersistence:
                 price=float(order.price) if order.price else 0.0,
                 filled_quantity=float(order.filled_quantity),
                 status=order.status.value,
-                strategy=order.strategy,
+                strategy=encrypted_strategy,
                 created_at=order.created_at,
                 filled_at=datetime.now(UTC) if order.status.value == "FILLED" else None,
             )
@@ -249,7 +268,7 @@ class DatabasePersistence:
                     "price": str(t.price),
                     "filled_quantity": str(t.filled_quantity),
                     "status": t.status,
-                    "strategy": t.strategy,
+                    "strategy": self.encryption.decrypt(t.strategy) if t.strategy else None,
                     "created_at": t.created_at.isoformat(),
                 }
                 for t in reversed(trades)  # Chronological order
@@ -286,12 +305,18 @@ class DatabasePersistence:
         """
         session = self.Session()
         try:
+            # Encrypt sensitive text fields
+            encrypted_strategy = self.encryption.encrypt(strategy)
+            encrypted_risk_level = self.encryption.encrypt(risk_level)
+            encrypted_trading_mode = self.encryption.encrypt(trading_mode)
+            encrypted_trading_pairs = self.encryption.encrypt(json.dumps(trading_pairs))
+
             db_session = SessionDB(
                 started_at=datetime.now(UTC),
-                strategy=strategy,
-                risk_level=risk_level,
-                trading_mode=trading_mode,
-                trading_pairs=json.dumps(trading_pairs),
+                strategy=encrypted_strategy,
+                risk_level=encrypted_risk_level,
+                trading_mode=encrypted_trading_mode,
+                trading_pairs=encrypted_trading_pairs,
                 initial_balance=float(initial_balance),
                 status="ACTIVE",
             )
@@ -433,11 +458,16 @@ class DatabasePersistence:
         """
         session = self.Session()
         try:
+            # Encrypt sensitive text fields
+            encrypted_strategy = self.encryption.encrypt(strategy)
+            encrypted_risk_level = self.encryption.encrypt(risk_level)
+            encrypted_symbols = self.encryption.encrypt(json.dumps(symbols))
+
             backtest_run = BacktestRunDB(
                 run_at=datetime.now(UTC),
-                strategy=strategy,
-                risk_level=risk_level,
-                symbols=json.dumps(symbols),
+                strategy=encrypted_strategy,
+                risk_level=encrypted_risk_level,
+                symbols=encrypted_symbols,
                 days=days,
                 interval=interval,
                 initial_capital=initial_capital,
@@ -488,7 +518,9 @@ class DatabasePersistence:
             query = session.query(BacktestRunDB).order_by(desc(BacktestRunDB.run_at))
 
             if strategy:
-                query = query.filter(BacktestRunDB.strategy == strategy)
+                # Filter requires encrypted value for comparison
+                encrypted_strategy = self.encryption.encrypt(strategy)
+                query = query.filter(BacktestRunDB.strategy == encrypted_strategy)
 
             runs = query.limit(limit).all()
 
@@ -496,9 +528,11 @@ class DatabasePersistence:
                 {
                     "id": r.id,
                     "run_at": r.run_at.isoformat(),
-                    "strategy": r.strategy,
-                    "risk_level": r.risk_level,
-                    "symbols": json.loads(r.symbols),
+                    "strategy": self.encryption.decrypt(r.strategy) if r.strategy else None,
+                    "risk_level": self.encryption.decrypt(r.risk_level) if r.risk_level else None,
+                    "symbols": json.loads(
+                        self.encryption.decrypt(r.symbols) if r.symbols else "[]"
+                    ),
                     "days": r.days,
                     "interval": r.interval,
                     "initial_capital": r.initial_capital,
@@ -557,7 +591,9 @@ class DatabasePersistence:
             if best_run:
                 analytics["best_run"] = {
                     "id": best_run.id,
-                    "strategy": best_run.strategy,
+                    "strategy": self.encryption.decrypt(best_run.strategy)
+                    if best_run.strategy
+                    else None,
                     "return_pct": best_run.return_pct,
                     "total_trades": best_run.total_trades,
                     "win_rate": best_run.win_rate,
@@ -584,11 +620,15 @@ class DatabasePersistence:
         """
         session = self.Session()
         try:
+            # Encrypt module and message fields (may contain sensitive info)
+            encrypted_module = self.encryption.encrypt(module) if module else None
+            encrypted_message = self.encryption.encrypt(message)
+
             log_entry = LogEntryDB(
                 timestamp=datetime.now(UTC),
                 level=level,
-                module=module,
-                message=message,
+                module=encrypted_module,
+                message=encrypted_message,
                 session_id=session_id,
             )
 
@@ -631,8 +671,8 @@ class DatabasePersistence:
                     "id": e.id,
                     "timestamp": e.timestamp.isoformat(),
                     "level": e.level,
-                    "module": e.module,
-                    "message": e.message,
+                    "module": self.encryption.decrypt(e.module) if e.module else None,
+                    "message": self.encryption.decrypt(e.message) if e.message else "",
                     "session_id": e.session_id,
                 }
                 for e in entries
