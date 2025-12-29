@@ -495,33 +495,96 @@ If you're copying code, extract a function instead.
 
 ```bash
 # Type checking
-mypy src/
+make typecheck  # or: uv run mypy src/ cli/
 
 # Code formatting
-ruff format src/
+make format     # or: uv run ruff format src/ tests/ cli/
 
 # Linting
-ruff check src/
+make lint       # or: uv run ruff check src/ tests/ cli/
 
 # Testing
-pytest --cov=src --cov-report=term-missing
+make test       # or: uv run pytest --cov=src --cov-report=term-missing
+
+# Run all checks
+make check
 ```
 
 ### Pre-commit Hooks
 
-Set up pre-commit hooks to enforce standards:
+Pre-commit hooks are configured to enforce code quality standards automatically.
+
+#### Setup (One-time)
 
 ```bash
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    hooks:
-      - id: ruff
-      - id: ruff-format
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    hooks:
-      - id: mypy
+make pre-commit-install
 ```
+
+#### What Gets Checked
+
+The pre-commit hooks will automatically check on every commit:
+
+1. **Basic Checks**
+
+   - Trailing whitespace removal
+   - End-of-file fixer
+   - YAML/TOML/JSON validation
+   - Large file detection
+   - Merge conflict detection
+   - Private key detection
+
+1. **Code Quality**
+
+   - **Ruff**: Linting and auto-formatting
+   - **Ruff Format**: Code formatting (replaces black)
+
+1. **Type Safety**
+
+   - **Mypy**: Type checking (excludes tests/ and cli/)
+
+1. **Security**
+
+   - **Bandit**: Security vulnerability scanning
+
+1. **Documentation**
+
+   - **Mdformat**: Markdown file formatting
+
+#### Manual Execution
+
+Run hooks on all files without committing:
+
+```bash
+make pre-commit
+```
+
+#### Configuration
+
+The hooks are configured in `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    # Basic checks
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Linting and formatting
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    # Type checking
+  - repo: https://github.com/PyCQA/bandit
+    # Security scanning
+  - repo: https://github.com/executablebooks/mdformat
+    # Markdown formatting
+```
+
+#### Skipping Hooks (Use Sparingly)
+
+Only when absolutely necessary:
+
+```bash
+git commit --no-verify -m "Emergency hotfix"
+```
+
+**Note**: This bypasses all quality checks. Use only for emergencies.
 
 ## Learning Resources
 

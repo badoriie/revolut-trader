@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased]
+
+### Added - Code Quality & Development Tools
+
+- **Pre-commit Hooks**: Automated code quality checks on every commit
+  - Ruff linting and formatting
+  - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)
+  - Bandit security scanning (configured to skip false positives)
+  - Basic file checks (trailing whitespace, end-of-file, YAML/TOML/JSON validation)
+  - Markdown formatting with mdformat
+  - New `make pre-commit-install` command for one-time setup
+  - New `make pre-commit` command to run hooks manually
+  - Configuration in `.pre-commit-config.yaml`
+
+### Changed
+
+- **Mypy Configuration**: Enhanced type checking configuration
+  - Added ignore rules for external libraries (loguru, httpx, cryptography)
+  - Strict typing for core modules (strategies, risk management, indicators)
+  - Relaxed typing for infrastructure (CLI, notifications, backtest)
+- **Bandit Configuration**: Configured to skip false positive subprocess warnings
+  - Skips B404, B603, B607 for safe 1Password CLI usage
+- **Development Dependencies**: Added pre-commit to dev dependencies in pyproject.toml
+
+### Fixed
+
+- **Code Quality**: Fixed 8 code quality issues identified by pre-commit
+  - Replaced `dict()` calls with dictionary literals in dashboard.py (5 instances)
+  - Removed unused variables: `pnl_color` in dashboard.py, `close_order` and `position` in executor.py
+  - All pre-commit hooks now pass successfully
+
 ## [0.3.0] - 2025-12-27
 
 ### Added - Production Optimization & Safety
