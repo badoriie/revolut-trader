@@ -10,6 +10,7 @@
   - API client balance calculations now use configurable base currency
   - Dynamic currency symbol display (€ for EUR, $ for USD, £ for GBP)
   - All CLI tools and examples updated to EUR pairs
+  - All output updated: backtest results, bot logs, Telegram notifications
   - All documentation updated with EUR examples
   - Supports multiple base currencies via configuration
   - USD/USDC/USDT balances automatically converted to EUR (approximate conversion)

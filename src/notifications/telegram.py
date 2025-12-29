@@ -39,6 +39,11 @@ class TelegramNotifier:
 
     async def notify_signal(self, signal: Signal):
         """Notify about a trading signal."""
+        # Extract currency from symbol (e.g., BTC-EUR -> EUR)
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        quote_currency = signal.symbol.split("-")[-1] if "-" in signal.symbol else "EUR"
+        symbol = currency_symbols.get(quote_currency, quote_currency)
+
         message = f"""
 🔔 *Trading Signal*
 
@@ -46,7 +51,7 @@ Symbol: `{signal.symbol}`
 Strategy: `{signal.strategy}`
 Action: *{signal.signal_type}*
 Strength: {signal.strength:.1%}
-Price: ${signal.price}
+Price: {symbol}{signal.price}
 
 Reason: {signal.reason}
 """
@@ -54,6 +59,11 @@ Reason: {signal.reason}
 
     async def notify_order(self, order: Order):
         """Notify about order execution."""
+        # Extract currency from symbol
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        quote_currency = order.symbol.split("-")[-1] if "-" in order.symbol else "EUR"
+        symbol = currency_symbols.get(quote_currency, quote_currency)
+
         emoji = "✅" if order.status.value == "FILLED" else "⏳"
         message = f"""
 {emoji} *Order {order.status.value}*
@@ -62,13 +72,18 @@ ID: `{order.order_id}`
 Symbol: `{order.symbol}`
 Side: *{order.side.value}*
 Quantity: {order.quantity}
-Price: ${order.price}
+Price: {symbol}{order.price}
 Strategy: {order.strategy}
 """
         await self.send_message(message)
 
     async def notify_position_update(self, position: Position, action: str):
         """Notify about position updates."""
+        # Extract currency from symbol
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        quote_currency = position.symbol.split("-")[-1] if "-" in position.symbol else "EUR"
+        symbol = currency_symbols.get(quote_currency, quote_currency)
+
         emoji = "📈" if position.side.value == "BUY" else "📉"
         message = f"""
 {emoji} *Position {action}*
@@ -76,12 +91,12 @@ Strategy: {order.strategy}
 Symbol: `{position.symbol}`
 Side: {position.side.value}
 Quantity: {position.quantity}
-Entry Price: ${position.entry_price}
-Current Price: ${position.current_price}
-Unrealized P&L: ${position.unrealized_pnl} ({(position.unrealized_pnl / (position.entry_price * position.quantity) * 100):.2f}%)
+Entry Price: {symbol}{position.entry_price}
+Current Price: {symbol}{position.current_price}
+Unrealized P&L: {symbol}{position.unrealized_pnl} ({(position.unrealized_pnl / (position.entry_price * position.quantity) * 100):.2f}%)
 
-Stop Loss: ${position.stop_loss}
-Take Profit: ${position.take_profit}
+Stop Loss: {symbol}{position.stop_loss}
+Take Profit: {symbol}{position.take_profit}
 """
         await self.send_message(message)
 

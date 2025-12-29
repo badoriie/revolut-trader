@@ -19,9 +19,16 @@ class RiskManager:
         self.max_order_value_usd = Decimal(str(max_order_value_usd))
         self.max_quantity_multiplier = Decimal("1000")  # Max 1000x normal position size
 
+        # Get currency symbol for display
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        base_currency = settings.base_currency
+        self.currency_symbol = currency_symbols.get(base_currency, base_currency)
+
         logger.info(f"Risk Manager initialized with {self.risk_level} risk level")
         logger.info(f"Risk parameters: {self.risk_params}")
-        logger.info(f"Safety limits: Max order value ${self.max_order_value_usd:,.0f}")
+        logger.info(
+            f"Safety limits: Max order value {self.currency_symbol}{self.max_order_value_usd:,.0f}"
+        )
 
     def can_open_position(
         self,
@@ -106,16 +113,16 @@ class RiskManager:
         if order_value > self.max_order_value_usd:
             return (
                 False,
-                f"Order value ${float(order_value):,.2f} exceeds safety limit "
-                f"${float(self.max_order_value_usd):,.2f}",
+                f"Order value {self.currency_symbol}{float(order_value):,.2f} exceeds safety limit "
+                f"{self.currency_symbol}{float(self.max_order_value_usd):,.2f}",
             )
 
         # Check 2: Order value cannot exceed entire portfolio
         if order_value > portfolio_value:
             return (
                 False,
-                f"Order value ${float(order_value):,.2f} exceeds portfolio value "
-                f"${float(portfolio_value):,.2f}",
+                f"Order value {self.currency_symbol}{float(order_value):,.2f} exceeds portfolio value "
+                f"{self.currency_symbol}{float(portfolio_value):,.2f}",
             )
 
         # Check 3: Quantity sanity check (prevent accidentally adding extra zeros)
@@ -128,11 +135,12 @@ class RiskManager:
             )
 
         # Check 4: Minimum order value (prevent dust orders)
-        min_order_value = Decimal("10")  # $10 minimum
+        min_order_value = Decimal("10")  # 10 base currency units minimum
         if order_value < min_order_value:
             return (
                 False,
-                f"Order value ${float(order_value):,.2f} below minimum ${float(min_order_value):,.2f}",
+                f"Order value {self.currency_symbol}{float(order_value):,.2f} below minimum "
+                f"{self.currency_symbol}{float(min_order_value):,.2f}",
             )
 
         return True, "Order passes sanity checks"

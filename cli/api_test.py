@@ -82,10 +82,12 @@ async def get_candles(
     api_client: RevolutAPIClient, symbol: str, interval: int = 60, limit: int = 10
 ) -> None:
     """Get and display recent candles."""
+    from datetime import datetime
+
     print(f"\n📈 Recent Candles: {symbol} ({interval}min)")
     print("=" * 50)
 
-    candles = await api_client.get_candles(symbol, interval, limit)
+    candles = await api_client.get_candles(symbol, interval, limit=limit)
 
     if candles:
         print(f"\nShowing last {len(candles)} candles:\n")
@@ -94,15 +96,27 @@ async def get_candles(
         )
         print("-" * 80)
 
-        for candle in reversed(candles[-10:]):  # Show most recent first
-            timestamp = candle["timestamp"].strftime("%Y-%m-%d %H:%M")
+        # Show most recent candles first (limit to requested amount)
+        display_candles = candles[-limit:] if len(candles) > limit else candles
+        for candle in reversed(display_candles):
+            # Convert Unix timestamp (milliseconds) to datetime
+            timestamp = datetime.fromtimestamp(int(candle["start"]) / 1000).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            # Convert string values to float
+            open_price = float(candle["open"])
+            high_price = float(candle["high"])
+            low_price = float(candle["low"])
+            close_price = float(candle["close"])
+            volume = float(candle["volume"])
+
             print(
                 f"{timestamp:<20} "
-                f"{candle['open']:>10.2f} "
-                f"{candle['high']:>10.2f} "
-                f"{candle['low']:>10.2f} "
-                f"{candle['close']:>10.2f} "
-                f"{candle['volume']:>12.4f}"
+                f"{open_price:>10.2f} "
+                f"{high_price:>10.2f} "
+                f"{low_price:>10.2f} "
+                f"{close_price:>10.2f} "
+                f"{volume:>12.4f}"
             )
     else:
         print(f"\n❌ Failed to fetch candles for {symbol}")
