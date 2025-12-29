@@ -2,15 +2,27 @@
 
 ## [Unreleased]
 
+### Changed - EUR as Base Currency
+
+- **EUR is now the default base fiat currency** (previously USD)
+  - New `base_currency` setting in `src/config.py` (default: "EUR")
+  - Default trading pairs changed from USD to EUR (BTC-EUR, ETH-EUR)
+  - API client balance calculations now use configurable base currency
+  - Dynamic currency symbol display (€ for EUR, $ for USD, £ for GBP)
+  - All CLI tools and examples updated to EUR pairs
+  - All documentation updated with EUR examples
+  - Supports multiple base currencies via configuration
+  - USD/USDC/USDT balances automatically converted to EUR (approximate conversion)
+
 ### Added - Code Quality & Development Tools
 
 - **API Testing CLI**: Quick commands for testing API connectivity and fetching market data
 
   - New `cli/api_test.py` - Standalone CLI tool for API operations
   - `make api-test` - Test API connection and authentication
-  - `make api-balance` - Get account balances for all currencies (BTC, ETH, USD, etc.)
-  - `make api-ticker` - Get ticker/price for a symbol (SYMBOL=BTC-USD)
-  - `make api-tickers` - Get multiple tickers at once (SYMBOLS=BTC-USD,ETH-USD,SOL-USD)
+  - `make api-balance` - Get account balances for all currencies (BTC, ETH, EUR, etc.)
+  - `make api-ticker` - Get ticker/price for a symbol (SYMBOL=BTC-EUR)
+  - `make api-tickers` - Get multiple tickers at once (SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR)
   - `make api-candles` - Get recent candles/historical data (SYMBOL, INTERVAL, LIMIT)
   - Useful for quick market data checks without running the full bot
   - Clean formatted output for easy reading

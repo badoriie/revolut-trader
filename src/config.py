@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     trading_mode: TradingMode = Field(default=TradingMode.PAPER)
     default_strategy: StrategyType = Field(default=StrategyType.MARKET_MAKING)
     risk_level: RiskLevel = Field(default=RiskLevel.CONSERVATIVE)
-    trading_pairs: list[str] = Field(default=["BTC-USD", "ETH-USD"])
+    base_currency: str = Field(default="EUR")  # Base fiat currency for portfolio valuation
+    trading_pairs: list[str] = Field(default=["BTC-EUR", "ETH-EUR"])
 
     @field_validator("trading_pairs", mode="before")
     @classmethod
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
     log_file: Path = Field(default=Path("./logs/trading.log"))
 
     # Paper Trading
-    paper_initial_capital: float = Field(default=10000.0, ge=1.0)
+    paper_initial_capital: float = Field(default=10000.0, ge=1.0)  # In base currency (EUR)
 
     def get_risk_parameters(self) -> dict:
         """Get risk parameters based on risk level."""

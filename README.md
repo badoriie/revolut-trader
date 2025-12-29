@@ -207,16 +207,16 @@ make api-test
 make api-balance
 
 # Get current price for a symbol
-make api-ticker SYMBOL=BTC-USD
-make api-ticker SYMBOL=ETH-USD
+make api-ticker SYMBOL=BTC-EUR
+make api-ticker SYMBOL=ETH-EUR
 
 # Get multiple tickers at once
 make api-tickers
-make api-tickers SYMBOLS=BTC-USD,ETH-USD,SOL-USD,DOGE-USD
+make api-tickers SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR,DOGE-EUR
 
 # Get recent candles (historical data)
-make api-candles SYMBOL=BTC-USD INTERVAL=60 LIMIT=10
-make api-candles SYMBOL=ETH-USD INTERVAL=15 LIMIT=20
+make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10
+make api-candles SYMBOL=ETH-EUR INTERVAL=15 LIMIT=20
 ```
 
 ### Advanced Options

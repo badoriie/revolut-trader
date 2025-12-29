@@ -45,7 +45,7 @@ async def run_backtest(args):
     # Parse arguments
     strategy_type = StrategyType(args.strategy)
     risk_level = RiskLevel(args.risk)
-    symbols = args.pairs.split(",") if args.pairs else ["BTC-USD", "ETH-USD"]
+    symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
     initial_capital = Decimal(str(args.capital))
 
     # Initialize API client
@@ -148,16 +148,16 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Backtest market making strategy on BTC-USD for 30 days
-  python backtest.py --strategy market_making --pairs BTC-USD --days 30
+  # Backtest market making strategy on BTC-EUR for 30 days
+  python backtest.py --strategy market_making --pairs BTC-EUR --days 30
 
   # Test momentum strategy with moderate risk on multiple pairs
-  python backtest.py --strategy momentum --risk moderate --pairs BTC-USD,ETH-USD,SOL-USD --days 60
+  python backtest.py --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR,SOL-EUR --days 60
 
   # Run with 1-hour candles and save results
   python backtest.py --strategy mean_reversion --interval 60 --days 90 --output ./results/backtest.json
 
-  # Test with custom initial capital
+  # Test with custom initial capital (EUR)
   python backtest.py --strategy multi_strategy --capital 50000 --days 180
         """,
     )
@@ -184,8 +184,8 @@ Examples:
         "--pairs",
         "-p",
         type=str,
-        default="BTC-USD,ETH-USD",
-        help="Comma-separated trading pairs (default: BTC-USD,ETH-USD)",
+        default="BTC-EUR,ETH-EUR",
+        help="Comma-separated trading pairs (default: BTC-EUR,ETH-EUR)",
     )
 
     parser.add_argument(
@@ -210,7 +210,7 @@ Examples:
         "-c",
         type=float,
         default=10000.0,
-        help="Initial capital in USD (default: 10000)",
+        help="Initial capital in EUR (default: 10000)",
     )
 
     parser.add_argument(

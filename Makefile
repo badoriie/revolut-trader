@@ -25,9 +25,9 @@ help:
 	@echo "🔌 API Testing:"
 	@echo "  make api-test          - Test API connection"
 	@echo "  make api-balance       - Get account balance"
-	@echo "  make api-ticker        - Get ticker for symbol (SYMBOL=BTC-USD)"
-	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-USD,ETH-USD,SOL-USD)"
-	@echo "  make api-candles       - Get recent candles (SYMBOL=BTC-USD INTERVAL=60 LIMIT=10)"
+	@echo "  make api-ticker        - Get ticker for symbol (SYMBOL=BTC-EUR)"
+	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR)"
+	@echo "  make api-candles       - Get recent candles (SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10)"
 	@echo ""
 	@echo "✅ Code Quality:"
 	@echo "  make pre-commit-install - Install pre-commit hooks"
@@ -195,19 +195,19 @@ api-balance:
 
 # Get ticker for a symbol
 api-ticker:
-	@SYMBOL=$${SYMBOL:-BTC-USD}; \
+	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	echo "📊 Getting ticker for $$SYMBOL..."; \
 	uv run python cli/api_test.py ticker --symbol $$SYMBOL
 
 # Get multiple tickers
 api-tickers:
-	@SYMBOLS=$${SYMBOLS:-BTC-USD,ETH-USD,SOL-USD}; \
+	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
 	echo "📊 Getting tickers for $$SYMBOLS..."; \
 	uv run python cli/api_test.py tickers --symbols $$SYMBOLS
 
 # Get recent candles
 api-candles:
-	@SYMBOL=$${SYMBOL:-BTC-USD}; \
+	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
 	echo "📈 Getting $$LIMIT candles for $$SYMBOL ($$INTERVAL min)..."; \

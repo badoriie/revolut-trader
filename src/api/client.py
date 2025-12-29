@@ -261,7 +261,10 @@ class RevolutAPIClient:
 
         # Convert array to dictionary with currency as key
         balances = {}
-        total_usd = 0.0
+        total_base = 0.0
+
+        # Get base currency from settings (default: EUR)
+        base_currency = settings.base_currency
 
         for balance_obj in balance_list:
             currency = balance_obj.get("currency", "UNKNOWN")
@@ -275,13 +278,18 @@ class RevolutAPIClient:
                 "total": total,
             }
 
-            # Sum up USD value (approximate)
-            if currency == "USD" or currency == "USDC" or currency == "USDT":
-                total_usd += total
+            # Sum up base currency value (approximate for stablecoins)
+            # EUR, EURE (Euro stablecoins), or base currency equivalents
+            if currency == base_currency or currency == f"{base_currency}E":
+                total_base += total
+            # Also include USD/USDC/USDT for convenience (will need proper conversion in production)
+            elif base_currency == "EUR" and currency in ["USD", "USDC", "USDT"]:
+                total_base += total * 0.92  # Approximate EUR conversion (should use real rates)
 
         return {
             "balances": balances,
-            "total_usd": total_usd,
+            f"total_{base_currency.lower()}": total_base,
+            "base_currency": base_currency,
             "currencies": list(balances.keys()),
         }
 
