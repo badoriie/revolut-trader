@@ -44,6 +44,10 @@ class TradingBot:
         self.strategy: BaseStrategy | None = None
         self.persistence = HybridPersistence()  # Hybrid persistence (SQLite + JSON backup)
 
+        # Currency display
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        self.currency_symbol = currency_symbols.get(settings.base_currency, settings.base_currency)
+
         # State
         self.is_running = False
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
@@ -117,9 +121,9 @@ class TradingBot:
         if self.trading_mode == TradingMode.LIVE:
             try:
                 balance_data = await self.api_client.get_balance()
-                # Extract USD or appropriate currency balance
+                # Extract appropriate currency balance
                 self.cash_balance = Decimal(str(balance_data.get("availableBalance", 10000)))
-                logger.info(f"Live account balance: ${self.cash_balance}")
+                logger.info(f"Live account balance: {self.currency_symbol}{self.cash_balance:,.2f}")
             except Exception as e:
                 logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
                 logger.critical("Cannot start live trading without accurate balance information!")
@@ -140,7 +144,7 @@ class TradingBot:
             f"Mode: {self.trading_mode.value}\n"
             f"Strategy: {self.strategy_type.value}\n"
             f"Risk Level: {self.risk_level.value}\n"
-            f"Balance: ${self.cash_balance}\n"
+            f"Balance: {self.currency_symbol}{self.cash_balance:,.2f}\n"
             f"Pairs: {', '.join(self.trading_pairs)}"
         )
 
@@ -362,10 +366,10 @@ class TradingBot:
         self.portfolio_snapshots.append(snapshot)
 
         logger.info(
-            f"Portfolio: ${total_value:.2f} | "
-            f"Cash: ${self.cash_balance:.2f} | "
-            f"Positions: ${positions_value:.2f} | "
-            f"P&L: ${snapshot.total_pnl:.2f}"
+            f"Portfolio: {self.currency_symbol}{total_value:.2f} | "
+            f"Cash: {self.currency_symbol}{self.cash_balance:.2f} | "
+            f"Positions: {self.currency_symbol}{positions_value:.2f} | "
+            f"P&L: {self.currency_symbol}{snapshot.total_pnl:.2f}"
         )
 
     async def _check_risk_limits(self):
@@ -383,7 +387,7 @@ class TradingBot:
         # Check if daily loss limit hit
         if self.risk_manager.daily_loss_limit_hit:
             await self.notifier.notify_risk_alert(
-                f"Daily loss limit reached! P&L: ${current_snapshot.daily_pnl}\n"
+                f"Daily loss limit reached! P&L: {self.currency_symbol}{current_snapshot.daily_pnl:.2f}\n"
                 f"Trading suspended until reset."
             )
             logger.critical("Daily loss limit hit - trading suspended")
@@ -407,7 +411,7 @@ class TradingBot:
                 logger.info(
                     f"Last 7 days: {analytics['total_trades']} trades, "
                     f"Win rate: {analytics['win_rate']:.1f}%, "
-                    f"Total P&L: ${analytics['total_pnl']:.2f}"
+                    f"Total P&L: {self.currency_symbol}{analytics['total_pnl']:.2f}"
                 )
 
         except Exception as e:

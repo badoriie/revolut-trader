@@ -57,19 +57,26 @@ class BacktestResults:
 
     def print_summary(self):
         """Print backtest summary."""
+        from src.config import settings
+
+        # Get currency symbol
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        base_currency = settings.base_currency
+        symbol = currency_symbols.get(base_currency, base_currency)
+
         print("\n" + "=" * 60)
         print("BACKTEST RESULTS")
         print("=" * 60)
-        print(f"Initial Capital:    ${self.initial_capital:,.2f}")
-        print(f"Final Capital:      ${self.final_capital:,.2f}")
-        print(f"Total P&L:          ${self.total_pnl:,.2f}")
+        print(f"Initial Capital:    {symbol}{self.initial_capital:,.2f}")
+        print(f"Final Capital:      {symbol}{self.final_capital:,.2f}")
+        print(f"Total P&L:          {symbol}{self.total_pnl:,.2f}")
         print(f"Return:             {self.return_pct:.2f}%")
         print(f"Total Trades:       {self.total_trades}")
         print(f"Winning Trades:     {self.winning_trades}")
         print(f"Losing Trades:      {self.losing_trades}")
         print(f"Win Rate:           {self.win_rate:.2f}%")
         print(f"Profit Factor:      {self.profit_factor:.2f}")
-        print(f"Max Drawdown:       ${self.max_drawdown:,.2f}")
+        print(f"Max Drawdown:       {symbol}{self.max_drawdown:,.2f}")
         print("=" * 60 + "\n")
 
 
@@ -178,7 +185,7 @@ class BacktestEngine:
         if side == OrderSide.BUY:
             if self.cash_balance < order_value:
                 logger.warning(
-                    f"Insufficient funds for BUY: need ${order_value}, have ${self.cash_balance}"
+                    f"Insufficient funds for BUY: need {order_value:.2f}, have {self.cash_balance:.2f}"
                 )
                 return False
 
@@ -263,12 +270,19 @@ class BacktestEngine:
         Returns:
             BacktestResults object with performance metrics
         """
+        from src.config import settings
+
+        # Get currency symbol
+        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+        base_currency = settings.base_currency
+        symbol_char = currency_symbols.get(base_currency, base_currency)
+
         logger.info("=" * 60)
         logger.info("STARTING BACKTEST")
         logger.info("=" * 60)
         logger.info(f"Strategy: {self.strategy_type.value}")
         logger.info(f"Risk Level: {self.risk_level.value}")
-        logger.info(f"Initial Capital: ${self.initial_capital}")
+        logger.info(f"Initial Capital: {symbol_char}{self.initial_capital:,.2f}")
         logger.info(f"Symbols: {', '.join(symbols)}")
         logger.info(f"Period: {days} days, {interval}min candles")
         logger.info("=" * 60)
