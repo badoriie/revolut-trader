@@ -71,7 +71,7 @@ async def run_backtest(args):
         # Optionally save results
         if args.output:
             import json
-            from datetime import datetime
+            from datetime import UTC, datetime
 
             output_file = Path(args.output)
 
@@ -90,7 +90,7 @@ async def run_backtest(args):
             ]
 
             output_data = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "config": {
                     "strategy": strategy_type.value,
                     "risk_level": risk_level.value,

@@ -55,6 +55,14 @@
   - Removes virtual environment and all cache files
   - Confirmation prompt to prevent accidental data loss
   - Useful for starting completely fresh or troubleshooting
+- **Database Encryption**: Application-level encryption for sensitive data
+  - New `src/utils/db_encryption.py` - Fernet symmetric encryption
+  - Encryption key securely stored in 1Password
+  - Transparent encrypt/decrypt for sensitive database fields
+  - `make db-encrypt-setup` - Generate and store encryption key
+  - `make db-encrypt-status` - Check encryption status
+  - Optional feature - gracefully falls back to plaintext if not enabled
+  - Uses existing `cryptography` library (no additional dependencies)
 - **Pre-commit Hooks**: Automated code quality checks on every commit
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)
