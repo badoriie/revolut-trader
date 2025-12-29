@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db-stats db-analytics db-backtests db-export db-export-csv db-migrate
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate
 
 # Default target - show help
 help:
@@ -36,10 +36,11 @@ help:
 	@echo "  make backup            - Backup data and logs"
 	@echo ""
 	@echo "💾 Database Management:"
+	@echo "  make db                - 📊 Show database overview (stats + analytics + backtests)"
 	@echo "  make db-stats          - Show database statistics"
-	@echo "  make db-analytics      - Show trading analytics (last 30 days)"
-	@echo "  make db-backtests      - Show backtest results (last 10 runs)"
-	@echo "  make db-export         - Export data to JSON files"
+	@echo "  make db-analytics      - Show trading analytics (DAYS=30 to customize)"
+	@echo "  make db-backtests      - Show backtest results (LIMIT=10 to customize)"
+	@echo "  make db-export         - Export data to JSON (DIR=data/exports to customize)"
 	@echo "  make db-export-csv     - Export data to CSV for analysis"
 	@echo ""
 	@echo "💡 Quick Start:"
@@ -271,33 +272,36 @@ restore:
 # Database Management
 # ============================================================================
 
+# Define DB management command (DRY principle)
+DB_CMD = @uv run python cli/db_manage.py
+
+# Show comprehensive database overview
+db:
+	$(DB_CMD) stats
+	@echo ""
+	$(DB_CMD) analytics 7
+	@echo ""
+	$(DB_CMD) backtests 5
+
 # Show database statistics
 db-stats:
-	@echo "📈 Database Statistics"
-	@uv run python cli/db_manage.py stats
+	$(DB_CMD) stats
 
-# Show trading analytics
+# Show trading analytics (DAYS=30 to customize)
 db-analytics:
-	@DAYS=$${DAYS:-30}; \
-	echo "📊 Trading Analytics (Last $$DAYS days)"; \
-	uv run python cli/db_manage.py analytics $$DAYS
+	$(DB_CMD) analytics $${DAYS:-30}
 
-# Show backtest results
+# Show backtest results (LIMIT=10 to customize)
 db-backtests:
-	@LIMIT=$${LIMIT:-10}; \
-	echo "📊 Backtest Results (Last $$LIMIT runs)"; \
-	uv run python cli/db_manage.py backtests $$LIMIT
+	$(DB_CMD) backtests $${LIMIT:-10}
 
-# Export data to JSON
+# Export data to JSON (DIR=data/exports to customize)
 db-export:
-	@DIR=$${DIR:-data/exports}; \
-	echo "📤 Exporting data to $$DIR"; \
-	uv run python cli/db_manage.py export $$DIR
+	$(DB_CMD) export $${DIR:-data/exports}
 
 # Export data to CSV
 db-export-csv:
-	@echo "📊 Exporting data to CSV..."
-	@uv run python cli/db_manage.py export-csv
+	$(DB_CMD) export-csv
 
 # Migrate SQLite to PostgreSQL
 db-migrate:
@@ -305,7 +309,7 @@ db-migrate:
 	@echo ""
 	@read -p "Enter PostgreSQL URL (e.g., postgresql://user:pass@localhost/trading): " pgurl && \
 	if [ -n "$$pgurl" ]; then \
-		uv run python cli/db_manage.py migrate "$$pgurl"; \
+		$(DB_CMD) migrate "$$pgurl"; \
 	else \
 		echo "❌ Migration cancelled"; \
 	fi
