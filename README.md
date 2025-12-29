@@ -311,24 +311,66 @@ tail -f logs/trading.log
 
 ### Trading Data
 
-The bot automatically saves trading data to the `data/` directory:
+The bot uses a **hybrid persistence system** combining SQLite database (primary) with JSON backup:
 
-- **Portfolio Snapshots**: `data/portfolio_snapshots.json` - Historical portfolio values
+#### Database Storage (Primary)
+
+- **Database File**: `data/trading.db` - SQLite database for fast queries
+- **Portfolio Snapshots**: Time-series data saved immediately for real-time analytics
+- **Trade History**: All completed trades with indexed queries
+- **Session Tracking**: Each bot run is tracked with start/end metrics
+
+#### JSON Backup (Secondary)
+
+- **Portfolio Snapshots**: `data/portfolio_snapshots.json` - Daily backup
 - **Trade History**: `data/trade_history.json` - All completed trades
 - **Session Data**: `data/current_session.json` - Current session state
 
-Data is saved:
+#### Data Management Commands
 
-- Every ~10 minutes during trading
-- After each completed trade
-- On bot shutdown
+```bash
+# Show database statistics
+make db-stats
+
+# Show trading analytics (last 30 days)
+make db-analytics
+
+# Export data to JSON files
+make db-export
+
+# Export to CSV for analysis
+make db-export-csv
+
+# Migrate to PostgreSQL (for production)
+make db-migrate
+```
+
+#### Data Saving Schedule
+
+- **Database**: Immediately after each trade and snapshot
+- **JSON Backup**: Daily at midnight (last 7 days)
+- **Periodic Save**: Every 10 iterations (~10 minutes)
+- **On Shutdown**: Final state saved to both systems
+
+#### Migration to PostgreSQL
+
+The bot is designed for easy migration from SQLite to PostgreSQL:
+
+```bash
+# Export current data as backup
+make db-export
+
+# Migrate to PostgreSQL
+make db-migrate
+# Enter: postgresql://user:password@localhost/trading
+```
 
 This data persists across bot restarts and can be used for:
 
-- Performance analysis
+- Performance analysis with SQL queries
 - Backtesting validation
-- Trade journal
-- Tax reporting
+- Trade journal and tax reporting
+- Real-time analytics without parsing JSON files
 
 ### Telegram Alerts
 

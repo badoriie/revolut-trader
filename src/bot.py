@@ -17,7 +17,7 @@ from src.strategies.market_making import MarketMakingStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
-from src.utils.persistence import DataPersistence
+from src.utils.hybrid_persistence import HybridPersistence
 
 
 class TradingBot:
@@ -42,7 +42,7 @@ class TradingBot:
         self.executor: OrderExecutor | None = None
         self.notifier: TelegramNotifier | None = None
         self.strategy: BaseStrategy | None = None
-        self.persistence = DataPersistence()  # Data persistence
+        self.persistence = HybridPersistence()  # Hybrid persistence (SQLite + JSON backup)
 
         # State
         self.is_running = False
@@ -83,6 +83,15 @@ class TradingBot:
 
         # Load historical data if available
         self._load_historical_data()
+
+        # Start database session tracking
+        self.persistence.start_session(
+            strategy=self.strategy_type.value,
+            risk_level=self.risk_level.value,
+            trading_mode=self.trading_mode.value,
+            trading_pairs=self.trading_pairs,
+            initial_balance=self.cash_balance,
+        )
 
         # Initialize API client
         self.api_client = RevolutAPIClient()
@@ -140,8 +149,18 @@ class TradingBot:
         logger.info("Stopping trading bot...")
         self.is_running = False
 
-        # Save final state before shutdown
+        # Save final state and end session
         self._save_data()
+
+        # End database session
+        current_snapshot = self.portfolio_snapshots[-1] if self.portfolio_snapshots else None
+        if current_snapshot:
+            total_trades = len(self.persistence.load_trade_history(limit=100000))
+            self.persistence.end_session(
+                final_balance=self.cash_balance,
+                total_pnl=current_snapshot.total_pnl,
+                total_trades=total_trades,
+            )
 
         if self.api_client:
             await self.api_client.close()
@@ -183,7 +202,17 @@ class TradingBot:
                 # Update portfolio snapshot
                 await self._update_portfolio()
 
-                # Save data periodically (every 10 iterations = ~10 minutes at 1min interval)
+                # Save snapshot to database immediately (for real-time analytics)
+                if self.portfolio_snapshots:
+                    current_snapshot = self.portfolio_snapshots[-1]
+                    self.persistence.save_portfolio_snapshot(
+                        snapshot=current_snapshot,
+                        strategy=self.strategy_type.value,
+                        risk_level=self.risk_level.value,
+                        trading_mode=self.trading_mode.value,
+                    )
+
+                # Save bulk data periodically (every 10 iterations for JSON backup)
                 self.save_counter += 1
                 if self.save_counter >= 10:
                     self._save_data()
@@ -360,56 +389,47 @@ class TradingBot:
             logger.critical("Daily loss limit hit - trading suspended")
 
     def _load_historical_data(self) -> None:
-        """Load historical portfolio snapshots and trade history from disk."""
+        """Load historical portfolio snapshots and trade history from database."""
         try:
-            # Load portfolio snapshots
-            snapshots = self.persistence.load_portfolio_snapshots()
-            if snapshots:
-                # Load most recent snapshots into deque (up to maxlen=1000)
-                for snapshot in snapshots[-1000:]:
-                    self.portfolio_snapshots.append(snapshot)
-                logger.info(f"Loaded {len(snapshots)} historical portfolio snapshots")
+            # Load recent snapshots from database (last 1000)
+            snapshots_data = self.persistence.load_portfolio_snapshots(limit=1000)
+            if snapshots_data:
+                logger.info(f"Loaded {len(snapshots_data)} historical snapshots from database")
 
-            # Load trade history (just log count, trades are in the file)
-            trades = self.persistence.load_trade_history()
+            # Load trade history (just log count)
+            trades = self.persistence.load_trade_history(limit=100)
             if trades:
-                logger.info(f"Loaded {len(trades)} trades from history")
+                logger.info(f"Loaded {len(trades)} recent trades from database")
 
-            # Load session data if exists
-            session = self.persistence.load_session_data()
-            if session:
-                logger.info(f"Previous session data found from {session['timestamp']}")
-                # Could restore cash balance here if desired
-                # self.cash_balance = Decimal(session['cash_balance'])
+            # Show analytics for last 7 days
+            analytics = self.persistence.get_analytics(days=7)
+            if analytics and analytics.get("total_trades", 0) > 0:
+                logger.info(
+                    f"Last 7 days: {analytics['total_trades']} trades, "
+                    f"Win rate: {analytics['win_rate']:.1f}%, "
+                    f"Total P&L: ${analytics['total_pnl']:.2f}"
+                )
 
         except Exception as e:
             logger.warning(f"Could not load historical data: {e}")
             logger.info("Starting with fresh state")
 
     def _save_data(self) -> None:
-        """Save current portfolio snapshots and session data to disk."""
+        """Save current portfolio snapshots to JSON backup."""
         try:
-            # Save portfolio snapshots
+            # Bulk save snapshots to JSON backup periodically
             if self.portfolio_snapshots:
-                self.persistence.save_portfolio_snapshots(list(self.portfolio_snapshots))
-
-            # Save current session data
-            current_snapshot = self.portfolio_snapshots[-1] if self.portfolio_snapshots else None
-            metadata = {
-                "strategy": self.strategy_type.value,
-                "risk_level": self.risk_level.value,
-                "trading_mode": self.trading_mode.value,
-                "trading_pairs": self.trading_pairs,
-            }
-
-            if current_snapshot:
-                self.persistence.save_session_data(
-                    cash_balance=self.cash_balance,
-                    total_pnl=current_snapshot.total_pnl,
-                    metadata=metadata,
+                metadata = {
+                    "strategy": self.strategy_type.value,
+                    "risk_level": self.risk_level.value,
+                    "trading_mode": self.trading_mode.value,
+                    "trading_pairs": self.trading_pairs,
+                }
+                self.persistence.save_portfolio_snapshots_bulk(
+                    list(self.portfolio_snapshots), metadata
                 )
 
-            logger.debug("Saved portfolio data to disk")
+            logger.debug("Saved portfolio data (database + JSON backup)")
 
         except Exception as e:
             logger.error(f"Failed to save data: {e}")

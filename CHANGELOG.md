@@ -4,15 +4,42 @@
 
 ### Added - Code Quality & Development Tools
 
-- **Data Persistence**: Portfolio snapshots and trade history now saved to disk
-  - New `src/utils/persistence.py` module for data management
-  - Portfolio snapshots saved periodically (every ~10 minutes) and on shutdown
+- **Database Persistence**: Hybrid SQLite + JSON backup system for trading data
+  - **Primary Storage**: SQLite database for fast queries and analytics
+    - New `src/models/db_models.py` - SQLAlchemy models (PortfolioSnapshotDB, TradeDB, SessionDB)
+    - New `src/utils/db_persistence.py` - Database persistence layer
+    - Indexed queries for efficient time-series data retrieval
+    - Session tracking for each bot run
+    - Real-time analytics without parsing JSON files
+  - **Backup Storage**: JSON files for disaster recovery and portability
+    - Automatic daily JSON backup of last 7 days
+    - `src/utils/persistence.py` - JSON persistence (backup only)
+    - Backward compatible with existing JSON data
+  - **Hybrid Manager**: `src/utils/hybrid_persistence.py` combines both approaches
+    - Saves to database immediately (primary)
+    - Daily JSON backup at midnight
+    - Load from either source for disaster recovery
+  - **Migration Tools**: Easy migration path from SQLite to PostgreSQL
+    - New `src/utils/db_migration.py` - Database migration utilities
+    - New `cli/db_manage.py` - CLI tool for database management
+    - Export to JSON/CSV for analysis
+    - Data integrity verification after migration
+  - **Makefile Commands**: Convenient database management
+    - `make db-stats` - Show database statistics
+    - `make db-analytics` - Show trading analytics (last 30 days)
+    - `make db-export` - Export data to JSON files
+    - `make db-export-csv` - Export to CSV for analysis
+    - `make db-migrate` - Migrate SQLite to PostgreSQL
+  - **Updated bot.py**: Integrated hybrid persistence
+    - Session tracking on start/stop
+    - Immediate database saves for real-time analytics
+    - Periodic JSON backup (every 10 iterations)
+    - Historical data loading from database
+    - Analytics display on startup
+  - Portfolio snapshots saved periodically and on shutdown
   - Trade history automatically saved after each filled order
-  - Session data saved for potential bot restarts
-  - Historical data loaded on bot startup
-  - Data stored in `data/` directory (gitignored, structure preserved)
-  - JSON format for easy analysis and portability
-  - Automatic error handling and logging
+  - Data stored in `data/trading.db` (SQLite) with JSON backup in `data/`
+  - Migration path to PostgreSQL for production use
 - **Pre-commit Hooks**: Automated code quality checks on every commit
   - Ruff linting and formatting
   - Mypy type checking (strict for strategies/risk management, relaxed for CLI/tests)
