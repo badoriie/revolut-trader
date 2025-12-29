@@ -31,13 +31,14 @@ class Settings(BaseSettings):
 
     # All credentials are retrieved from 1Password only
     # No .env file dependency for security
+    # Configuration can also be stored in 1Password (optional, falls back to defaults)
 
     # Revolut API
     revolut_api_key: str = Field(default="")
     revolut_private_key_path: Path = Field(default=Path("./config/revolut_private.pem"))
     revolut_api_base_url: str = Field(default="https://revx.revolut.com/api/1.0")
 
-    # Trading
+    # Trading - Can be overridden via 1Password
     trading_mode: TradingMode = Field(default=TradingMode.PAPER)
     default_strategy: StrategyType = Field(default=StrategyType.MARKET_MAKING)
     risk_level: RiskLevel = Field(default=RiskLevel.CONSERVATIVE)
@@ -50,6 +51,53 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [pair.strip() for pair in v.split(",")]
         return v
+
+    def model_post_init(self, __context):
+        """Load configuration overrides from 1Password after initialization."""
+        try:
+            from src.utils.onepassword import get_config
+
+            # Try to load config from 1Password (optional - falls back to defaults)
+            trading_mode_str = get_config("TRADING_MODE", self.trading_mode.value)
+            if trading_mode_str and trading_mode_str != self.trading_mode.value:
+                try:
+                    self.trading_mode = TradingMode(trading_mode_str.lower())
+                except ValueError:
+                    pass  # Invalid value, keep default
+
+            strategy_str = get_config("DEFAULT_STRATEGY", self.default_strategy.value)
+            if strategy_str and strategy_str != self.default_strategy.value:
+                try:
+                    self.default_strategy = StrategyType(strategy_str.lower())
+                except ValueError:
+                    pass
+
+            risk_str = get_config("RISK_LEVEL", self.risk_level.value)
+            if risk_str and risk_str != self.risk_level.value:
+                try:
+                    self.risk_level = RiskLevel(risk_str.lower())
+                except ValueError:
+                    pass
+
+            base_curr = get_config("BASE_CURRENCY", self.base_currency)
+            if base_curr:
+                self.base_currency = base_curr.upper()
+
+            pairs_str = get_config("TRADING_PAIRS", ",".join(self.trading_pairs))
+            if pairs_str:
+                self.trading_pairs = [p.strip() for p in pairs_str.split(",")]
+
+            capital_str = get_config("INITIAL_CAPITAL", str(self.paper_initial_capital))
+            if capital_str:
+                try:
+                    self.paper_initial_capital = float(capital_str)
+                except ValueError:
+                    pass
+
+        except Exception:  # nosec B110
+            # If there's any error loading from 1Password, just use defaults
+            # This is intentional - we want graceful degradation if 1Password is unavailable
+            pass
 
     # Risk Management
     max_position_size_pct: float = Field(default=2.0, ge=0.1, le=100.0)

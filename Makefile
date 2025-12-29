@@ -10,8 +10,9 @@ help:
 	@echo "  make clean             - Remove cache files and artifacts"
 	@echo "  make deep-clean        - ⚠️  Remove ALL generated files (data, logs, venv)"
 	@echo ""
-	@echo "🔐 Credentials (1Password):"
+	@echo "🔐 Credentials & Configuration (1Password):"
 	@echo "  make ops               - Setup and store credentials in 1Password"
+	@echo "  make opconfig-init     - Create configuration item (separate from credentials)"
 	@echo "  make opshow            - Show credentials (masked)"
 	@echo "  make opstatus          - Check 1Password status"
 	@echo "  make opdelete          - Delete credentials from 1Password"
@@ -140,6 +141,69 @@ opstatus:
 
 opdelete:
 	@bash scripts/1password-manager.sh delete
+
+# Create configuration item (separate from credentials)
+opconfig-init:
+	@bash scripts/1password-manager.sh create-config
+
+# Configuration management (optional - stores config in 1Password)
+opconfig:
+	@echo "⚙️  1Password Configuration Management"
+	@echo "======================================================"
+	@echo ""
+	@echo "Set trading configuration in 1Password (optional):"
+	@echo ""
+	@echo "Available configurations:"
+	@echo "  TRADING_MODE      - paper or live (default: paper)"
+	@echo "  RISK_LEVEL        - conservative, moderate, aggressive (default: conservative)"
+	@echo "  BASE_CURRENCY     - EUR, USD, GBP (default: EUR)"
+	@echo "  TRADING_PAIRS     - BTC-EUR,ETH-EUR,... (default: BTC-EUR,ETH-EUR)"
+	@echo "  DEFAULT_STRATEGY  - market_making, momentum, mean_reversion, multi_strategy"
+	@echo "  INITIAL_CAPITAL   - Initial capital for paper trading (default: 10000)"
+	@echo ""
+	@echo "First time setup:"
+	@echo "  make opconfig-init  # Add config fields to existing 1Password item"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make opconfig-set KEY=TRADING_MODE VALUE=live"
+	@echo "  make opconfig-set KEY=RISK_LEVEL VALUE=moderate"
+	@echo "  make opconfig-set KEY=BASE_CURRENCY VALUE=EUR"
+	@echo "  make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR,SOL-EUR"
+	@echo ""
+	@echo "View current config:"
+	@echo "  make opconfig-show"
+	@echo ""
+	@echo "📖 Full documentation: docs/1PASSWORD_CONFIG.md"
+
+opconfig-set:
+	@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
+		echo "❌ Error: KEY and VALUE required"; \
+		echo "Usage: make opconfig-set KEY=TRADING_MODE VALUE=live"; \
+		exit 1; \
+	fi
+	@echo "⚙️  Setting $(KEY) = $(VALUE) in 1Password config..."
+	@op item edit revolut-trader-config --vault revolut-trader $(KEY)[text]="$(VALUE)" && \
+		echo "✅ Success: $(KEY) set to $(VALUE)" || \
+		echo "❌ Failed to set $(KEY). Run 'make opconfig-init' first to create config item."
+
+opconfig-show:
+	@echo "⚙️  Current configuration from 1Password:"
+	@echo "======================================================"
+	@for key in TRADING_MODE RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+		value=$$(op item get revolut-trader-config --vault revolut-trader --fields $$key 2>/dev/null || echo "(not set)"); \
+		printf "%-20s %s\n" "$$key:" "$$value"; \
+	done
+
+opconfig-delete:
+	@if [ -z "$(KEY)" ]; then \
+		echo "❌ Error: KEY required"; \
+		echo "Usage: make opconfig-delete KEY=TRADING_MODE"; \
+		exit 1; \
+	fi
+	@echo "⚙️  Removing $(KEY) from 1Password config (will use default)..."
+	@op item edit revolut-trader-config --vault revolut-trader $(KEY)[delete] && \
+		echo "✅ Success: $(KEY) removed, will use default" || \
+		echo "❌ Failed to remove $(KEY)"
 
 # ============================================================================
 # Trading Bot
