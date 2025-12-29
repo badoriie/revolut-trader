@@ -1,19 +1,19 @@
 # 1Password Configuration Management
 
-**Store trading bot configuration securely in 1Password alongside your credentials.**
+**Store trading bot configuration securely in 1Password - REQUIRED for all config.**
 
 ______________________________________________________________________
 
 ## Overview
 
-The Revolut Trader bot supports storing configuration settings in 1Password. This allows you to:
+The Revolut Trader bot **requires** all configuration to be stored in 1Password. This ensures:
 
-- ✅ **Centralize configuration** - Store everything in one secure location
-- ✅ **Easy switching** - Change settings without editing code files
-- ✅ **Environment-specific configs** - Different settings for different machines
-- ✅ **Security** - Keep sensitive settings like live mode encrypted
-- ✅ **Auto-initialized** - Setup automatically creates all fields with defaults
-- ✅ **Optional** - If not set in 1Password, defaults from `src/config.py` are used
+- ✅ **Safety first** - No accidental use of hardcoded defaults
+- ✅ **Explicit configuration** - All settings are visible and intentional
+- ✅ **Centralized management** - One secure source of truth
+- ✅ **Easy switching** - Change settings without editing code
+- ✅ **Environment-specific configs** - Different settings per machine
+- ✅ **Auto-initialized** - `make setup` creates all fields with safe defaults
 
 ______________________________________________________________________
 
@@ -32,95 +32,115 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## Initial Setup
+## Initial Setup (REQUIRED)
 
-**Good news!** When you run `make ops` (the initial 1Password setup), all configuration fields are automatically created with default values:
+**The configuration item is automatically created during setup.**
+
+When you run `make setup`, a separate 1Password item `revolut-trader-config` is created with safe defaults:
 
 ```bash
-make ops
+make setup
 ```
 
-This creates the following configuration fields in 1Password:
+This creates the **required** configuration item with these values:
 
-- `TRADING_MODE` = `paper`
-- `RISK_LEVEL` = `conservative`
+- `TRADING_MODE` = `paper` (safe simulation mode)
+- `RISK_LEVEL` = `conservative` (minimal risk)
 - `BASE_CURRENCY` = `EUR`
 - `TRADING_PAIRS` = `BTC-EUR,ETH-EUR`
 - `DEFAULT_STRATEGY` = `market_making`
 - `INITIAL_CAPITAL` = `10000`
 
-You can view them immediately with:
+**These values are REQUIRED.** The bot will not start without a valid 1Password config item.
+
+View your configuration:
 
 ```bash
 make opconfig-show
+```
+
+If the config item is missing, create it:
+
+```bash
+make opconfig-init
 ```
 
 ______________________________________________________________________
 
 ## How to Modify Configuration in 1Password
 
-### Option 1: Using 1Password CLI (Recommended)
+### Option 1: Using Makefile Commands (Recommended)
 
 ```bash
 # Set trading mode to live
-op item edit revolut-trader-credentials \
+make opconfig-set KEY=TRADING_MODE VALUE=live
+
+# Set base currency
+make opconfig-set KEY=BASE_CURRENCY VALUE=EUR
+
+# Set trading pairs
+make opconfig-set KEY=TRADING_PAIRS VALUE="BTC-EUR,ETH-EUR,SOL-EUR"
+
+# Set risk level
+make opconfig-set KEY=RISK_LEVEL VALUE=moderate
+
+# Set default strategy
+make opconfig-set KEY=DEFAULT_STRATEGY VALUE=multi_strategy
+
+# Set initial capital
+make opconfig-set KEY=INITIAL_CAPITAL VALUE=50000
+```
+
+### Option 2: Using 1Password CLI Directly
+
+```bash
+# Set trading mode to live
+op item edit revolut-trader-config \
   --vault revolut-trader \
   TRADING_MODE[text]="live"
 
-# Set base currency
-op item edit revolut-trader-credentials \
+# Set multiple values at once
+op item edit revolut-trader-config \
   --vault revolut-trader \
+  TRADING_MODE[text]="live" \
+  RISK_LEVEL[text]="moderate" \
   BASE_CURRENCY[text]="EUR"
-
-# Set trading pairs
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  TRADING_PAIRS[text]="BTC-EUR,ETH-EUR,SOL-EUR"
-
-# Set risk level
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  RISK_LEVEL[text]="moderate"
-
-# Set default strategy
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  DEFAULT_STRATEGY[text]="multi_strategy"
-
-# Set initial capital
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  INITIAL_CAPITAL[text]="50000"
 ```
 
-### Option 2: Using 1Password App (GUI)
+### Option 3: Using 1Password App (GUI)
 
 1. Open 1Password app
 1. Navigate to `revolut-trader` vault
-1. Open `revolut-trader-credentials` item
+1. Open `revolut-trader-config` item
 1. Click "Edit"
-1. Add new fields:
-   - Click "+ add more"
-   - Choose "Text" type (not "Concealed")
-   - Set field name (e.g., `TRADING_MODE`)
-   - Set value (e.g., `live`)
+1. Modify existing fields:
+   - Find the field (e.g., `TRADING_MODE`)
+   - Change the value (e.g., from `paper` to `live`)
 1. Save
 
 ______________________________________________________________________
 
-## Configuration Priority
+## Configuration Loading
 
-The bot loads configuration in this order (later overrides earlier):
+**All configuration is loaded from 1Password - there are no code defaults.**
 
-1. **Code defaults** in `src/config.py`
-1. **1Password values** (if present)
+The bot requires these fields in the `revolut-trader-config` item:
+
+- TRADING_MODE
+- RISK_LEVEL
+- BASE_CURRENCY
+- TRADING_PAIRS
+- DEFAULT_STRATEGY
+- INITIAL_CAPITAL
+
+If any field is missing, the bot will raise a clear error:
 
 ```python
-# Example flow:
-# 1. Code default: trading_mode = "paper"
-# 2. 1Password has: TRADING_MODE = "live"
-# 3. Final value: trading_mode = "live" ✓
+RuntimeError: TRADING_MODE not found in 1Password config.
+Run: make opconfig-init
 ```
+
+This ensures you **always know** what configuration is being used.
 
 ______________________________________________________________________
 
@@ -143,10 +163,9 @@ initial_capital = 10000.0
 **Set in 1Password:**
 
 ```bash
-op item edit revolut-trader-credentials --vault revolut-trader \
-  TRADING_MODE[text]="live" \
-  RISK_LEVEL[text]="moderate" \
-  TRADING_PAIRS[text]="BTC-EUR,ETH-EUR,SOL-EUR,MATIC-EUR"
+make opconfig-set KEY=TRADING_MODE VALUE=live
+make opconfig-set KEY=RISK_LEVEL VALUE=moderate
+make opconfig-set KEY=TRADING_PAIRS VALUE="BTC-EUR,ETH-EUR,SOL-EUR,MATIC-EUR"
 ```
 
 **Result:**
@@ -154,9 +173,9 @@ op item edit revolut-trader-credentials --vault revolut-trader \
 ```python
 trading_mode = "live"  # From 1Password ✓
 risk_level = "moderate"  # From 1Password ✓
-base_currency = "EUR"  # Default (not in 1Password)
+base_currency = "EUR"  # From 1Password (unchanged)
 trading_pairs = ["BTC-EUR", "ETH-EUR", "SOL-EUR", "MATIC-EUR"]  # From 1Password ✓
-initial_capital = 10000.0  # Default (not in 1Password)
+initial_capital = 10000.0  # From 1Password (unchanged)
 ```
 
 ### Example 3: High-Risk Aggressive Trading
@@ -164,10 +183,9 @@ initial_capital = 10000.0  # Default (not in 1Password)
 **Set in 1Password:**
 
 ```bash
-op item edit revolut-trader-credentials --vault revolut-trader \
-  RISK_LEVEL[text]="aggressive" \
-  DEFAULT_STRATEGY[text]="momentum" \
-  INITIAL_CAPITAL[text]="25000"
+make opconfig-set KEY=RISK_LEVEL VALUE=aggressive
+make opconfig-set KEY=DEFAULT_STRATEGY VALUE=momentum
+make opconfig-set KEY=INITIAL_CAPITAL VALUE=25000
 ```
 
 **Result:**
@@ -200,8 +218,11 @@ The bot logs will show:
 ### View 1Password config values
 
 ```bash
-# Get all fields from 1Password
-op item get revolut-trader-credentials --vault revolut-trader --format json | jq '.fields[] | select(.type=="STRING") | {label, value}'
+# View all config using make
+make opconfig-show
+
+# Or get all fields from 1Password directly
+op item get revolut-trader-config --vault revolut-trader --format json | jq '.fields[] | select(.type=="STRING") | {label, value}'
 ```
 
 ______________________________________________________________________
@@ -284,7 +305,9 @@ ______________________________________________________________________
 1. **Verify field names are correct:**
 
    ```bash
-   op item get revolut-trader-credentials --vault revolut-trader --fields TRADING_MODE
+   make opconfig-show
+   # Or directly:
+   op item get revolut-trader-config --vault revolut-trader --fields TRADING_MODE
    ```
 
 1. **Check field type is "text" not "concealed"**
@@ -292,12 +315,13 @@ ______________________________________________________________________
 1. **Look at bot logs:**
 
    ```
-   DEBUG | Config TRADING_MODE not in 1Password, using default: paper
+   RuntimeError: TRADING_MODE not found in 1Password config.
+   Run: make opconfig-init
    ```
 
-### Invalid value ignored
+### Invalid value error
 
-**Issue:** Set a config value but bot uses default
+**Issue:** Bot fails to start with invalid config value
 
 **Cause:** Value is invalid for that field type
 
@@ -305,47 +329,37 @@ ______________________________________________________________________
 
 ```bash
 # Check what you set
-op item get revolut-trader-credentials --vault revolut-trader --fields RISK_LEVEL
+make opconfig-show
 
-# Must be one of: conservative, moderate, aggressive (lowercase)
-op item edit revolut-trader-credentials --vault revolut-trader \
-  RISK_LEVEL[text]="moderate"
+# Must be valid values (see field documentation)
+make opconfig-set KEY=RISK_LEVEL VALUE=moderate
 ```
 
 ______________________________________________________________________
 
-## Migration from Code Defaults
+## No Code Defaults - 1Password Required
 
-### Step 1: Review Current Settings
+**This bot has NO code defaults for trading configuration.**
 
-Check `src/config.py` for your current defaults.
+All configuration MUST be in 1Password. This ensures:
 
-### Step 2: Decide What to Move
+### ✅ Safety Benefits
 
-Only move settings that:
+1. **No accidental trading** - Can't start without explicit config
+1. **Visible settings** - All config is in one place
+1. **Intentional changes** - Must explicitly set each value
+1. **Environment isolation** - Each machine has its own config
 
-- Change frequently
-- Differ between environments
-- Are sensitive (like `TRADING_MODE`)
+### If Config is Missing
 
-### Step 3: Set in 1Password
+The bot will immediately fail with a clear error:
 
-```bash
-# Example: Move to live trading
-op item edit revolut-trader-credentials --vault revolut-trader \
-  TRADING_MODE[text]="live" \
-  RISK_LEVEL[text]="moderate"
+```
+RuntimeError: TRADING_MODE not found in 1Password config.
+Run: make opconfig-init
 ```
 
-### Step 4: Test
-
-```bash
-# Run in paper mode first
-make run-paper
-
-# Check logs to verify config loaded from 1Password
-grep "Config loaded" logs/trading.log
-```
+This is **intentional** - better to fail fast than trade with unknown settings.
 
 ______________________________________________________________________
 
@@ -379,34 +393,40 @@ ______________________________________________________________________
 ## Quick Reference
 
 ```bash
-# View current config from 1Password
-op item get revolut-trader-credentials --vault revolut-trader
+# Create config item (if missing)
+make opconfig-init
 
-# Set trading mode to live
-op item edit revolut-trader-credentials --vault revolut-trader TRADING_MODE[text]="live"
+# View all configuration
+make opconfig-show
+
+# Set single values
+make opconfig-set KEY=TRADING_MODE VALUE=live
+make opconfig-set KEY=RISK_LEVEL VALUE=moderate
+make opconfig-set KEY=BASE_CURRENCY VALUE=EUR
+
+# Using 1Password CLI directly
+op item get revolut-trader-config --vault revolut-trader
+op item edit revolut-trader-config --vault revolut-trader TRADING_MODE[text]="live"
 
 # Set multiple values at once
-op item edit revolut-trader-credentials --vault revolut-trader \
+op item edit revolut-trader-config --vault revolut-trader \
   TRADING_MODE[text]="live" \
   RISK_LEVEL[text]="moderate" \
-  BASE_CURRENCY[text]="EUR" \
   TRADING_PAIRS[text]="BTC-EUR,ETH-EUR,SOL-EUR"
 
-# Remove a config value (fall back to default)
-op item edit revolut-trader-credentials --vault revolut-trader TRADING_MODE[delete]
-
-# Check what's being used
-make run-paper  # Check logs for "Config loaded from 1Password"
+# Test with paper mode
+make run-paper
 ```
 
 ______________________________________________________________________
 
 ## Summary
 
-✅ **Auto-initialized** - `make ops` creates all config fields with defaults
-✅ **1Password config is optional** - Defaults always work
-✅ **Override any setting** - Fine-grained control
-✅ **Secure and centralized** - Everything in one vault
+✅ **Auto-initialized** - `make setup` creates config item with safe defaults
+✅ **Required, not optional** - No accidental use of hardcoded values
+✅ **Explicit configuration** - All settings visible in 1Password
+✅ **Separate from credentials** - Clean organization
+✅ **Secure and centralized** - One source of truth
 ✅ **Environment-specific** - Different configs per machine
 ✅ **Safe** - Invalid values ignored, no crashes
 ✅ **Transparent** - All sources logged

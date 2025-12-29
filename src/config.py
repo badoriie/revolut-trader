@@ -38,12 +38,14 @@ class Settings(BaseSettings):
     revolut_private_key_path: Path = Field(default=Path("./config/revolut_private.pem"))
     revolut_api_base_url: str = Field(default="https://revx.revolut.com/api/1.0")
 
-    # Trading - Can be overridden via 1Password
-    trading_mode: TradingMode = Field(default=TradingMode.PAPER)
-    default_strategy: StrategyType = Field(default=StrategyType.MARKET_MAKING)
-    risk_level: RiskLevel = Field(default=RiskLevel.CONSERVATIVE)
-    base_currency: str = Field(default="EUR")  # Base fiat currency for portfolio valuation
-    trading_pairs: list[str] = Field(default=["BTC-EUR", "ETH-EUR"])
+    # Trading configuration - MUST be set in 1Password (no code defaults for safety)
+    # These are loaded from 1Password config item in model_post_init()
+    # Using temporary defaults that will be overwritten - the actual validation happens in model_post_init
+    trading_mode: TradingMode = TradingMode.PAPER  # Will be loaded from 1Password
+    default_strategy: StrategyType = StrategyType.MARKET_MAKING  # Will be loaded from 1Password
+    risk_level: RiskLevel = RiskLevel.CONSERVATIVE  # Will be loaded from 1Password
+    base_currency: str = "EUR"  # Will be loaded from 1Password
+    trading_pairs: list[str] = Field(default_factory=list)  # Will be loaded from 1Password
 
     @field_validator("trading_pairs", mode="before")
     @classmethod
@@ -53,51 +55,86 @@ class Settings(BaseSettings):
         return v
 
     def model_post_init(self, __context):
-        """Load configuration overrides from 1Password after initialization."""
+        """Load configuration from 1Password - REQUIRED for all trading config.
+
+        All trading configuration must be stored in 1Password for safety.
+        This prevents accidental use of hardcoded defaults.
+        """
+        from src.utils.onepassword import get_config
+
+        # Load TRADING_MODE (REQUIRED)
+        trading_mode_str = get_config("TRADING_MODE", None)
+        if not trading_mode_str:
+            raise RuntimeError(
+                "TRADING_MODE not found in 1Password config.\n"
+                "Run: make opconfig-init\n"
+                "Or manually set: make opconfig-set KEY=TRADING_MODE VALUE=paper"
+            )
         try:
-            from src.utils.onepassword import get_config
+            self.trading_mode = TradingMode(trading_mode_str.lower())
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid TRADING_MODE in 1Password: '{trading_mode_str}'. "
+                f"Must be 'paper' or 'live'."
+            ) from e
 
-            # Try to load config from 1Password (optional - falls back to defaults)
-            trading_mode_str = get_config("TRADING_MODE", self.trading_mode.value)
-            if trading_mode_str and trading_mode_str != self.trading_mode.value:
-                try:
-                    self.trading_mode = TradingMode(trading_mode_str.lower())
-                except ValueError:
-                    pass  # Invalid value, keep default
+        # Load RISK_LEVEL (REQUIRED)
+        risk_str = get_config("RISK_LEVEL", None)
+        if not risk_str:
+            raise RuntimeError(
+                "RISK_LEVEL not found in 1Password config.\n" "Run: make opconfig-init"
+            )
+        try:
+            self.risk_level = RiskLevel(risk_str.lower())
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid RISK_LEVEL in 1Password: '{risk_str}'. "
+                f"Must be 'conservative', 'moderate', or 'aggressive'."
+            ) from e
 
-            strategy_str = get_config("DEFAULT_STRATEGY", self.default_strategy.value)
-            if strategy_str and strategy_str != self.default_strategy.value:
-                try:
-                    self.default_strategy = StrategyType(strategy_str.lower())
-                except ValueError:
-                    pass
+        # Load DEFAULT_STRATEGY (REQUIRED)
+        strategy_str = get_config("DEFAULT_STRATEGY", None)
+        if not strategy_str:
+            raise RuntimeError(
+                "DEFAULT_STRATEGY not found in 1Password config.\n" "Run: make opconfig-init"
+            )
+        try:
+            self.default_strategy = StrategyType(strategy_str.lower())
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid DEFAULT_STRATEGY in 1Password: '{strategy_str}'. "
+                f"Must be 'market_making', 'momentum', 'mean_reversion', or 'multi_strategy'."
+            ) from e
 
-            risk_str = get_config("RISK_LEVEL", self.risk_level.value)
-            if risk_str and risk_str != self.risk_level.value:
-                try:
-                    self.risk_level = RiskLevel(risk_str.lower())
-                except ValueError:
-                    pass
+        # Load BASE_CURRENCY (REQUIRED)
+        base_curr = get_config("BASE_CURRENCY", None)
+        if not base_curr:
+            raise RuntimeError(
+                "BASE_CURRENCY not found in 1Password config.\n" "Run: make opconfig-init"
+            )
+        self.base_currency = base_curr.upper()
 
-            base_curr = get_config("BASE_CURRENCY", self.base_currency)
-            if base_curr:
-                self.base_currency = base_curr.upper()
+        # Load TRADING_PAIRS (REQUIRED)
+        pairs_str = get_config("TRADING_PAIRS", None)
+        if not pairs_str:
+            raise RuntimeError(
+                "TRADING_PAIRS not found in 1Password config.\n" "Run: make opconfig-init"
+            )
+        self.trading_pairs = [p.strip() for p in pairs_str.split(",")]
 
-            pairs_str = get_config("TRADING_PAIRS", ",".join(self.trading_pairs))
-            if pairs_str:
-                self.trading_pairs = [p.strip() for p in pairs_str.split(",")]
-
-            capital_str = get_config("INITIAL_CAPITAL", str(self.paper_initial_capital))
-            if capital_str:
-                try:
-                    self.paper_initial_capital = float(capital_str)
-                except ValueError:
-                    pass
-
-        except Exception:  # nosec B110
-            # If there's any error loading from 1Password, just use defaults
-            # This is intentional - we want graceful degradation if 1Password is unavailable
-            pass
+        # Load INITIAL_CAPITAL (REQUIRED)
+        capital_str = get_config("INITIAL_CAPITAL", None)
+        if not capital_str:
+            raise RuntimeError(
+                "INITIAL_CAPITAL not found in 1Password config.\n" "Run: make opconfig-init"
+            )
+        try:
+            self.paper_initial_capital = float(capital_str)
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid INITIAL_CAPITAL in 1Password: '{capital_str}'. "
+                f"Must be a positive number."
+            ) from e
 
     # Risk Management
     max_position_size_pct: float = Field(default=2.0, ge=0.1, le=100.0)
