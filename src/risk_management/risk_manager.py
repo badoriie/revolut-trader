@@ -11,7 +11,7 @@ class RiskManager:
 
     def __init__(self, risk_level: RiskLevel | None = None, max_order_value_usd: int = 10000):
         self.risk_level = risk_level or settings.risk_level
-        self.risk_params = settings.get_risk_parameters()
+        self.risk_params = self._get_risk_parameters_for_level(self.risk_level)
         self.daily_pnl = Decimal("0")
         self.daily_loss_limit_hit = False
 
@@ -29,6 +29,49 @@ class RiskManager:
         logger.info(
             f"Safety limits: Max order value {self.currency_symbol}{self.max_order_value_usd:,.0f}"
         )
+
+    @staticmethod
+    def _get_risk_parameters_for_level(risk_level: RiskLevel) -> dict:
+        """Get risk parameters for a specific risk level.
+
+        Args:
+            risk_level: The risk level to get parameters for
+
+        Returns:
+            Dictionary of risk parameters
+        """
+        risk_params = {
+            RiskLevel.CONSERVATIVE: {
+                "max_position_size_pct": 1.5,
+                "max_daily_loss_pct": 3.0,
+                "stop_loss_pct": 1.5,
+                "take_profit_pct": 2.5,
+                "max_open_positions": 3,
+            },
+            RiskLevel.MODERATE: {
+                "max_position_size_pct": 3.0,
+                "max_daily_loss_pct": 5.0,
+                "stop_loss_pct": 2.5,
+                "take_profit_pct": 4.0,
+                "max_open_positions": 5,
+            },
+            RiskLevel.AGGRESSIVE: {
+                "max_position_size_pct": 5.0,
+                "max_daily_loss_pct": 10.0,
+                "stop_loss_pct": 4.0,
+                "take_profit_pct": 7.0,
+                "max_open_positions": 8,
+            },
+        }
+        return risk_params.get(risk_level, risk_params[RiskLevel.CONSERVATIVE])
+
+    def get_risk_parameters(self) -> dict:
+        """Get the current risk parameters for this RiskManager instance.
+
+        Returns:
+            Dictionary of risk parameters
+        """
+        return self.risk_params.copy()
 
     def can_open_position(
         self,
