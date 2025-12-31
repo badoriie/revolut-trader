@@ -54,3 +54,14 @@ repos:
         additional_dependencies:
           - mdformat-gfm
           - mdformat-black
+
+  # Run tests before commit
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        args: [tests/, --tb=short, -q]
+        language: system
+        pass_filenames: false
+        always_run: true
