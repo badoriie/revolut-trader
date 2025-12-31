@@ -6,6 +6,8 @@ No .env file fallback - 1Password is required for all credentials.
 
 import json
 import subprocess
+import time
+from threading import Lock
 
 from loguru import logger
 
@@ -202,23 +204,112 @@ class OnePasswordClient:
             return False
 
 
+class ConfigCache:
+    """Fast config cache with batch fetching from 1Password.
+
+    Fetches ALL config values in ONE 1Password call and caches them
+    in memory with TTL. This is ~5-10x faster than individual calls.
+    """
+
+    def __init__(self, ttl_seconds: int = 300):
+        """Initialize config cache.
+
+        Args:
+            ttl_seconds: Time-to-live for cache in seconds (default: 5 minutes)
+        """
+        self._cache: dict[str, str] = {}
+        self._cache_time: float | None = None
+        self._ttl = ttl_seconds
+        self._lock = Lock()  # Thread-safe cache access
+        self._client = OnePasswordClient(
+            vault_name="revolut-trader",
+            item_name="revolut-trader-config",
+        )
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        """Get config value from cache (fetches from 1Password if stale).
+
+        Args:
+            key: Configuration key
+            default: Default value if not found
+
+        Returns:
+            Configuration value or default
+        """
+        with self._lock:
+            # Refresh cache if expired or empty
+            if self._is_cache_stale():
+                self._refresh_cache()
+
+            # Return from cache or default
+            return self._cache.get(key, default)
+
+    def _is_cache_stale(self) -> bool:
+        """Check if cache needs refresh."""
+        if not self._cache or self._cache_time is None:
+            return True
+        return (time.time() - self._cache_time) > self._ttl
+
+    def _refresh_cache(self) -> None:
+        """Refresh cache by batch-fetching all config from 1Password."""
+        if not self._client.is_available():
+            logger.debug("1Password not available, cache not refreshed")
+            return
+
+        # Batch fetch ALL fields in ONE call
+        start_time = time.time()
+        all_fields = self._client.get_all_fields()
+
+        if all_fields:
+            self._cache = all_fields
+            self._cache_time = time.time()
+            elapsed = (time.time() - start_time) * 1000  # ms
+            logger.info(
+                f"✅ Config cache refreshed: {len(all_fields)} fields in {elapsed:.0f}ms "
+                f"(cached for {self._ttl}s)"
+            )
+        else:
+            logger.warning("Failed to refresh config cache from 1Password")
+
+    def invalidate(self) -> None:
+        """Force cache invalidation (next get() will refresh)."""
+        with self._lock:
+            self._cache_time = None
+            logger.debug("Config cache invalidated")
+
+    def get_cache_stats(self) -> dict:
+        """Get cache statistics for debugging."""
+        with self._lock:
+            age = (time.time() - self._cache_time) if self._cache_time else None
+            return {
+                "cached_keys": len(self._cache),
+                "cache_age_seconds": age,
+                "ttl_seconds": self._ttl,
+                "is_stale": self._is_cache_stale(),
+            }
+
+
+# Global config cache instance (singleton)
+_config_cache = ConfigCache(ttl_seconds=300)  # 5 minute TTL
+
+
 def get_config(
     key: str,
     default: str | None = None,
 ) -> str | None:
-    """Get a configuration value from 1Password with fallback to default.
+    """Get a configuration value from 1Password with intelligent caching.
 
-    Unlike credentials, config values are optional - if not found in 1Password,
-    the default is used without raising errors.
+    Uses a fast in-memory cache that batch-fetches ALL config in ONE 1Password call.
+    Much faster than individual calls (~5-10x speedup).
 
-    Looks for config in a separate item: "revolut-trader-config"
+    Cache TTL: 5 minutes (configurable in ConfigCache)
 
     Args:
         key: The configuration key (e.g., "TRADING_MODE", "BASE_CURRENCY")
         default: Default value if not found in 1Password
 
     Returns:
-        The configuration value from 1Password, or default if not found
+        The configuration value from 1Password cache, or default if not found
 
     Examples:
         >>> get_config("TRADING_MODE", "paper")
@@ -226,23 +317,26 @@ def get_config(
         >>> get_config("BASE_CURRENCY", "EUR")
         "EUR"  # Falls back to default if not in 1Password
     """
-    # Use separate config item, not credentials item
-    config_client = OnePasswordClient(
-        vault_name="revolut-trader",
-        item_name="revolut-trader-config",
-    )
+    # Use global cache - batch fetches all config in one call
+    return _config_cache.get(key, default)
 
-    if not config_client.is_available():
-        logger.debug(f"1Password not available, using default for config {key}")
-        return default
 
-    value = config_client.get_field(key)
-    if value:
-        logger.debug(f"Loaded config {key} from 1Password (revolut-trader-config item)")
-        return value
+def invalidate_config_cache() -> None:
+    """Invalidate the config cache (force refresh on next access).
 
-    logger.debug(f"Config {key} not in 1Password config item, using default: {default}")
-    return default
+    Useful for testing or when you know config has changed in 1Password.
+    """
+    _config_cache.invalidate()
+    logger.info("Config cache invalidated - will refresh on next access")
+
+
+def get_config_cache_stats() -> dict:
+    """Get config cache statistics for debugging.
+
+    Returns:
+        Dictionary with cache stats (keys, age, TTL, staleness)
+    """
+    return _config_cache.get_cache_stats()
 
 
 def get_credential(
