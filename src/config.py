@@ -120,7 +120,8 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "TRADING_PAIRS not found in 1Password config.\n" "Run: make opconfig-init"
             )
-        self.trading_pairs = [p.strip() for p in pairs_str.split(",")]
+        # Strip both whitespace and quotes from each pair
+        self.trading_pairs = [p.strip().strip("\"'") for p in pairs_str.split(",")]
 
         # Load INITIAL_CAPITAL (REQUIRED)
         capital_str = get_config("INITIAL_CAPITAL", None)
