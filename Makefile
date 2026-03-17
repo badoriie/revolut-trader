@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-test api-balance api-ticker api-tickers api-candles
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-candles
 
 # ============================================================================
 # 1Password vault/item names — must match src/utils/onepassword.py constants
@@ -37,6 +37,7 @@ help:
 	@echo "  make backtest          - Run strategy backtesting (STRATEGY=... DAYS=...)"
 	@echo ""
 	@echo "API Testing:"
+	@echo "  make api-ready         - Check API is ready for BOTH viewing and trading"
 	@echo "  make api-test          - Test API connection"
 	@echo "  make api-balance       - Get account balance"
 	@echo "  make api-ticker        - Get ticker (SYMBOL=BTC-EUR)"
@@ -311,6 +312,9 @@ backtest:
 # ============================================================================
 # API Testing
 # ============================================================================
+
+api-ready:
+	@uv run python cli/api_test.py trade-ready
 
 api-test:
 	@uv run python cli/api_test.py test
