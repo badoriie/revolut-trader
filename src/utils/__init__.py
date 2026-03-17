@@ -1,11 +1,15 @@
 """Utility modules for the trading bot."""
 
 from src.utils.onepassword import (
-    OnePasswordClient,
-    get_credential,
+    get,
+    get_optional,
+    is_available,
+    set_credential,
 )
 
 __all__ = [
-    "OnePasswordClient",
-    "get_credential",
+    "get",
+    "get_optional",
+    "is_available",
+    "set_credential",
 ]

@@ -1,7 +1,4 @@
-"""SQLAlchemy database models for trading data persistence.
-
-Uses SQLAlchemy for database abstraction - easy to migrate from SQLite to PostgreSQL.
-"""
+"""SQLAlchemy database models for trading data persistence (SQLite)."""
 
 from datetime import UTC, datetime
 
@@ -179,39 +176,19 @@ class LogEntryDB(Base):
         return f"<LogEntry(id={self.id}, level={self.level}, timestamp={self.timestamp})>"
 
 
-def create_db_engine(database_url: str = "sqlite:///data/trading.db"):
-    """Create database engine.
-
-    Args:
-        database_url: Database connection string
-            - SQLite: "sqlite:///data/trading.db"
-            - PostgreSQL: "postgresql://user:password@localhost/trading"
-            - PostgreSQL (async): "postgresql+asyncpg://user:password@localhost/trading"
-
-    Returns:
-        SQLAlchemy engine
-    """
-    engine = create_engine(
-        database_url,
-        echo=False,  # Set to True for SQL query logging
-        pool_pre_ping=True,  # Verify connections before using
-    )
-    return engine
+DB_URL = "sqlite:///data/trading.db"
 
 
-def init_database(engine):
-    """Initialize database schema.
+def create_db_engine():
+    """Create SQLite database engine."""
+    return create_engine(DB_URL, echo=False)
 
-    Creates all tables if they don't exist.
-    Safe to call multiple times (idempotent).
-    """
+
+def init_database(engine) -> None:
+    """Create all tables if they don't exist (idempotent)."""
     Base.metadata.create_all(engine)
 
 
 def get_session_factory(engine):
-    """Create session factory for database operations.
-
-    Returns:
-        SQLAlchemy sessionmaker
-    """
+    """Create session factory for database operations."""
     return sessionmaker(bind=engine)

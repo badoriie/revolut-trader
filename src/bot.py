@@ -10,7 +10,6 @@ from src.api.client import RevolutAPIClient
 from src.config import RiskLevel, StrategyType, TradingMode, settings
 from src.data.models import MarketData, PortfolioSnapshot
 from src.execution.executor import OrderExecutor
-from src.notifications.telegram import TelegramNotifier
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.market_making import MarketMakingStrategy
@@ -40,7 +39,6 @@ class TradingBot:
         self.api_client: RevolutAPIClient | None = None
         self.risk_manager: RiskManager | None = None
         self.executor: OrderExecutor | None = None
-        self.notifier: TelegramNotifier | None = None
         self.strategy: BaseStrategy | None = None
         self.persistence = HybridPersistence()  # Hybrid persistence (SQLite + JSON backup)
 
@@ -63,12 +61,10 @@ class TradingBot:
         logger.info(f"Trading Pairs: {self.trading_pairs}")
 
     def _validate_security_settings(self):
-        """Validate security configuration before starting bot."""
-        from src.utils.onepassword import OnePasswordClient
+        """Validate that 1Password is available before starting bot."""
+        from src.utils.onepassword import is_available
 
-        # 1Password is always required - no .env fallback
-        client = OnePasswordClient()
-        if client.is_available():
+        if is_available():
             logger.info("✓ 1Password configured and available (secure mode)")
         else:
             logger.error(
@@ -111,9 +107,6 @@ class TradingBot:
             trading_mode=self.trading_mode,
         )
 
-        # Initialize notifications
-        self.notifier = TelegramNotifier()
-
         # Initialize strategy
         self.strategy = self._create_strategy(self.strategy_type)
 
@@ -127,9 +120,6 @@ class TradingBot:
             except Exception as e:
                 logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
                 logger.critical("Cannot start live trading without accurate balance information!")
-                await self.notifier.notify_error(
-                    "🚨 CRITICAL ERROR: Failed to fetch account balance in LIVE mode. Bot halted for safety."
-                )
                 raise RuntimeError(
                     "Cannot start live trading without account balance. "
                     "Please check API connection and credentials."
@@ -137,16 +127,6 @@ class TradingBot:
 
         self.is_running = True
         logger.info("Trading bot started successfully!")
-
-        # Send startup notification
-        await self.notifier.send_message(
-            f"🤖 *Trading Bot Started*\n\n"
-            f"Mode: {self.trading_mode.value}\n"
-            f"Strategy: {self.strategy_type.value}\n"
-            f"Risk Level: {self.risk_level.value}\n"
-            f"Balance: {self.currency_symbol}{self.cash_balance:,.2f}\n"
-            f"Pairs: {', '.join(self.trading_pairs)}"
-        )
 
     async def stop(self):
         """Stop the trading bot gracefully."""
@@ -169,7 +149,6 @@ class TradingBot:
         if self.api_client:
             await self.api_client.close()
 
-        await self.notifier.send_message("🛑 *Trading Bot Stopped*")
         logger.info("Trading bot stopped")
 
     def _create_strategy(self, strategy_type: StrategyType) -> BaseStrategy:
@@ -238,10 +217,7 @@ class TradingBot:
             except httpx.HTTPStatusError as e:
                 status_code = e.response.status_code
                 if status_code == 401:
-                    logger.critical("🔒 Authentication failed! Check API credentials.")
-                    await self.notifier.notify_error(
-                        "🚨 CRITICAL: Authentication failed. Bot stopped."
-                    )
+                    logger.critical("Authentication failed! Check API credentials.")
                     break  # Stop trading - auth is broken
                 elif status_code == 429:
                     logger.warning("⚠️  Rate limited by API, backing off...")
@@ -258,17 +234,12 @@ class TradingBot:
                 logger.info("Likely malformed market data, continuing...")
                 await asyncio.sleep(interval)
             except RuntimeError as e:
-                # Critical runtime errors (like balance fetch failure)
-                logger.critical(f"🚨 Runtime error: {e}")
-                await self.notifier.notify_error(f"🚨 CRITICAL ERROR: {e}")
+                logger.critical(f"Runtime error: {e}")
                 break  # Stop trading
             except Exception as e:
-                # Unknown errors - log extensively but don't hide them
                 logger.critical(
-                    f"⚠️  Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True
+                    f"Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True
                 )
-                await self.notifier.notify_error(f"⚠️ Unexpected error: {type(e).__name__}")
-                # Continue with caution
                 await asyncio.sleep(interval)
 
     async def _process_symbol(self, symbol: str):
@@ -295,14 +266,11 @@ class TradingBot:
 
             if signal:
                 logger.info(f"Signal generated: {signal.signal_type} {symbol} - {signal.reason}")
-                await self.notifier.notify_signal(signal)
 
                 # Execute signal
                 order = await self.executor.execute_signal(signal, portfolio_value)
 
                 if order:
-                    await self.notifier.notify_order(order)
-
                     # Save trade to history if filled
                     if order.status.value == "FILLED":
                         self.persistence.save_trade(order)
@@ -384,13 +352,11 @@ class TradingBot:
             current_snapshot.daily_pnl, Decimal(str(settings.paper_initial_capital))
         )
 
-        # Check if daily loss limit hit
         if self.risk_manager.daily_loss_limit_hit:
-            await self.notifier.notify_risk_alert(
-                f"Daily loss limit reached! P&L: {self.currency_symbol}{current_snapshot.daily_pnl:.2f}\n"
-                f"Trading suspended until reset."
+            logger.critical(
+                f"Daily loss limit reached! P&L: {self.currency_symbol}{current_snapshot.daily_pnl:.2f}. "
+                "Trading suspended until reset."
             )
-            logger.critical("Daily loss limit hit - trading suspended")
 
     def _load_historical_data(self) -> None:
         """Load historical portfolio snapshots and trade history from database."""

@@ -1,347 +1,378 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest dashboard logs ops opshow opstatus opdelete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-migrate db-encrypt-setup db-encrypt-status api-test api-balance api-ticker api-tickers api-candles
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-test api-balance api-ticker api-tickers api-candles
 
-# Default target - show help
+# ============================================================================
+# 1Password vault/item names — must match src/utils/onepassword.py constants
+# ============================================================================
+
+OP_VAULT  := revolut-trader
+OP_CREDS  := revolut-trader-credentials
+OP_CONFIG := revolut-trader-config
+
+# ============================================================================
+# Help
+# ============================================================================
+
 help:
-	@echo "🤖 Revolut Trading Bot - Make Commands"
+	@echo "Revolut Trading Bot - Make Commands"
 	@echo ""
-	@echo "📦 Setup & Installation:"
-	@echo "  make setup             - Complete project setup (uv + 1Password + dependencies)"
-	@echo "  make install           - Install/update dependencies with uv"
+	@echo "Setup & Installation:"
+	@echo "  make setup             - First-time project setup"
+	@echo "  make install           - Install/update dependencies"
 	@echo "  make clean             - Remove cache files and artifacts"
-	@echo "  make deep-clean        - ⚠️  Remove ALL generated files (data, logs, venv)"
+	@echo "  make deep-clean        - Remove ALL generated files (data, logs, venv)"
 	@echo ""
-	@echo "🔐 Credentials & Configuration (1Password):"
-	@echo "  make ops               - Setup and store credentials in 1Password"
-	@echo "  make opconfig-init     - Create configuration item (separate from credentials)"
-	@echo "  make opshow            - Show credentials (masked)"
-	@echo "  make opstatus          - Check 1Password status"
-	@echo "  make opdelete          - Delete credentials from 1Password"
+	@echo "Credentials & Configuration (1Password vault: $(OP_VAULT)):"
+	@echo "  make ops               - Set API credentials interactively"
+	@echo "  make opshow            - Show stored credentials and config (masked)"
+	@echo "  make opstatus          - Check 1Password CLI status"
+	@echo "  make opdelete          - Delete credentials item from 1Password"
+	@echo "  make opconfig-init     - Create config item with safe defaults"
+	@echo "  make opconfig-set      - Set a config value (KEY=... VALUE=...)"
+	@echo "  make opconfig-show     - Show current configuration"
+	@echo "  make opconfig-delete   - Remove a config key (KEY=...)"
 	@echo ""
-	@echo "🚀 Trading & Analysis:"
+	@echo "Trading & Analysis:"
 	@echo "  make run-paper         - Run in paper mode (safe, simulated trading)"
-	@echo "  make run-live          - Run in live mode (⚠️  REAL MONEY!)"
-	@echo "  make backtest          - Run strategy backtesting on historical data"
-	@echo "  make dashboard         - Launch web dashboard for visualization"
+	@echo "  make run-live          - Run in live mode (REAL MONEY)"
+	@echo "  make backtest          - Run strategy backtesting (STRATEGY=... DAYS=...)"
 	@echo ""
-	@echo "🔌 API Testing:"
+	@echo "API Testing:"
 	@echo "  make api-test          - Test API connection"
 	@echo "  make api-balance       - Get account balance"
-	@echo "  make api-ticker        - Get ticker for symbol (SYMBOL=BTC-EUR)"
-	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR)"
-	@echo "  make api-candles       - Get recent candles (SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10)"
+	@echo "  make api-ticker        - Get ticker (SYMBOL=BTC-EUR)"
+	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-EUR,ETH-EUR)"
+	@echo "  make api-candles       - Get candles (SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10)"
 	@echo ""
-	@echo "✅ Code Quality:"
-	@echo "  make pre-commit-install - Install pre-commit hooks"
-	@echo "  make pre-commit        - Run pre-commit hooks manually on all files"
+	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
 	@echo "  make lint              - Check code with ruff"
 	@echo "  make format            - Format code with ruff"
 	@echo "  make typecheck         - Run mypy type checking"
-	@echo "  make check             - Run all quality checks (test + lint + typecheck)"
+	@echo "  make check             - Run all quality checks"
+	@echo "  make pre-commit        - Run pre-commit hooks on all files"
 	@echo ""
-	@echo "📋 Utilities:"
-	@echo "  make logs              - View recent logs"
-	@echo "  make backup            - Backup data and logs"
+	@echo "Database:"
+	@echo "  make db                - Show database overview"
+	@echo "  make db-export         - Export data to JSON"
+	@echo "  make db-export-csv     - Export data to CSV"
 	@echo ""
-	@echo "💾 Database Management:"
-	@echo "  make db                - 📊 Show database overview (stats + analytics + backtests)"
-	@echo "  make db-stats          - Show database statistics"
-	@echo "  make db-analytics      - Show trading analytics (DAYS=30 to customize)"
-	@echo "  make db-backtests      - Show backtest results (LIMIT=10 to customize)"
-	@echo "  make db-export         - Export data to JSON (DIR=data/exports to customize)"
-	@echo "  make db-export-csv     - Export data to CSV for analysis"
-	@echo ""
-	@echo "🔐 Database Encryption:"
-	@echo "  make db-encrypt-setup  - Setup database encryption (1Password key storage)"
-	@echo "  make db-encrypt-status - Check encryption status"
-	@echo ""
-	@echo "💡 Quick Start:"
-	@echo "  1. make setup          (one-time setup)"
-	@echo "  2. make ops            (add credentials)"
-	@echo "  3. make run-paper      (test bot safely)"
+	@echo "Quick Start:"
+	@echo "  1. make setup"
+	@echo "  2. make ops"
+	@echo "  3. make run-paper"
 
 # ============================================================================
 # Setup & Installation
 # ============================================================================
 
-# Complete project setup
 setup:
-	@echo "🚀 Running complete project setup..."
-	@bash scripts/setup.sh
-
-# Install/update dependencies
-install:
-	@echo "📦 Installing dependencies with uv..."
+	@echo "=== Revolut Trader Setup ==="
+	@echo ""
+	@echo "Checking prerequisites..."
+	@command -v uv >/dev/null 2>&1 || { echo "Error: uv not installed. Run: brew install uv"; exit 1; }
+	@echo "  uv: ok"
+	@command -v op >/dev/null 2>&1 || { echo "Error: 1Password CLI not installed. Run: brew install --cask 1password-cli"; exit 1; }
+	@echo "  op: ok"
+	@op account list >/dev/null 2>&1 || { echo "Error: Not signed in to 1Password. Run: eval \$$(op signin)"; exit 1; }
+	@echo "  1Password: signed in"
+	@echo ""
+	@echo "Setting up 1Password vault: $(OP_VAULT)"
+	@op vault get $(OP_VAULT) >/dev/null 2>&1 \
+		&& echo "  Vault exists" \
+		|| { op vault create $(OP_VAULT) && echo "  Vault created: $(OP_VAULT)"; }
+	@echo ""
+	@echo "Setting up credentials item: $(OP_CREDS)"
+	@if op item get $(OP_CREDS) --vault $(OP_VAULT) >/dev/null 2>&1; then \
+		echo "  Item exists"; \
+	else \
+		op item create \
+			--category "Secure Note" \
+			--vault $(OP_VAULT) \
+			--title $(OP_CREDS) \
+			"REVOLUT_API_KEY[concealed]=<add-your-api-key>" \
+			>/dev/null && echo "  Item created"; \
+	fi
+	@echo ""
+	@echo "Checking Ed25519 keys..."
+	@if op item get $(OP_CREDS) --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
+		echo "  Keys already in 1Password"; \
+	else \
+		echo "  Generating new Ed25519 key pair..."; \
+		TMPDIR=$$(mktemp -d); \
+		openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
+		openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
+		op item edit $(OP_CREDS) --vault $(OP_VAULT) \
+			"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
+			"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
+			>/dev/null; \
+		echo "  Keys stored in 1Password"; \
+		echo ""; \
+		echo "  ======================================================"; \
+		echo "  IMPORTANT: Register this public key with Revolut X:"; \
+		echo "  ======================================================"; \
+		cat $$TMPDIR/public.pem; \
+		echo "  ======================================================"; \
+		rm -rf $$TMPDIR; \
+	fi
+	@echo ""
+	@echo "Setting up configuration item: $(OP_CONFIG)"
+	@if op item get $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null 2>&1; then \
+		echo "  Item exists"; \
+	else \
+		op item create \
+			--category "Secure Note" \
+			--vault $(OP_VAULT) \
+			--title $(OP_CONFIG) \
+			"TRADING_MODE[text]=paper" \
+			"RISK_LEVEL[text]=conservative" \
+			"BASE_CURRENCY[text]=EUR" \
+			"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+			"DEFAULT_STRATEGY[text]=market_making" \
+			"INITIAL_CAPITAL[text]=10000" \
+			>/dev/null && echo "  Item created with safe defaults"; \
+	fi
+	@echo ""
+	@echo "Creating directories..."
+	@mkdir -p logs data
+	@echo "  logs/ data/ created"
+	@echo ""
+	@echo "Installing dependencies..."
 	@uv sync --extra dev
-	@echo "✅ Dependencies installed"
+	@echo ""
+	@echo "=== Setup complete! ==="
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Add your Revolut API key:  make ops"
+	@echo "  2. Test in paper mode:        make run-paper"
+	@echo "  3. View configuration:        make opconfig-show"
 
-# Clean Python cache and build artifacts
+install:
+	@echo "Installing dependencies with uv..."
+	@uv sync --extra dev
+	@echo "Done"
+
 clean:
-	@echo "🧹 Cleaning cache files..."
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
-	@echo "✅ Clean complete"
+	@echo "Clean complete"
 
-# Deep clean - remove ALL generated files (data, logs, cache, venv)
 deep-clean:
-	@echo "🚨 WARNING: This will delete ALL generated files including:"
-	@echo "  - Database (data/trading.db)"
-	@echo "  - All logs (logs/)"
-	@echo "  - Backtest results (results/)"
-	@echo "  - Backups (backups/)"
-	@echo "  - Data files (data/)"
-	@echo "  - Virtual environment (.venv/)"
-	@echo "  - All cache and build files"
-	@echo ""
-	@read -p "Type 'YES' to confirm deep clean: " confirm && [ "$$confirm" = "YES" ] || (echo "❌ Cancelled" && exit 1)
-	@echo ""
-	@echo "🧹 Performing deep clean..."
-	@# Python cache and build artifacts
+	@echo "WARNING: This will delete ALL generated files including database, logs, backups, and venv."
+	@read -p "Type 'YES' to confirm: " confirm && [ "$$confirm" = "YES" ] || (echo "Cancelled" && exit 1)
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
-	@# Data and runtime files (completely remove directories)
-	@rm -rf data 2>/dev/null || true
-	@rm -rf logs 2>/dev/null || true
-	@rm -rf results 2>/dev/null || true
-	@rm -rf backups 2>/dev/null || true
-	@# Virtual environment
-	@rm -rf .venv 2>/dev/null || true
-	@# uv cache
-	@rm -rf .uv 2>/dev/null || true
-	@echo ""
-	@echo "✅ Deep clean complete - project is now in fresh state"
-	@echo "ℹ️  Run 'make install' to reinstall dependencies"
+	@rm -rf data logs results backups .venv .uv 2>/dev/null || true
+	@echo "Deep clean complete. Run 'make install' to reinstall dependencies."
 
 # ============================================================================
-# 1Password Credentials
+# 1Password — Credentials & Configuration
 # ============================================================================
 
 ops:
-	@bash scripts/1password-manager.sh setup
+	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
+	@echo ""
+	@read -p "Revolut API Key: " api_key; \
+	if [ -n "$$api_key" ]; then \
+		op item edit $(OP_CREDS) --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=$$api_key" >/dev/null \
+			&& echo "  REVOLUT_API_KEY stored" || echo "  Failed to store REVOLUT_API_KEY"; \
+	fi
+	@echo ""
+	@echo "Done. Run 'make opshow' to verify."
 
 opshow:
-	@bash scripts/1password-manager.sh show
+	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@echo "=== Credentials ($(OP_CREDS)) ==="
+	@for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
+		value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
+		len=$${#value}; \
+		if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
+		elif [ $$len -gt 8 ]; then masked="$${value:0:8}..."; \
+		else masked="$${value:0:4}..."; fi; \
+		printf "  %-25s = %s\n" "$$field" "$$masked"; \
+	done
+	@echo ""
+	@echo "=== Configuration ($(OP_CONFIG)) ==="
+	@for field in TRADING_MODE RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
+		printf "  %-25s = %s\n" "$$field" "$$value"; \
+	done
 
 opstatus:
-	@bash scripts/1password-manager.sh status
+	@echo "=== 1Password Status ==="
+	@command -v op >/dev/null 2>&1 \
+		&& echo "  CLI installed: $$(op --version)" \
+		|| { echo "  CLI: not installed (brew install --cask 1password-cli)"; exit 0; }
+	@op account list >/dev/null 2>&1 \
+		&& echo "  Signed in:  yes" \
+		|| { echo "  Signed in:  no  (run: eval \$$(op signin))"; exit 0; }
+	@op vault get $(OP_VAULT) >/dev/null 2>&1 \
+		&& echo "  Vault:      $(OP_VAULT) (exists)" \
+		|| echo "  Vault:      $(OP_VAULT) (missing — run: make setup)"
+	@op item get $(OP_CREDS) --vault $(OP_VAULT) >/dev/null 2>&1 \
+		&& echo "  Creds item: $(OP_CREDS) (exists)" \
+		|| echo "  Creds item: $(OP_CREDS) (missing — run: make setup)"
+	@op item get $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null 2>&1 \
+		&& echo "  Config item:$(OP_CONFIG) (exists)" \
+		|| echo "  Config item:$(OP_CONFIG) (missing — run: make setup)"
 
 opdelete:
-	@bash scripts/1password-manager.sh delete
+	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@echo "This will delete the credentials item from 1Password."
+	@echo "Vault: $(OP_VAULT)  Item: $(OP_CREDS)"
+	@read -p "Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || (echo "Cancelled" && exit 1)
+	@op item delete $(OP_CREDS) --vault $(OP_VAULT) && echo "Deleted $(OP_CREDS)"
 
-# Create configuration item (separate from credentials)
 opconfig-init:
-	@bash scripts/1password-manager.sh create-config
-
-# Configuration management (optional - stores config in 1Password)
-opconfig:
-	@echo "⚙️  1Password Configuration Management"
-	@echo "======================================================"
-	@echo ""
-	@echo "Set trading configuration in 1Password (optional):"
-	@echo ""
-	@echo "Available configurations:"
-	@echo "  TRADING_MODE      - paper or live (default: paper)"
-	@echo "  RISK_LEVEL        - conservative, moderate, aggressive (default: conservative)"
-	@echo "  BASE_CURRENCY     - EUR, USD, GBP (default: EUR)"
-	@echo "  TRADING_PAIRS     - BTC-EUR,ETH-EUR,... (default: BTC-EUR,ETH-EUR)"
-	@echo "  DEFAULT_STRATEGY  - market_making, momentum, mean_reversion, multi_strategy"
-	@echo "  INITIAL_CAPITAL   - Initial capital for paper trading (default: 10000)"
-	@echo ""
-	@echo "First time setup:"
-	@echo "  make opconfig-init  # Add config fields to existing 1Password item"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make opconfig-set KEY=TRADING_MODE VALUE=live"
-	@echo "  make opconfig-set KEY=RISK_LEVEL VALUE=moderate"
-	@echo "  make opconfig-set KEY=BASE_CURRENCY VALUE=EUR"
-	@echo "  make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR,SOL-EUR"
-	@echo ""
-	@echo "View current config:"
-	@echo "  make opconfig-show"
-	@echo ""
-	@echo "📖 Full documentation: docs/1PASSWORD_CONFIG.md"
+	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@if op item get $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null 2>&1; then \
+		echo "Config item already exists: $(OP_CONFIG)"; \
+		read -p "Reset to defaults? (y/N): " confirm; \
+		[ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || (echo "Cancelled" && exit 1); \
+		op item delete $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null; \
+	fi
+	@op item create \
+		--category "Secure Note" \
+		--vault $(OP_VAULT) \
+		--title $(OP_CONFIG) \
+		"TRADING_MODE[text]=paper" \
+		"RISK_LEVEL[text]=conservative" \
+		"BASE_CURRENCY[text]=EUR" \
+		"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+		"DEFAULT_STRATEGY[text]=market_making" \
+		"INITIAL_CAPITAL[text]=10000" \
+		>/dev/null
+	@echo "Config item created with safe defaults:"
+	@echo "  TRADING_MODE=paper  RISK_LEVEL=conservative  INITIAL_CAPITAL=10000"
+	@echo "  Use 'make opconfig-set KEY=... VALUE=...' to change values"
 
 opconfig-set:
 	@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-		echo "❌ Error: KEY and VALUE required"; \
 		echo "Usage: make opconfig-set KEY=TRADING_MODE VALUE=live"; \
 		exit 1; \
 	fi
-	@echo "⚙️  Setting $(KEY) = $(VALUE) in 1Password config..."
-	@op item edit revolut-trader-config --vault revolut-trader $(KEY)[text]="$(VALUE)" && \
-		echo "✅ Success: $(KEY) set to $(VALUE)" || \
-		echo "❌ Failed to set $(KEY). Run 'make opconfig-init' first to create config item."
+	@op item edit $(OP_CONFIG) --vault $(OP_VAULT) "$(KEY)[text]=$(VALUE)" >/dev/null \
+		&& echo "$(KEY) = $(VALUE)" \
+		|| echo "Failed. Run 'make opconfig-init' first."
 
 opconfig-show:
-	@echo "⚙️  Current configuration from 1Password:"
-	@echo "======================================================"
+	@echo "Configuration ($(OP_VAULT)/$(OP_CONFIG)):"
 	@for key in TRADING_MODE RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
-		value=$$(op item get revolut-trader-config --vault revolut-trader --fields $$key 2>/dev/null || echo "(not set)"); \
-		printf "%-20s %s\n" "$$key:" "$$value"; \
+		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$key 2>/dev/null || echo "(not set)"); \
+		printf "  %-22s %s\n" "$$key:" "$$value"; \
 	done
 
 opconfig-delete:
 	@if [ -z "$(KEY)" ]; then \
-		echo "❌ Error: KEY required"; \
 		echo "Usage: make opconfig-delete KEY=TRADING_MODE"; \
 		exit 1; \
 	fi
-	@echo "⚙️  Removing $(KEY) from 1Password config (will use default)..."
-	@op item edit revolut-trader-config --vault revolut-trader $(KEY)[delete] && \
-		echo "✅ Success: $(KEY) removed, will use default" || \
-		echo "❌ Failed to remove $(KEY)"
+	@op item edit $(OP_CONFIG) --vault $(OP_VAULT) "$(KEY)[delete]" >/dev/null \
+		&& echo "$(KEY) removed" \
+		|| echo "Failed to remove $(KEY)"
 
 # ============================================================================
 # Trading Bot
 # ============================================================================
 
-# Run in paper trading mode (safe)
 run-paper:
-	@echo "📊 Starting bot in PAPER mode (simulated trading)"
+	@echo "Starting bot in PAPER mode (simulated trading)"
 	@uv run python cli/run.py --mode paper --strategy market_making --risk conservative
 
-# Run in live trading mode (real money!)
 run-live:
 	@echo ""
-	@echo "⚠️  =================================================="
-	@echo "⚠️  LIVE TRADING MODE - REAL MONEY AT RISK!"
-	@echo "⚠️  =================================================="
+	@echo "LIVE TRADING MODE - REAL MONEY AT RISK"
 	@echo ""
 	@read -p "Type 'I UNDERSTAND' to continue: " confirm && [ "$$confirm" = "I UNDERSTAND" ] || (echo "Cancelled" && exit 1)
 	@uv run python cli/run.py --mode live --strategy market_making --risk conservative
 
-# Run backtesting
 backtest:
-	@echo "🔬 Running strategy backtesting..."
 	@mkdir -p results
 	@STRATEGY=$${STRATEGY:-market_making}; \
 	DAYS=$${DAYS:-30}; \
 	OUTPUT=./results/backtest_$$(date +%Y%m%d_%H%M%S).json; \
 	echo "Strategy: $$STRATEGY | Days: $$DAYS"; \
-	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS --output $$OUTPUT && \
-	echo "✅ Backtest complete: $$OUTPUT" && \
-	echo "📊 View results: make dashboard" || \
-	echo "❌ Backtest failed - check logs above"
-
-# Launch dashboard
-dashboard:
-	@echo "📊 Launching web dashboard..."
-	@echo "Dashboard will open at http://localhost:8501"
-	@uv run streamlit run cli/dashboard.py
+	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS --output $$OUTPUT \
+		&& echo "Backtest complete: $$OUTPUT" \
+		|| echo "Backtest failed - check logs above"
 
 # ============================================================================
 # API Testing
 # ============================================================================
 
-# Test API connection
 api-test:
-	@echo "🔌 Testing API connection..."
 	@uv run python cli/api_test.py test
 
-# Get account balance
 api-balance:
-	@echo "💰 Getting account balance..."
 	@uv run python cli/api_test.py balance
 
-# Get ticker for a symbol
 api-ticker:
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	echo "📊 Getting ticker for $$SYMBOL..."; \
 	uv run python cli/api_test.py ticker --symbol $$SYMBOL
 
-# Get multiple tickers
 api-tickers:
 	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
-	echo "📊 Getting tickers for $$SYMBOLS..."; \
 	uv run python cli/api_test.py tickers --symbols $$SYMBOLS
 
-# Get recent candles
 api-candles:
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
-	echo "📈 Getting $$LIMIT candles for $$SYMBOL ($$INTERVAL min)..."; \
 	uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
 
 # ============================================================================
 # Code Quality
 # ============================================================================
 
-# Install pre-commit hooks
 pre-commit-install:
-	@echo "🔧 Installing pre-commit hooks..."
-	@echo "📦 Ensuring dev dependencies are installed..."
 	@uv sync --extra dev --quiet
 	@uv run pre-commit install
-	@echo "✅ Pre-commit hooks installed"
-	@echo "ℹ️  Hooks will now run automatically on git commit"
-	@echo "ℹ️  To run manually: make pre-commit"
+	@echo "Pre-commit hooks installed"
 
-# Run pre-commit hooks manually on all files
 pre-commit:
-	@echo "🔍 Running pre-commit hooks on all files..."
 	@uv run pre-commit run --all-files
 
-# Run tests with coverage
 test:
-	@echo "🧪 Running tests with coverage..."
 	@uv run pytest --cov=src --cov-report=term-missing --cov-report=html
-	@echo "✅ Tests complete (see htmlcov/index.html for coverage report)"
+	@echo "Coverage report: htmlcov/index.html"
 
-# Lint code (check only)
 lint:
-	@echo "🔍 Checking code with ruff..."
 	@uv run ruff check src/ tests/ cli/
-	@echo "✅ Lint check complete"
 
-# Format code (auto-fix)
 format:
-	@echo "🎨 Formatting code with ruff..."
 	@uv run ruff format src/ tests/ cli/
 	@uv run ruff check --fix src/ tests/ cli/
-	@echo "✅ Code formatted"
 
-# Type checking with mypy
 typecheck:
-	@echo "🔍 Running type checks with mypy..."
 	@uv run mypy src/ cli/
-	@echo "✅ Type checking complete"
 
-# Run all quality checks
 check: lint format typecheck test
-	@echo ""
-	@echo "✅ All quality checks passed!"
+	@echo "All quality checks passed"
 
 # ============================================================================
-# Logs & Monitoring
+# Logs
 # ============================================================================
 
-# View recent logs
 logs:
-	@echo "📋 Recent logs:"
 	@if [ -d "logs" ] && [ "$$(ls -A logs 2>/dev/null)" ]; then \
 		tail -n 50 logs/$$(ls -t logs | head -1); \
 	else \
 		echo "No logs found. Run the bot first."; \
 	fi
 
-# Follow logs in real-time
 logs-follow:
-	@echo "📋 Following logs (Ctrl+C to stop)..."
 	@if [ -d "logs" ] && [ "$$(ls -A logs 2>/dev/null)" ]; then \
 		tail -f logs/$$(ls -t logs | head -1); \
 	else \
@@ -352,39 +383,30 @@ logs-follow:
 # Backup & Restore
 # ============================================================================
 
-# Backup data and logs
 backup:
-	@echo "💾 Creating backup..."
 	@mkdir -p backups
 	@BACKUP_NAME=backup_$$(date +%Y%m%d_%H%M%S); \
 	mkdir -p backups/$$BACKUP_NAME; \
 	[ -d "data" ] && cp -r data backups/$$BACKUP_NAME/ || true; \
 	[ -d "logs" ] && cp -r logs backups/$$BACKUP_NAME/ || true; \
-	echo "✅ Backup created: backups/$$BACKUP_NAME"
-	@echo "ℹ️  Credentials are in 1Password (not backed up locally)"
+	echo "Backup created: backups/$$BACKUP_NAME"
 
-# Restore from backup
 restore:
-	@echo "📥 Available backups:"
-	@ls -1 backups/ 2>/dev/null || echo "No backups found"
-	@echo ""
+	@echo "Available backups:"; ls -1 backups/ 2>/dev/null || echo "None"
 	@read -p "Enter backup name to restore: " backup && \
 	if [ -d "backups/$$backup" ]; then \
-		echo "Restoring from $$backup..."; \
 		[ -d "backups/$$backup/data" ] && cp -r backups/$$backup/data . || true; \
-		echo "✅ Restore complete"; \
+		echo "Restored from $$backup"; \
 	else \
-		echo "❌ Backup not found"; \
+		echo "Backup not found"; \
 	fi
 
 # ============================================================================
 # Database Management
 # ============================================================================
 
-# Define DB management command (DRY principle)
 DB_CMD = @uv run python cli/db_manage.py
 
-# Show comprehensive database overview
 db:
 	$(DB_CMD) stats
 	@echo ""
@@ -392,41 +414,23 @@ db:
 	@echo ""
 	$(DB_CMD) backtests 5
 
-# Show database statistics
 db-stats:
 	$(DB_CMD) stats
 
-# Show trading analytics (DAYS=30 to customize)
 db-analytics:
 	$(DB_CMD) analytics $${DAYS:-30}
 
-# Show backtest results (LIMIT=10 to customize)
 db-backtests:
 	$(DB_CMD) backtests $${LIMIT:-10}
 
-# Export data to JSON (DIR=data/exports to customize)
 db-export:
 	$(DB_CMD) export $${DIR:-data/exports}
 
-# Export data to CSV
 db-export-csv:
 	$(DB_CMD) export-csv
 
-# Migrate SQLite to PostgreSQL
-db-migrate:
-	@echo "🔄 Migrate SQLite to PostgreSQL"
-	@echo ""
-	@read -p "Enter PostgreSQL URL (e.g., postgresql://user:pass@localhost/trading): " pgurl && \
-	if [ -n "$$pgurl" ]; then \
-		$(DB_CMD) migrate "$$pgurl"; \
-	else \
-		echo "❌ Migration cancelled"; \
-	fi
-
-# Setup database encryption
 db-encrypt-setup:
-	@uv run python cli/db_encrypt.py setup
+	@uv run python -c "from src.utils.db_encryption import setup_database_encryption; setup_database_encryption()"
 
-# Check database encryption status
 db-encrypt-status:
-	@uv run python cli/db_encrypt.py status
+	@uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled())"
