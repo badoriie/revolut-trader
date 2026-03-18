@@ -7,6 +7,7 @@ Quick commands to test API connectivity and fetch common data
 import argparse
 import asyncio
 import sys
+from datetime import UTC
 
 from loguru import logger
 
@@ -132,12 +133,10 @@ _VIEW_ERROR_HINTS: dict[str, str] = {
         "        → Create a key with at least 'Read' scope in Revolut X."
     ),
     "unreachable": (
-        "Cannot reach the Revolut X API.\n"
-        "        → Check your internet connection and try again."
+        "Cannot reach the Revolut X API.\n        → Check your internet connection and try again."
     ),
     "unknown": (
-        "Unexpected error during authentication.\n"
-        "        → Run 'make api-test' for details."
+        "Unexpected error during authentication.\n        → Run 'make api-test' for details."
     ),
 }
 
@@ -152,15 +151,15 @@ async def check_trade_ready(api_client: RevolutAPIClient) -> None:
 
     print("Checking permissions...")
     perms = await api_client.check_permissions()
-    view_ok   = perms["view"]
-    trade_ok  = perms["trade"]
+    view_ok = perms["view"]
+    trade_ok = perms["trade"]
     view_error: str | None = perms.get("view_error")
 
     print()
-    print(f"  View  (market data) : {'READY'     if view_ok  else 'FAIL'}")
-    print(f"  Trade (place orders): {'READY'     if trade_ok else 'READ-ONLY'}")
+    print(f"  View  (market data) : {'READY' if view_ok else 'FAIL'}")
+    print(f"  Trade (place orders): {'READY' if trade_ok else 'READ-ONLY'}")
     print()
-    print(f"  Paper / simulation  : {'AVAILABLE' if view_ok  else 'NOT AVAILABLE'}")
+    print(f"  Paper / simulation  : {'AVAILABLE' if view_ok else 'NOT AVAILABLE'}")
     print(f"  Live trading        : {'AVAILABLE' if trade_ok else 'NOT AVAILABLE (read-only key)'}")
     print()
 
@@ -171,10 +170,14 @@ async def check_trade_ready(api_client: RevolutAPIClient) -> None:
         print("        Real market data will be used; orders are simulated locally.")
         print("        To enable live trading, create a key with trading permissions in Revolut X.")
     else:
-        hint = _VIEW_ERROR_HINTS.get(
-            view_error or "",
-            f"HTTP error: {view_error}.\n        → Run 'make api-test' for details.",
-        ) if view_error else "Unknown error.\n        → Run 'make api-test' for details."
+        hint = (
+            _VIEW_ERROR_HINTS.get(
+                view_error or "",
+                f"HTTP error: {view_error}.\n        → Run 'make api-test' for details.",
+            )
+            if view_error
+            else "Unknown error.\n        → Run 'make api-test' for details."
+        )
         print(f"STATUS: No market data access — {hint}")
         sys.exit(1)
 
@@ -235,13 +238,13 @@ async def get_multiple_tickers(api_client: RevolutAPIClient, symbols: list[str])
 
 def _parse_timestamp(ts: str | int | None) -> str:
     """Parse a timestamp that may be Unix ms (int) or ISO 8601 (str)."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     if ts is None:
         return ""
     try:
-        if isinstance(ts, (int, float)):
-            return datetime.fromtimestamp(int(ts) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        if isinstance(ts, int | float):
+            return datetime.fromtimestamp(int(ts) / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         # ISO 8601 string e.g. "2026-03-18T12:46:50.592188Z"
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M:%S UTC")
     except Exception:
@@ -306,7 +309,9 @@ async def get_all_tickers(api_client: RevolutAPIClient) -> None:
             ask_f = float(t.get("ask") or 0)
             mid_f = float(t.get("mid") or 0)
             last_f = float(t.get("last_price") or 0)
-            print(f"{sym:<14} {c}{bid_f:>11.2f} {c}{ask_f:>11.2f} {c}{mid_f:>11.2f} {c}{last_f:>11.2f}")
+            print(
+                f"{sym:<14} {c}{bid_f:>11.2f} {c}{ask_f:>11.2f} {c}{mid_f:>11.2f} {c}{last_f:>11.2f}"
+            )
         print(f"\nTotal pairs: {len(tickers)}")
     except Exception as e:
         print(f"\n❌ Failed: {e}")
@@ -378,9 +383,7 @@ async def get_last_public_trades(api_client: RevolutAPIClient) -> None:
         print(f"\n❌ Failed: {e}")
 
 
-async def get_open_orders(
-    api_client: RevolutAPIClient, symbol: str | None = None
-) -> None:
+async def get_open_orders(api_client: RevolutAPIClient, symbol: str | None = None) -> None:
     """Display active (open) orders."""
     label = f"  [{symbol}]" if symbol else ""
     print(f"\n📋 Open Orders{label}")
@@ -395,7 +398,9 @@ async def get_open_orders(
             print("No open orders.")
             return
 
-        print(f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}")
+        print(
+            f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}"
+        )
         print("-" * 100)
         for o in orders:
             ts = o.get("created_date") or o.get("created_at", "")
@@ -434,7 +439,9 @@ async def get_historical_orders(
             print("No historical orders found.")
             return
 
-        print(f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}")
+        print(
+            f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}"
+        )
         print("-" * 100)
         for o in orders:
             print(
@@ -450,9 +457,7 @@ async def get_historical_orders(
         print(f"\n❌ Failed: {e}")
 
 
-async def get_trades(
-    api_client: RevolutAPIClient, symbol: str, limit: int = 20
-) -> None:
+async def get_trades(api_client: RevolutAPIClient, symbol: str, limit: int = 20) -> None:
     """Display private trade history for a symbol."""
     print(f"\n💱 Trade History: {symbol}  (limit={limit})")
     print("=" * 60)
@@ -569,7 +574,6 @@ async def run_command(args) -> None:
             await test_connection(api_client)
 
         elif args.command == "tickers":
-
             symbols = args.symbols.split(",") if args.symbols else ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
             await get_multiple_tickers(api_client, symbols)
 
@@ -647,13 +651,21 @@ Examples:
     parser.add_argument(
         "command",
         choices=[
-            "trade-ready", "test", "balance",
-            "ticker", "tickers", "all-tickers",
-            "currencies", "currency-pairs", "last-public-trades",
+            "trade-ready",
+            "test",
+            "balance",
+            "ticker",
+            "tickers",
+            "all-tickers",
+            "currencies",
+            "currency-pairs",
+            "last-public-trades",
             "order-book",
             "candles",
-            "open-orders", "historical-orders",
-            "trades", "public-trades",
+            "open-orders",
+            "historical-orders",
+            "trades",
+            "public-trades",
             "order",
         ],
         help="Command to execute",

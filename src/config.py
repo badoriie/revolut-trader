@@ -58,16 +58,14 @@ class Settings(BaseSettings):
         try:
             self.trading_mode = TradingMode(op.get("TRADING_MODE").lower())
         except ValueError as e:
-            raise ValueError(
-                f"Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'."
-            ) from e
+            raise ValueError("Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'.") from e
 
         # RISK_LEVEL
         try:
             self.risk_level = RiskLevel(op.get("RISK_LEVEL").lower())
         except ValueError as e:
             raise ValueError(
-                f"Invalid RISK_LEVEL in 1Password: must be 'conservative', 'moderate', or 'aggressive'."
+                "Invalid RISK_LEVEL in 1Password: must be 'conservative', 'moderate', or 'aggressive'."
             ) from e
 
         # DEFAULT_STRATEGY
@@ -75,8 +73,8 @@ class Settings(BaseSettings):
             self.default_strategy = StrategyType(op.get("DEFAULT_STRATEGY").lower())
         except ValueError as e:
             raise ValueError(
-                f"Invalid DEFAULT_STRATEGY in 1Password: must be 'market_making', 'momentum', "
-                f"'mean_reversion', or 'multi_strategy'."
+                "Invalid DEFAULT_STRATEGY in 1Password: must be 'market_making', 'momentum', "
+                "'mean_reversion', or 'multi_strategy'."
             ) from e
 
         # BASE_CURRENCY

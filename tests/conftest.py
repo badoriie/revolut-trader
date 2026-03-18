@@ -34,7 +34,6 @@ from src.config import RiskLevel  # noqa: E402
 from src.data.models import MarketData, OrderSide, Position  # noqa: E402
 from src.risk_management.risk_manager import RiskManager  # noqa: E402
 
-
 # ============================================================================
 # Risk Management
 # ============================================================================

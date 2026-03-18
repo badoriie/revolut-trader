@@ -79,7 +79,9 @@ class _VaultCache:
             else:
                 self._signed_in = _run_op("account", "list", timeout=5) is not None
                 if not self._signed_in:
-                    logger.warning("1Password CLI installed but not signed in. Run: eval $(op signin)")
+                    logger.warning(
+                        "1Password CLI installed but not signed in. Run: eval $(op signin)"
+                    )
         return self._signed_in
 
     def _is_stale(self) -> bool:
@@ -140,8 +142,11 @@ class _VaultCache:
     def set_credential(self, item_name: str, field_name: str, value: str) -> bool:
         """Store a concealed value in a 1Password item. Invalidates cache on success."""
         result = _run_op(
-            "item", "edit", item_name,
-            "--vault", VAULT,
+            "item",
+            "edit",
+            item_name,
+            "--vault",
+            VAULT,
             f"{field_name}[concealed]={value}",
         )
         if result is not None:

@@ -12,8 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.data.models import Order, PortfolioSnapshot
 from src.models.db_models import (
-    BacktestRunDB,
     DB_URL,
+    BacktestRunDB,
     LogEntryDB,
     PortfolioSnapshotDB,
     SessionDB,

@@ -28,7 +28,7 @@ claude
 **2. Configuration Help**
 
 ```
-"Explain the configuration options in .env and help me choose appropriate settings for my account size of $[AMOUNT]."
+"Explain the trading configuration stored in 1Password and help me choose appropriate settings for my account size of $[AMOUNT]."
 ```
 
 **3. Run in Paper Mode**
@@ -74,7 +74,7 @@ claude
 **9. Validate Configuration**
 
 ```
-"Review my .env configuration and check if my risk parameters are appropriate for a $10,000 account."
+"Review my 1Password trading configuration (run: make opconfig-show) and check if my risk parameters are appropriate for a $10,000 account."
 ```
 
 ### For Deployment
@@ -153,7 +153,7 @@ Agent: [Analyzes strategy, provides recommendation, suggests parameters]
 
 You: "Set it up for me"
 
-Agent: [Configures .env, validates settings, prepares to run]
+Agent: [Reviews 1Password config via make opconfig-show, validates settings, prepares to run]
 
 You: "Run all tests first"
 
@@ -336,7 +336,7 @@ If you encounter issues:
 
 Current agent version: **1.0.0**
 
-Last updated: December 2024
+Last updated: March 2026
 
 ______________________________________________________________________
 

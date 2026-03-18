@@ -55,8 +55,12 @@ The trading bot skill is automatically available when working in this project di
 ├── README.md                 # This file (agent overview)
 ├── agent-config.json         # Agent configuration
 ├── CODING_STANDARDS.md       # Code quality standards (CRITICAL)
-├── API_REFERENCE.md          # Revolut X API reference (ALWAYS CONSULT)
+├── PROJECT_RULES.md          # Mandatory development rules
+├── API_REFERENCE.md          # API guidelines + pointer to full reference
+├── EUR_MIGRATION_SUMMARY.md  # EUR base currency migration notes
 ├── QUICK_START.md            # Quick start guide
+├── commands/
+│   └── revolut-api.md       # /revolut-api slash command (all 17 endpoints)
 ├── skills/
 │   └── trading-bot.md       # Trading bot specialist skill
 └── prompts/
@@ -70,10 +74,11 @@ The trading bot skill is automatically available when working in this project di
 
 **🔴 CRITICAL**: When working with the Revolut X API, ALWAYS consult:
 
-- **[API_REFERENCE.md](.claude/API_REFERENCE.md)** - Internal API reference
-- **[Official Revolut X API Docs](https://developer.revolut.com/docs/x-api/revolut-x-crypto-exchange-rest-api)** - Primary source of truth
+- **`/revolut-api`** — Run this slash command for the full structured endpoint reference
+- **`docs/revolut-x-api-docs.md`** — Complete API docs with request/response examples
+- **[Official Revolut X API Docs](https://developer.revolut.com/docs/x-api/revolut-x-crypto-exchange-rest-api)** — Authoritative upstream source
 
-Never guess API endpoints or formats - always verify against documentation first.
+Never guess API endpoints or formats — always verify against documentation first.
 
 ## Safety Guidelines
 
@@ -99,7 +104,7 @@ Before deploying to live trading:
 - [ ] Telegram notifications working (if enabled)
 - [ ] Stop loss and position limits tested
 - [ ] Emergency shutdown procedure documented
-- [ ] Backup of current configuration saved (`make backup`)
+- [ ] Current configuration reviewed (`make opconfig-show`)
 
 ## Agent Capabilities
 

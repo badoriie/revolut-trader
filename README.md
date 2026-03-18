@@ -111,10 +111,13 @@ make opshow
 
 ```bash
 # Paper trading with market making (RECOMMENDED for testing)
-uv run python run.py --strategy market_making --mode paper
+make run-paper
+
+# Or directly with options
+uv run python cli/run.py --strategy market_making --mode paper
 
 # View all options
-uv run python run.py --help
+uv run python cli/run.py --help
 ```
 
 ## Usage Examples
@@ -124,57 +127,35 @@ uv run python run.py --help
 Test strategies on historical data before deploying:
 
 ```bash
-# Basic backtest: 30 days of BTC-USD data
-python backtest.py --strategy market_making --pairs BTC-USD --days 30
+# Basic backtest: 30 days with default strategy
+make backtest
 
-# Test multiple pairs over 90 days
-python backtest.py --strategy momentum --pairs BTC-USD,ETH-USD --days 90
+# Specify strategy and time range
+make backtest STRATEGY=momentum DAYS=90
 
-# Test with different risk levels and save results
-python backtest.py --strategy mean_reversion --risk moderate \
+# Or run directly with full options
+uv run python cli/backtest.py --strategy mean_reversion --risk moderate \
   --days 60 --output ./results/backtest.json
-
-# Test different candle intervals
-python backtest.py --strategy multi_strategy --interval 60 --days 180
-
-# Custom initial capital
-python backtest.py --strategy momentum --capital 50000 --days 90
+uv run python cli/backtest.py --strategy multi_strategy --interval 60 --days 180
+uv run python cli/backtest.py --strategy momentum --capital 50000 --days 90
 ```
 
 See [Backtesting Guide](docs/BACKTESTING.md) for detailed documentation.
-
-### Visualization Dashboard
-
-Launch the interactive web dashboard to visualize your results:
-
-```bash
-# Start the dashboard
-streamlit run dashboard.py
-```
-
-Features:
-
-- 📊 View backtest results with interactive charts
-- 🔬 Compare multiple strategies side-by-side
-- 📈 Analyze equity curves and P&L
-- 📝 Review trade history
-
-See [Dashboard Guide](docs/DASHBOARD.md) for full documentation.
 
 ### Paper Trading (Safe Testing)
 
 ```bash
 # Test market making strategy
-uv run python run.py --strategy market_making --mode paper
+uv run python cli/run.py --strategy market_making --mode paper
 
 # Test momentum strategy with moderate risk
-uv run python run.py --strategy momentum --risk moderate --mode paper
+uv run python cli/run.py --strategy momentum --risk moderate --mode paper
 
 # Test mean reversion
-uv run python run.py --strategy mean_reversion --mode paper
+uv run python cli/run.py --strategy mean_reversion --mode paper
 
 # Test multi-strategy (combines all strategies)
-uv run python run.py --strategy multi_strategy --mode paper
+uv run python cli/run.py --strategy multi_strategy --mode paper
 
 # OR use Makefile shortcut
 make run-paper
@@ -186,10 +167,10 @@ make run-paper
 
 ```bash
 # Live trading with conservative risk (recommended)
-uv run python run.py --strategy market_making --risk conservative --mode live
+uv run python cli/run.py --strategy market_making --risk conservative --mode live
 
 # Live momentum trading with moderate risk
-uv run python run.py --strategy momentum --risk moderate --mode live
+uv run python cli/run.py --strategy momentum --risk moderate --mode live
 
 # OR use Makefile (with safety confirmation)
 make run-live
@@ -223,13 +204,13 @@ make api-candles SYMBOL=ETH-EUR INTERVAL=15 LIMIT=20
 
 ```bash
 # Custom trading pairs
-uv run python run.py --strategy momentum --pairs BTC-USD,ETH-USD,SOL-USD
+uv run python cli/run.py --strategy momentum --pairs BTC-USD,ETH-USD,SOL-USD
 
 # Faster update interval (30 seconds)
-uv run python run.py --strategy market_making --interval 30
+uv run python cli/run.py --strategy market_making --interval 30
 
 # Debug logging
-uv run python run.py --strategy momentum --log-level DEBUG
+uv run python cli/run.py --strategy momentum --log-level DEBUG
 ```
 
 ## Strategy Details
@@ -290,24 +271,28 @@ uv run python run.py --strategy momentum --log-level DEBUG
 ```
 revolut-trader/
 ├── src/
-│   ├── api/              # Revolut API client (Ed25519 auth)
-│   ├── strategies/       # Trading strategies
-│   ├── risk_management/  # Risk controls
-│   ├── execution/        # Order execution
+│   ├── api/              # Revolut API client (Ed25519 auth, all 17 endpoints)
+│   ├── strategies/       # Trading strategies (market making, momentum, mean reversion, multi)
+│   ├── risk_management/  # Risk controls and position sizing
+│   ├── execution/        # Order execution and position management
 │   ├── notifications/    # Telegram alerts
-│   ├── data/             # Data models
-│   ├── utils/            # 1Password integration
-│   ├── config.py         # Configuration
-│   └── bot.py            # Main bot logic
-├── tests/                # Unit tests
-├── scripts/              # Setup and management scripts
-│   ├── setup.sh          # Complete project setup
-│   └── 1password-manager.sh  # Credential management
+│   ├── data/             # Domain models (Order, Position, Trade, Signal)
+│   ├── utils/            # 1Password, indicators, persistence helpers
+│   ├── models/           # SQLAlchemy ORM models
+│   ├── config.py         # Pydantic config (loaded from 1Password)
+│   └── bot.py            # Main orchestrator
+├── cli/
+│   ├── run.py            # Bot entry point
+│   ├── api_test.py       # API testing utilities
+│   ├── backtest.py       # Backtesting CLI
+│   └── db_manage.py      # Database management CLI
+├── tests/
+│   ├── unit/             # Component unit tests
+│   └── safety/           # Safety-critical tests (order limits, loss limits)
 ├── .claude/              # Claude Code agent configuration
 ├── docs/                 # Documentation
 ├── logs/                 # Runtime logs (gitignored)
 ├── data/                 # Runtime trading data (gitignored)
-├── run.py                # CLI entry point
 ├── Makefile              # All project commands
 └── README.md             # This file
 ```
@@ -369,9 +354,6 @@ make db-export
 
 # Export to CSV for analysis
 make db-export-csv
-
-# Migrate to PostgreSQL (for production)
-make db-migrate
 ```
 
 #### Data Saving Schedule
@@ -431,19 +413,6 @@ make db-encrypt-status
 - The database file itself is still readable in IDE tools (schema visible)
 - Encrypted fields appear as gibberish in database browsers
 - For full database encryption (entire .db file), use SQLCipher instead
-
-#### Migration to PostgreSQL
-
-The bot is designed for easy migration from SQLite to PostgreSQL:
-
-```bash
-# Export current data as backup
-make db-export
-
-# Migrate to PostgreSQL
-make db-migrate
-# Enter: postgresql://user:password@localhost/trading
-```
 
 This data persists across bot restarts and can be used for:
 
@@ -593,17 +562,6 @@ uv run mypy src/ cli/
 1. Monitor for at least 24 hours in paper mode
 1. Start live trading with small amounts
 1. Gradually increase position sizes as confidence grows
-
-## Future Enhancements
-
-Potential additions:
-
-- Web dashboard for visual monitoring
-- Backtesting engine with historical data
-- Advanced strategies (arbitrage, grid trading)
-- Database persistence for trade history
-- Multi-exchange support
-- WebSocket real-time price feeds
 
 ## Support
 

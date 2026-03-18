@@ -54,9 +54,7 @@ class RevolutAPIClient:
         self.base_url = REVOLUT_API_BASE_URL.rstrip("/")
         self.client = httpx.AsyncClient(timeout=30.0)
         self._private_key: Ed25519PrivateKey | None = None
-        self.rate_limiter = RateLimiter(
-            max_requests=max_requests_per_minute, time_window=60.0
-        )
+        self.rate_limiter = RateLimiter(max_requests=max_requests_per_minute, time_window=60.0)
         logger.info(f"Rate limiter configured: {max_requests_per_minute} requests/minute")
 
     async def __aenter__(self) -> "RevolutAPIClient":
@@ -114,9 +112,7 @@ class RevolutAPIClient:
         return {
             "X-Revx-API-Key": self.api_key,
             "X-Revx-Timestamp": timestamp,
-            "X-Revx-Signature": self._generate_signature(
-                timestamp, method, path, query, body
-            ),
+            "X-Revx-Signature": self._generate_signature(timestamp, method, path, query, body),
             "Content-Type": "application/json",
         }
 
@@ -259,7 +255,7 @@ class RevolutAPIClient:
             trade_ok = True
         except RevolutAPIError as e:
             trade_ok = e.status_code not in (401, 403)
-        except Exception:
+        except Exception:  # nosec B110 — network errors leave trade_ok=False (safe default)
             pass
 
         return {"view": view_ok, "trade": trade_ok, "view_error": view_error}
@@ -278,9 +274,7 @@ class RevolutAPIClient:
         """
         raw = await self._request("GET", "/balances")
         if not isinstance(raw, list):
-            raise ValueError(
-                f"Invalid balance response: expected list, got {type(raw).__name__}"
-            )
+            raise ValueError(f"Invalid balance response: expected list, got {type(raw).__name__}")
 
         base_currency = settings.base_currency
         balances: dict[str, dict[str, float]] = {}
@@ -314,8 +308,8 @@ class RevolutAPIClient:
                 rate = float(ticker.get("last", 0))
                 if rate > 0:
                     total_base += amount * rate
-            except Exception:
-                pass  # skip currencies with no tradeable pair
+            except Exception:  # nosec B110 — currency has no pair, FX contribution is zero
+                pass
 
         return {
             "balances": balances,
@@ -361,9 +355,7 @@ class RevolutAPIClient:
         """
         raw = await self._request("GET", "/configuration/pairs")
         if not isinstance(raw, dict):
-            raise ValueError(
-                f"Invalid pairs response: expected dict, got {type(raw).__name__}"
-            )
+            raise ValueError(f"Invalid pairs response: expected dict, got {type(raw).__name__}")
         return raw
 
     # ------------------------------------------------------------------
@@ -454,9 +446,7 @@ class RevolutAPIClient:
         elif order_type_lower == "market":
             order_configuration = {"market": {"base_size": str(quantity)}}
         else:
-            raise ValueError(
-                f"Unsupported order_type: {order_type!r}. Use 'limit' or 'market'."
-            )
+            raise ValueError(f"Unsupported order_type: {order_type!r}. Use 'limit' or 'market'.")
 
         order_data: dict[str, Any] = {
             "client_order_id": str(uuid.uuid4()),
@@ -465,9 +455,7 @@ class RevolutAPIClient:
             "order_configuration": order_configuration,
         }
 
-        logger.info(
-            f"Creating order: {symbol} {side.lower()} {order_type_lower} qty={quantity}"
-        )
+        logger.info(f"Creating order: {symbol} {side.lower()} {order_type_lower} qty={quantity}")
         raw = await self._request("POST", "/orders", json_data=order_data)
 
         # Response: {"data": [{"venue_order_id": "...", "client_order_id": "...", "state": "..."}]}
@@ -613,9 +601,7 @@ class RevolutAPIClient:
         """
         raw = await self._request("GET", f"/orders/{venue_order_id}")
         if not isinstance(raw, dict):
-            raise ValueError(
-                f"Invalid order response: expected dict, got {type(raw).__name__}"
-            )
+            raise ValueError(f"Invalid order response: expected dict, got {type(raw).__name__}")
         # Response: {"data": {...order...}}
         return raw.get("data", raw)
 
@@ -654,9 +640,7 @@ class RevolutAPIClient:
         """
         raw = await self._request("GET", f"/orders/fills/{venue_order_id}")
         if not isinstance(raw, dict):
-            raise ValueError(
-                f"Invalid fills response: expected dict, got {type(raw).__name__}"
-            )
+            raise ValueError(f"Invalid fills response: expected dict, got {type(raw).__name__}")
         return raw
 
     # ------------------------------------------------------------------
@@ -750,9 +734,7 @@ class RevolutAPIClient:
         Returns:
             ``{"data": {"asks": [...], "bids": [...]}, "metadata": {"ts": ...}}``
         """
-        raw = await self._request(
-            "GET", f"/order-book/{symbol}", params={"depth": depth}
-        )
+        raw = await self._request("GET", f"/order-book/{symbol}", params={"depth": depth})
         if not isinstance(raw, dict):
             raise ValueError(
                 f"Invalid order book response: expected dict, got {type(raw).__name__}"
@@ -811,9 +793,7 @@ class RevolutAPIClient:
     # 17. GET /tickers
     # ------------------------------------------------------------------
 
-    async def get_tickers(
-        self, symbols: list[str] | None = None
-    ) -> list[dict[str, Any]]:
+    async def get_tickers(self, symbols: list[str] | None = None) -> list[dict[str, Any]]:
         """Get latest market data snapshots for all (or filtered) currency pairs.
 
         Docs: GET /api/1.0/tickers — Auth required.
@@ -835,9 +815,7 @@ class RevolutAPIClient:
             data = raw.get("data")
             if isinstance(data, list):
                 return data
-            raise ValueError(
-                f"Unexpected /tickers response shape: {list(raw.keys())}"
-            )
+            raise ValueError(f"Unexpected /tickers response shape: {list(raw.keys())}")
         # Fallback: bare list (defensive)
         if isinstance(raw, list):
             return raw
@@ -875,9 +853,7 @@ class RevolutAPIClient:
         best_bid = float(bids[0].price) if bids else 0.0
         best_ask = float(asks[0].price) if asks else 0.0
         last = (best_bid + best_ask) / 2 if (best_bid and best_ask) else 0.0
-        volume = sum(float(b.quantity) for b in bids) + sum(
-            float(a.quantity) for a in asks
-        )
+        volume = sum(float(b.quantity) for b in bids) + sum(float(a.quantity) for a in asks)
 
         return {
             "bid": best_bid,
