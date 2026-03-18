@@ -83,29 +83,43 @@ class RevolutAPIClient:
         """Close the HTTP client."""
         await self.client.aclose()
 
-    async def check_permissions(self) -> dict[str, bool]:
+    async def check_permissions(self) -> dict[str, Any]:
         """Check what this API key can do.
 
-        Returns:
-            {"view": bool, "trade": bool}
-            view  — key is valid and can access authenticated account endpoints
-            trade — key has trading-level permissions (can place orders)
+        Returns a dict with:
+            view        — bool: key is valid and can access authenticated endpoints
+            trade       — bool: key has trading-level permissions (can place orders)
+            view_error  — str | None: human-readable reason if view is False
+                          "deactivated"   → 401 from /balances (key invalid/deactivated)
+                          "forbidden"     → 403 (key lacks read permission)
+                          "unreachable"   → network/connection error
+                          "http_<code>"   → any other HTTP error status
+                          "unknown"       → non-HTTP exception
 
-        Uses /balances for the view check (truly authenticated endpoint —
-        the public order-book endpoint accepts any request regardless of key status).
-
-        Never raises; all errors are caught and reflected as False.
+        Uses /balances for the view check — the public order-book endpoint
+        ignores auth headers so it is not a reliable liveness probe.
+        Never raises; all errors are caught and surfaced via view_error.
         """
         view_ok = False
         trade_ok = False
+        view_error: str | None = None
 
         # VIEW: /balances requires a valid, active API key.
-        # (The public order-book endpoint ignores auth headers — not a reliable check.)
         try:
             balance = await self.get_balance()
             view_ok = "currencies" in balance
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            if status == 401:
+                view_error = "deactivated"
+            elif status == 403:
+                view_error = "forbidden"
+            else:
+                view_error = f"http_{status}"
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError):
+            view_error = "unreachable"
         except Exception:
-            pass
+            view_error = "unknown"
 
         # TRADE: POST /orders with empty body.
         # Revolut validates auth/permissions before the payload:
@@ -119,7 +133,7 @@ class RevolutAPIClient:
         except Exception:
             pass
 
-        return {"view": view_ok, "trade": trade_ok}
+        return {"view": view_ok, "trade": trade_ok, "view_error": view_error}
 
     def _generate_signature(
         self, timestamp: str, method: str, path: str, query: str = "", body: str = ""
