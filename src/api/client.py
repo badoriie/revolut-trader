@@ -100,8 +100,11 @@ class RevolutAPIClient:
         self, timestamp: str, method: str, path: str, query: str = "", body: str = ""
     ) -> str:
         """Sign ``timestamp+method+path+query+body`` with Ed25519, return Base64."""
+        if self._private_key is None:
+            raise RuntimeError("Private key not loaded — call _load_private_key() first")
         message = f"{timestamp}{method}{path}{query}{body}"
-        return base64.b64encode(self._private_key.sign(message.encode())).decode()
+        signature: bytes = self._private_key.sign(message.encode())
+        return base64.b64encode(signature).decode()  # type: ignore[arg-type]
 
     def _build_headers(
         self, method: str, path: str, query: str = "", body: str = ""
