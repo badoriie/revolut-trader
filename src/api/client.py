@@ -452,13 +452,19 @@ class RevolutAPIClient:
 
         Returns:
             List of ticker objects with current market snapshots for each pair.
+            Handles both a bare JSON array and a {"data": [...]} envelope.
 
         Reference: https://developer.revolut.com/docs/x-api/get-tickers
         """
         response = await self._request("GET", "/tickers")
-        if not isinstance(response, list):
-            raise ValueError(f"Expected list response, got {type(response)}")
-        return response
+        if isinstance(response, list):
+            return response
+        if isinstance(response, dict):
+            data = response.get("data")
+            if isinstance(data, list):
+                return data
+            raise ValueError(f"Unexpected /tickers response shape: {list(response.keys())}")
+        raise ValueError(f"Expected list or dict response, got {type(response)}")
 
     async def get_open_orders(
         self,

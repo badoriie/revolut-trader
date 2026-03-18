@@ -301,15 +301,22 @@ class TestGetTickers:
         assert mock.call_args.kwargs["method"] == "GET"
         assert mock.call_args.kwargs["url"] == f"{BASE_URL}/tickers"
 
-    async def test_returns_list(self, client):
+    async def test_returns_list_when_response_is_bare_array(self, client):
         _mock_http(client, TICKERS_RESPONSE)
         result = await client.get_tickers()
         assert isinstance(result, list)
         assert len(result) == 2
 
-    async def test_raises_on_non_list_response(self, client):
-        _mock_http(client, {"unexpected": "dict"})
-        with pytest.raises(ValueError, match="Expected list"):
+    async def test_unwraps_data_envelope_when_response_is_dict(self, client):
+        """API may return {"data": [...]} instead of a bare array."""
+        _mock_http(client, {"data": TICKERS_RESPONSE, "metadata": {}})
+        result = await client.get_tickers()
+        assert isinstance(result, list)
+        assert len(result) == 2
+
+    async def test_raises_on_dict_without_data_key(self, client):
+        _mock_http(client, {"unexpected": "no data key"})
+        with pytest.raises(ValueError, match="Unexpected /tickers response shape"):
             await client.get_tickers()
 
 
