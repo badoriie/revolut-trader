@@ -254,7 +254,7 @@ async def get_order_book(api_client: RevolutAPIClient, symbol: str, depth: int =
     print("=" * 60)
 
     try:
-        book = await api_client.get_order_book(symbol, limit=depth)
+        book = await api_client.get_order_book(symbol, depth=depth)
         asks = book.get("data", {}).get("asks", [])
         bids = book.get("data", {}).get("bids", [])
         ts = book.get("metadata", {}).get("timestamp")
@@ -284,7 +284,7 @@ async def get_order_book(api_client: RevolutAPIClient, symbol: str, depth: int =
 
 
 async def get_all_tickers(api_client: RevolutAPIClient) -> None:
-    """Display all tickers from the /tickers endpoint in a single call."""
+    """Display all tickers from GET /tickers."""
     print("\n📊 All Tickers  (GET /tickers)")
     print("=" * 60)
 
@@ -295,22 +295,85 @@ async def get_all_tickers(api_client: RevolutAPIClient) -> None:
             return
 
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-        print(f"\n{'Symbol':<14} {'Bid':>12} {'Ask':>12} {'Last':>12} {'Spread %':>10}")
+        print(f"\n{'Symbol':<14} {'Bid':>12} {'Ask':>12} {'Mid':>12} {'Last':>12}")
         print("-" * 65)
         for t in sorted(tickers, key=lambda x: x.get("symbol", "")):
             sym = t.get("symbol", "?")
-            quote = sym.split("-")[-1] if "-" in sym else ""
+            # API uses slash notation "BTC/USD"; extract quote currency after "/"
+            quote = sym.split("/")[-1] if "/" in sym else sym.split("-")[-1] if "-" in sym else ""
             c = currency_symbols.get(quote, "")
-            bid = t.get("bid") or t.get("bestBid") or "0"
-            ask = t.get("ask") or t.get("bestAsk") or "0"
-            last = t.get("last") or t.get("lastPrice") or "0"
-            bid_f, ask_f, last_f = float(bid), float(ask), float(last)
-            spread_pct = (ask_f - bid_f) / last_f * 100 if last_f else 0
-            print(
-                f"{sym:<14} {c}{bid_f:>11.2f} {c}{ask_f:>11.2f} "
-                f"{c}{last_f:>11.2f} {spread_pct:>9.3f}%"
-            )
+            bid_f = float(t.get("bid") or 0)
+            ask_f = float(t.get("ask") or 0)
+            mid_f = float(t.get("mid") or 0)
+            last_f = float(t.get("last_price") or 0)
+            print(f"{sym:<14} {c}{bid_f:>11.2f} {c}{ask_f:>11.2f} {c}{mid_f:>11.2f} {c}{last_f:>11.2f}")
         print(f"\nTotal pairs: {len(tickers)}")
+    except Exception as e:
+        print(f"\n❌ Failed: {e}")
+
+
+async def get_currencies(api_client: RevolutAPIClient) -> None:
+    """Display all supported currencies (GET /configuration/currencies)."""
+    print("\n🪙 Supported Currencies")
+    print("=" * 60)
+
+    try:
+        currencies = await api_client.get_currencies()
+        print(f"\n{'Symbol':<8} {'Name':<20} {'Type':<8} {'Scale':>6} {'Status'}")
+        print("-" * 55)
+        for sym, info in sorted(currencies.items()):
+            print(
+                f"{sym:<8} {info.get('name', '?'):<20} "
+                f"{info.get('asset_type', '?'):<8} {info.get('scale', '?'):>6} "
+                f"{info.get('status', '?')}"
+            )
+        print(f"\nTotal: {len(currencies)}")
+    except Exception as e:
+        print(f"\n❌ Failed: {e}")
+
+
+async def get_currency_pairs(api_client: RevolutAPIClient) -> None:
+    """Display all traded currency pairs (GET /configuration/pairs)."""
+    print("\n💱 Currency Pairs")
+    print("=" * 60)
+
+    try:
+        pairs = await api_client.get_currency_pairs()
+        print(f"\n{'Pair':<12} {'Min Size':>12} {'Max Size':>12} {'Status'}")
+        print("-" * 50)
+        for pair, info in sorted(pairs.items()):
+            print(
+                f"{pair:<12} {info.get('min_order_size', '?'):>12} "
+                f"{info.get('max_order_size', '?'):>12} {info.get('status', '?')}"
+            )
+        print(f"\nTotal: {len(pairs)}")
+    except Exception as e:
+        print(f"\n❌ Failed: {e}")
+
+
+async def get_last_public_trades(api_client: RevolutAPIClient) -> None:
+    """Display last 100 public trades (GET /public/last-trades)."""
+    print("\n📋 Last Public Trades  (GET /public/last-trades)")
+    print("=" * 60)
+
+    try:
+        result = await api_client.get_last_public_trades()
+        trades = result.get("data", [])
+        if not trades:
+            print("No trades found.")
+            return
+
+        print(f"\n{'Time':<24} {'Asset':<6} {'Price':>12} {'Qty':>14} {'Trade ID'}")
+        print("-" * 80)
+        for t in trades[:20]:  # cap display at 20
+            ts_str = _parse_timestamp(t.get("tdt", ""))
+            print(
+                f"{ts_str:<24} {t.get('aid', '?'):<6} "
+                f"{float(t.get('p', 0)):>12.4f} "
+                f"{float(t.get('q', 0)):>14.8f} "
+                f"{t.get('tid', '?')}"
+            )
+        print(f"\nShowing 20 of {len(trades)} trades.")
     except Exception as e:
         print(f"\n❌ Failed: {e}")
 
@@ -422,6 +485,34 @@ async def get_trades(
         print(f"\n❌ Failed: {e}")
 
 
+async def get_public_trades(api_client: RevolutAPIClient, symbol: str) -> None:
+    """Display public trade history for a symbol."""
+    print(f"\n📊 Public Trades: {symbol}")
+    print("=" * 60)
+
+    try:
+        result = await api_client.get_public_trades(symbol)
+        trades = result.get("data", [])
+
+        if not trades:
+            print("No public trades found.")
+            return
+
+        print(f"\n{'Time':<24} {'Price':>12} {'Qty':>14} {'Trade ID'}")
+        print("-" * 80)
+        for t in trades:
+            ts = t.get("tdt", "")
+            ts_str = _parse_timestamp(ts) if ts else ""
+            print(
+                f"{ts_str:<24} "
+                f"{float(t.get('p', 0)):>12.4f} "
+                f"{float(t.get('q', 0)):>14.8f} "
+                f"{t.get('tid', '?')}"
+            )
+    except Exception as e:
+        print(f"\n❌ Failed: {e}")
+
+
 async def get_order(api_client: RevolutAPIClient, order_id: str) -> None:
     """Display details for a specific order."""
     print(f"\n🔍 Order: {order_id}")
@@ -491,6 +582,15 @@ async def run_command(args) -> None:
         elif args.command == "all-tickers":
             await get_all_tickers(api_client)
 
+        elif args.command == "currencies":
+            await get_currencies(api_client)
+
+        elif args.command == "currency-pairs":
+            await get_currency_pairs(api_client)
+
+        elif args.command == "last-public-trades":
+            await get_last_public_trades(api_client)
+
         elif args.command == "open-orders":
             await get_open_orders(api_client, symbol=args.symbol)
 
@@ -502,6 +602,12 @@ async def run_command(args) -> None:
                 print("❌ Error: --symbol required for trades command")
                 sys.exit(1)
             await get_trades(api_client, args.symbol, limit=args.limit)
+
+        elif args.command == "public-trades":
+            if not args.symbol:
+                print("❌ Error: --symbol required for public-trades command")
+                sys.exit(1)
+            await get_public_trades(api_client, args.symbol)
 
         elif args.command == "order":
             if not args.order_id:
@@ -532,7 +638,8 @@ Examples:
   python cli/api_test.py open-orders                          # all active orders
   python cli/api_test.py open-orders --symbol BTC-EUR         # filtered by pair
   python cli/api_test.py historical-orders --limit 20         # completed orders
-  python cli/api_test.py trades --symbol BTC-EUR              # trade history
+  python cli/api_test.py trades --symbol BTC-EUR              # private trade history
+  python cli/api_test.py public-trades --symbol BTC-EUR       # public trade history
   python cli/api_test.py order --order-id <uuid>              # single order details
         """,
     )
@@ -542,10 +649,11 @@ Examples:
         choices=[
             "trade-ready", "test", "balance",
             "ticker", "tickers", "all-tickers",
+            "currencies", "currency-pairs", "last-public-trades",
             "order-book",
             "candles",
             "open-orders", "historical-orders",
-            "trades",
+            "trades", "public-trades",
             "order",
         ],
         help="Command to execute",
