@@ -122,28 +122,60 @@ async def get_candles(
         print(f"\n❌ Failed to fetch candles for {symbol}")
 
 
+async def check_trade_ready(api_client: RevolutAPIClient) -> None:
+    """Report API key permissions and which modes are available.
+
+    Exits with code 1 only if VIEW fails (no market data = nothing works).
+    A read-only key exits 0 — paper/simulation mode is fully supported.
+    """
+    print("\n=== API Status Check ===\n")
+
+    print("Checking permissions...")
+    perms = await api_client.check_permissions()
+    view_ok  = perms["view"]
+    trade_ok = perms["trade"]
+
+    print()
+    print(f"  View  (market data) : {'READY'     if view_ok  else 'FAIL'}")
+    print(f"  Trade (place orders): {'READY'     if trade_ok else 'READ-ONLY'}")
+    print()
+    print(f"  Paper / simulation  : {'AVAILABLE' if view_ok  else 'NOT AVAILABLE'}")
+    print(f"  Live trading        : {'AVAILABLE' if trade_ok else 'NOT AVAILABLE (read-only key)'}")
+    print()
+
+    if view_ok and trade_ok:
+        print("STATUS: Full access — paper and live modes available.")
+    elif view_ok:
+        print("STATUS: Read-only key — paper/simulation mode available.")
+        print("        Real market data will be used; orders are simulated locally.")
+        print("        To enable live trading, create a key with trading permissions in Revolut X.")
+    else:
+        print("STATUS: Authentication failed — no market data access.")
+        print("        Run 'make ops' to update credentials.")
+        sys.exit(1)
+
+
 async def test_connection(api_client: RevolutAPIClient) -> None:
-    """Test API connection."""
-    print("\n🔌 Testing API Connection")
+    """Test API connection using a truly authenticated endpoint (/balances).
+
+    The public order-book endpoint ignores auth headers and will succeed even
+    with a deactivated key, so it cannot be used as a connection test.
+    """
+    print("\nTesting API Connection")
     print("=" * 50)
 
-    # Try to fetch ticker as a connection test (known working endpoint)
     try:
-        ticker = await api_client.get_ticker("BTC-EUR")
-
-        if ticker:
-            print("\n✅ API Connection Successful")
-            print("✓ Authentication working")
-            print("✓ API endpoints accessible")
-            print(f"✓ BTC-EUR current price: €{ticker['last']:.2f}")
+        balance = await api_client.get_balance()
+        if "currencies" in balance:
+            print("\nPASS — Authentication successful")
+            print(f"     — Account has {len(balance['currencies'])} currencies")
         else:
-            print("\n❌ API Connection Failed")
-            print("Check your credentials in 1Password")
+            print("\nFAIL — Unexpected balance response")
             sys.exit(1)
     except Exception as e:
-        print("\n❌ API Connection Failed")
-        print(f"Error: {e}")
-        print("Check your credentials in 1Password")
+        print("\nFAIL — Authentication failed")
+        print(f"       {e}")
+        print("\nRun 'make ops' to update credentials.")
         sys.exit(1)
 
 
@@ -184,7 +216,10 @@ async def run_command(args) -> None:
     await api_client.initialize()
 
     try:
-        if args.command == "balance":
+        if args.command == "trade-ready":
+            await check_trade_ready(api_client)
+
+        elif args.command == "balance":
             await get_balance(api_client)
 
         elif args.command == "ticker":
@@ -203,6 +238,7 @@ async def run_command(args) -> None:
             await test_connection(api_client)
 
         elif args.command == "tickers":
+
             symbols = args.symbols.split(",") if args.symbols else ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
             await get_multiple_tickers(api_client, symbols)
 
@@ -236,7 +272,7 @@ Examples:
 
     parser.add_argument(
         "command",
-        choices=["test", "balance", "ticker", "tickers", "candles"],
+        choices=["trade-ready", "test", "balance", "ticker", "tickers", "candles"],
         help="Command to execute",
     )
 

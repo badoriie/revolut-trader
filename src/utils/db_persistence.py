@@ -1,7 +1,4 @@
-"""Database persistence layer using SQLAlchemy.
-
-Supports SQLite (default) with easy migration to PostgreSQL.
-"""
+"""Database persistence layer using SQLAlchemy (SQLite)."""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -16,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.data.models import Order, PortfolioSnapshot
 from src.models.db_models import (
     BacktestRunDB,
+    DB_URL,
     LogEntryDB,
     PortfolioSnapshotDB,
     SessionDB,
@@ -28,23 +26,11 @@ from src.utils.db_encryption import DatabaseEncryption
 
 
 class DatabasePersistence:
-    """Database-based persistence for trading data using SQLAlchemy."""
+    """Database-based persistence for trading data using SQLAlchemy (SQLite)."""
 
-    def __init__(self, database_url: str = "sqlite:///data/trading.db"):
-        """Initialize database persistence.
-
-        Args:
-            database_url: Database connection string
-                - SQLite: "sqlite:///data/trading.db" (default)
-                - PostgreSQL: "postgresql://user:password@localhost/trading"
-        """
-        # Ensure data directory exists for SQLite
-        if database_url.startswith("sqlite:///"):
-            db_path = Path(database_url.replace("sqlite:///", ""))
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.database_url = database_url
-        self.engine = create_db_engine(database_url)
+    def __init__(self):
+        Path(DB_URL.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
+        self.engine = create_db_engine()
         self.Session = get_session_factory(self.engine)
 
         # Initialize schema
@@ -53,7 +39,7 @@ class DatabasePersistence:
         # Initialize encryption for sensitive fields
         self.encryption = DatabaseEncryption()
 
-        logger.info(f"Database persistence initialized: {database_url}")
+        logger.info(f"Database persistence initialized: {DB_URL}")
         if self.encryption.is_enabled:
             logger.info("✓ Database field encryption enabled")
 

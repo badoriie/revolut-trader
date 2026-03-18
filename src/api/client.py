@@ -12,7 +12,7 @@ Never guess API endpoints or formats - verify against official documentation fir
 
 import base64
 import time
-from pathlib import Path
+import uuid
 from typing import Any
 
 import httpx
@@ -21,7 +21,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from loguru import logger
 from pydantic import ValidationError
 
-from src.config import settings
+import src.utils.onepassword as op
+from src.config import REVOLUT_API_BASE_URL, settings
 from src.data.models import (
     CandleResponse,
     OrderBookResponse,
@@ -35,47 +36,15 @@ class RevolutAPIClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
-        private_key_path: Path | None = None,
-        private_key_content: str | None = None,
-        base_url: str | None = None,
         max_requests_per_minute: int = 60,
     ):
-        # Get API key from 1Password if not provided
-        if api_key:
-            self.api_key = api_key
-        else:
-            self.api_key = self._get_api_key_from_1password() or settings.revolut_api_key
-
-        self.private_key_path = private_key_path
-        self.private_key_content = private_key_content
-        self.base_url = (base_url or settings.revolut_api_base_url).rstrip("/")
+        self.api_key = op.get("REVOLUT_API_KEY")
+        self.base_url = REVOLUT_API_BASE_URL.rstrip("/")
         self.client = httpx.AsyncClient(timeout=30.0)
         self._private_key: Ed25519PrivateKey | None = None
 
-        # Rate limiter: default 60 requests per minute (configurable)
         self.rate_limiter = RateLimiter(max_requests=max_requests_per_minute, time_window=60.0)
         logger.info(f"Rate limiter configured: {max_requests_per_minute} requests/minute")
-
-    def _get_api_key_from_1password(self) -> str:
-        """Retrieve API key from 1Password only (no .env fallback)."""
-        from src.utils.onepassword import OnePasswordClient
-
-        client = OnePasswordClient()
-        if not client.is_available():
-            raise RuntimeError(
-                "1Password is required but not available for API key retrieval.\n"
-                "Please sign in: eval $(op signin)"
-            )
-
-        api_key = client.get_field("REVOLUT_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "REVOLUT_API_KEY not found in 1Password. Please store it:\n"
-                "op item edit revolut-trader-credentials --vault revolut-trader "
-                'REVOLUT_API_KEY[concealed]="your-api-key"'
-            )
-        return api_key
 
     async def __aenter__(self):
         await self.initialize()
@@ -85,41 +54,14 @@ class RevolutAPIClient:
         await self.close()
 
     async def initialize(self):
-        """Initialize the API client by loading the private key.
-
-        Priority:
-        1. Use private_key_content if provided directly
-        2. Use private_key_path if provided and exists
-        3. Try to get from 1Password via settings
-        4. Fall back to file path from settings
+        """Initialize the API client by loading the private key from 1Password.
 
         Raises:
-            FileNotFoundError: If private key cannot be found
+            RuntimeError: If 1Password is unavailable or REVOLUT_PRIVATE_KEY not found
             ValueError: If private key is not Ed25519 format
         """
-        pem_content = None
-
-        # Priority 1: Use content if provided directly
-        if self.private_key_content:
-            pem_content = self.private_key_content
-            logger.debug("Using private key content provided directly")
-
-        # Priority 2: Use file path if provided and exists
-        elif self.private_key_path and self.private_key_path.exists():
-            pem_content = self.private_key_path.read_text()
-            logger.debug(f"Using private key from path: {self.private_key_path}")
-
-        # Priority 3: Get from 1Password via settings (enforced in production)
-        else:
-            try:
-                pem_content = settings.get_private_key_content()
-                if pem_content:
-                    logger.info("✓ Using private key from 1Password (secure storage)")
-                else:
-                    raise FileNotFoundError("Private key not found in 1Password or local storage")
-            except RuntimeError as e:
-                # Re-raise 1Password requirement errors from settings
-                raise RuntimeError(str(e)) from e
+        pem_content = op.get("REVOLUT_PRIVATE_KEY")
+        logger.info("Using private key from 1Password")
 
         # Load the private key from PEM content
         try:
@@ -140,6 +82,44 @@ class RevolutAPIClient:
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+
+    async def check_permissions(self) -> dict[str, bool]:
+        """Check what this API key can do.
+
+        Returns:
+            {"view": bool, "trade": bool}
+            view  — key is valid and can access authenticated account endpoints
+            trade — key has trading-level permissions (can place orders)
+
+        Uses /balances for the view check (truly authenticated endpoint —
+        the public order-book endpoint accepts any request regardless of key status).
+
+        Never raises; all errors are caught and reflected as False.
+        """
+        view_ok = False
+        trade_ok = False
+
+        # VIEW: /balances requires a valid, active API key.
+        # (The public order-book endpoint ignores auth headers — not a reliable check.)
+        try:
+            balance = await self.get_balance()
+            view_ok = "currencies" in balance
+        except Exception:
+            pass
+
+        # TRADE: POST /orders with empty body.
+        # Revolut validates auth/permissions before the payload:
+        #   400/422 = reached validation → key can trade
+        #   401/403 = rejected at auth/permission layer → key cannot trade
+        try:
+            await self._request("POST", "/orders", json_data={})
+            trade_ok = True
+        except httpx.HTTPStatusError as e:
+            trade_ok = e.response.status_code not in (401, 403)
+        except Exception:
+            pass
+
+        return {"view": view_ok, "trade": trade_ok}
 
     def _generate_signature(
         self, timestamp: str, method: str, path: str, query: str = "", body: str = ""
@@ -182,7 +162,7 @@ class RevolutAPIClient:
             query = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
 
         body = ""
-        if json_data:
+        if json_data is not None:
             import json
 
             body = json.dumps(json_data, separators=(",", ":"))
@@ -201,7 +181,10 @@ class RevolutAPIClient:
             return response.json() if response.content else {}
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            if e.response.status_code >= 500:
+                logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            else:
+                logger.debug(f"HTTP error {e.response.status_code}: {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Request failed: {str(e)}")
@@ -231,7 +214,10 @@ class RevolutAPIClient:
             return response.json() if response.content else {}
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            if e.response.status_code >= 500:
+                logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+            else:
+                logger.debug(f"HTTP error {e.response.status_code}: {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Request failed: {str(e)}")
@@ -314,51 +300,62 @@ class RevolutAPIClient:
         order_type: str,
         quantity: float,
         price: float | None = None,
-        time_in_force: str = "GTC",
     ) -> dict[str, Any]:
-        """Create a new order.
+        """Create a new order using the Revolut X order format.
 
         Args:
             symbol: Trading pair (e.g., "BTC-USD")
-            side: "BUY" or "SELL"
-            order_type: "MARKET" or "LIMIT"
-            quantity: Order quantity
-            price: Limit price (required for LIMIT orders)
-            time_in_force: Time in force (default: "GTC")
+            side: "buy" or "sell" (case-insensitive)
+            order_type: "limit" or "market" (case-insensitive)
+            quantity: Base asset quantity
+            price: Limit price (required for limit orders)
 
         Returns:
             Dictionary with order creation response
 
         Raises:
-            ValidationError: If API response doesn't match expected format
-            ValueError: If order creation fails
+            ValueError: If price missing for limit order, or API returns unexpected format
         """
-        order_data = {
+        order_type_lower = order_type.lower()
+
+        if order_type_lower == "limit":
+            if price is None:
+                raise ValueError("price is required for limit orders")
+            order_configuration: dict[str, Any] = {
+                "limit": {
+                    "base_size": str(quantity),
+                    "price": str(price),
+                    "execution_instructions": ["post_only"],
+                }
+            }
+        elif order_type_lower == "market":
+            order_configuration = {
+                "market": {
+                    "base_size": str(quantity),
+                }
+            }
+        else:
+            raise ValueError(f"Unsupported order_type: {order_type!r}. Use 'limit' or 'market'.")
+
+        order_data: dict[str, Any] = {
+            "client_order_id": str(uuid.uuid4()),
             "symbol": symbol,
-            "side": side.upper(),
-            "type": order_type.upper(),
-            "quantity": str(quantity),
-            "timeInForce": time_in_force,
+            "side": side.lower(),
+            "order_configuration": order_configuration,
         }
 
-        if price is not None:
-            order_data["price"] = str(price)
-
-        logger.info(f"Creating order: {order_data}")
+        logger.info(f"Creating order: {symbol} {side.lower()} {order_type_lower} qty={quantity}")
         raw_response = await self._request("POST", "/orders", json_data=order_data)
 
-        # Ensure response is a dict (orders endpoint returns object, not array)
         if not isinstance(raw_response, dict):
             raise ValueError(f"Expected dict response, got {type(raw_response)}")
 
-        # Validate response with Pydantic
         try:
             order_response = OrderCreationResponse(**raw_response)
         except ValidationError as e:
             logger.error(f"Invalid order creation response: {e}")
             raise ValueError(f"Malformed order response from API: {e}") from e
 
-        # Return normalized format
         return {
             "orderId": order_response.data.orderId,
             "status": order_response.data.status,
@@ -384,9 +381,9 @@ class RevolutAPIClient:
         return response
 
     async def get_open_orders(self, symbol: str | None = None) -> dict[str, Any]:
-        """Get all open orders."""
+        """Get all active/open orders."""
         params = {"symbol": symbol} if symbol else {}
-        response = await self._request("GET", "/orders", params=params)
+        response = await self._request("GET", "/orders/active", params=params)
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response

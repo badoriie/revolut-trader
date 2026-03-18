@@ -8,12 +8,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
     "cryptography>=42.0.0",
-    "python-telegram-bot>=21.0",
     "loguru>=0.7.0",
-    "streamlit>=1.30.0",
-    "plotly>=5.18.0",
-    "pandas>=2.1.0",
-    "watchdog>=3.0.0",
     "sqlalchemy>=2.0.0",
 ]
 
@@ -103,11 +98,6 @@ strict_optional = false
 # Ignore missing stubs for visualization and external libraries
 [[tool.mypy.overrides]]
 module = [
-    "pandas",
-    "plotly.*",
-    "streamlit",
-    "watchdog.*",
-    "telegram.*",
     "loguru",
     "httpx",
     "cryptography.*",

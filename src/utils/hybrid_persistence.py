@@ -1,8 +1,4 @@
-"""Hybrid persistence manager combining database and JSON backup.
-
-Primary: SQLite database for fast queries and analytics
-Backup: JSON files for data portability and disaster recovery
-"""
+"""Hybrid persistence: SQLite (primary) + JSON backup."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -19,16 +15,8 @@ from src.utils.persistence import DataPersistence
 class HybridPersistence:
     """Hybrid persistence using database (primary) and JSON (backup)."""
 
-    def __init__(
-        self, database_url: str = "sqlite:///data/trading.db", backup_enabled: bool = True
-    ):
-        """Initialize hybrid persistence.
-
-        Args:
-            database_url: Database connection string
-            backup_enabled: Enable daily JSON backups (default: True)
-        """
-        self.db = DatabasePersistence(database_url)
+    def __init__(self, backup_enabled: bool = True):
+        self.db = DatabasePersistence()
         self.json = DataPersistence() if backup_enabled else None
         self.backup_enabled = backup_enabled
         self.last_backup = datetime.now(UTC)

@@ -6,81 +6,77 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.mocks.mock_onepassword import create_mock_vault
 
-# Mock get_config BEFORE importing src.config to prevent global settings init failure
-def _mock_get_config(key, default=None):
-    """Default mock for get_config during test imports."""
-    config = {
-        "TRADING_MODE": "paper",
-        "RISK_LEVEL": "conservative",
-        "BASE_CURRENCY": "EUR",
-        "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
-        "DEFAULT_STRATEGY": "market_making",
-        "INITIAL_CAPITAL": "10000",
-    }
-    return config.get(key, default)
+_MOCK_VAULT = create_mock_vault()
 
 
-# Patch get_config globally for all tests
-_patcher = patch("src.utils.onepassword.get_config", side_effect=_mock_get_config)
-_patcher.start()
+# Mock get / get_optional BEFORE importing src.config to prevent Settings() init failure.
+def _mock_get(key: str) -> str:
+    """Simulate op.get() — raises RuntimeError if key not in mock vault."""
+    if key not in _MOCK_VAULT:
+        raise RuntimeError(f"'{key}' not found in mock 1Password vault")
+    return _MOCK_VAULT[key]
 
-# Import AFTER patching to prevent Settings() init failure
+
+def _mock_get_optional(key: str) -> str | None:
+    """Simulate op.get_optional() — returns None if key not in mock vault."""
+    return _MOCK_VAULT.get(key)
+
+
+_patcher_get = patch("src.utils.onepassword.get", side_effect=_mock_get)
+_patcher_get_optional = patch("src.utils.onepassword.get_optional", side_effect=_mock_get_optional)
+_patcher_get.start()
+_patcher_get_optional.start()
+
+# Import AFTER patching to prevent Settings() init failure.
 from src.config import RiskLevel  # noqa: E402
 from src.data.models import MarketData, OrderSide, Position  # noqa: E402
 from src.risk_management.risk_manager import RiskManager  # noqa: E402
-from tests.mocks.mock_onepassword import (  # noqa: E402
-    Mock1PasswordClient,
-    MockConfigClient,
-    create_valid_config,
-    create_valid_credentials,
-)
+
 
 # ============================================================================
-# 1Password Mocks
+# Risk Management
 # ============================================================================
 
 
 @pytest.fixture
-def valid_1password_config():
-    """1Password with complete valid configuration."""
-    return MockConfigClient(config=create_valid_config(), available=True)
+def conservative_risk_manager():
+    """Risk manager with conservative settings.
+
+    - Max position size: 1.5%
+    - Max daily loss: 3%
+    - Stop loss: 1.5%
+    - Take profit: 2.5%
+    - Max open positions: 3
+    """
+    return RiskManager(risk_level=RiskLevel.CONSERVATIVE, max_order_value_usd=10000)
 
 
 @pytest.fixture
-def valid_1password_credentials():
-    """1Password with valid credentials."""
-    return Mock1PasswordClient(credentials=create_valid_credentials(), available=True)
+def moderate_risk_manager():
+    """Risk manager with moderate settings.
+
+    - Max position size: 3%
+    - Max daily loss: 5%
+    - Stop loss: 2.5%
+    - Take profit: 4%
+    - Max open positions: 5
+    """
+    return RiskManager(risk_level=RiskLevel.MODERATE, max_order_value_usd=10000)
 
 
 @pytest.fixture
-def missing_trading_mode_config():
-    """1Password config missing TRADING_MODE - should cause failure."""
-    config = create_valid_config()
-    del config["TRADING_MODE"]
-    return MockConfigClient(config=config, available=True)
+def aggressive_risk_manager():
+    """Risk manager with aggressive settings.
 
-
-@pytest.fixture
-def missing_risk_level_config():
-    """1Password config missing RISK_LEVEL - should cause failure."""
-    config = create_valid_config()
-    del config["RISK_LEVEL"]
-    return MockConfigClient(config=config, available=True)
-
-
-@pytest.fixture
-def invalid_trading_mode_config():
-    """1Password config with invalid TRADING_MODE value."""
-    config = create_valid_config()
-    config["TRADING_MODE"] = "invalid_mode"
-    return MockConfigClient(config=config, available=True)
-
-
-@pytest.fixture
-def unavailable_1password():
-    """1Password CLI not available (not installed or not signed in)."""
-    return MockConfigClient(config={}, available=False)
+    - Max position size: 5%
+    - Max daily loss: 10%
+    - Stop loss: 4%
+    - Take profit: 7%
+    - Max open positions: 8
+    """
+    return RiskManager(risk_level=RiskLevel.AGGRESSIVE, max_order_value_usd=10000)
 
 
 # ============================================================================
@@ -149,50 +145,6 @@ def eth_long_position():
         stop_loss=Decimal("2940"),
         take_profit=Decimal("3090"),
     )
-
-
-# ============================================================================
-# Risk Management
-# ============================================================================
-
-
-@pytest.fixture
-def conservative_risk_manager():
-    """Risk manager with conservative settings.
-
-    - Max position size: 1.5%
-    - Max daily loss: 3%
-    - Stop loss: 1.5%
-    - Take profit: 2.5%
-    - Max open positions: 3
-    """
-    return RiskManager(risk_level=RiskLevel.CONSERVATIVE, max_order_value_usd=10000)
-
-
-@pytest.fixture
-def moderate_risk_manager():
-    """Risk manager with moderate settings.
-
-    - Max position size: 3%
-    - Max daily loss: 5%
-    - Stop loss: 2.5%
-    - Take profit: 4%
-    - Max open positions: 5
-    """
-    return RiskManager(risk_level=RiskLevel.MODERATE, max_order_value_usd=10000)
-
-
-@pytest.fixture
-def aggressive_risk_manager():
-    """Risk manager with aggressive settings.
-
-    - Max position size: 5%
-    - Max daily loss: 10%
-    - Stop loss: 4%
-    - Take profit: 7%
-    - Max open positions: 8
-    """
-    return RiskManager(risk_level=RiskLevel.AGGRESSIVE, max_order_value_usd=10000)
 
 
 # ============================================================================

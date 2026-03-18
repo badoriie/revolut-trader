@@ -1,7 +1,14 @@
-"""1Password integration for secure credential management.
+"""1Password integration - the single source for all credentials and configuration.
 
-This module provides 1Password-only credential management.
-No .env file fallback - 1Password is required for all credentials.
+All credentials and configuration are fetched exclusively from 1Password.
+No defaults, no environment variable fallbacks, no alternative code paths.
+
+Public API:
+    get(key)          - required field; raises RuntimeError if missing
+    get_optional(key) - optional field; returns None if missing
+    is_available()    - True if 1Password CLI is installed and signed in
+    set_credential(item, field, value) - store a value (used for setup only)
+    invalidate_cache()  - force refresh on next access
 """
 
 import json
@@ -11,371 +18,200 @@ from threading import Lock
 
 from loguru import logger
 
-
-class OnePasswordClient:
-    """Client for interacting with 1Password CLI."""
-
-    def __init__(
-        self,
-        vault_name: str = "revolut-trader",
-        item_name: str = "revolut-trader-credentials",
-    ):
-        """Initialize 1Password client.
-
-        Args:
-            vault_name: Name of the 1Password vault
-            item_name: Name of the item containing credentials
-        """
-        self.vault_name = vault_name
-        self.item_name = item_name
-        self._is_available: bool | None = None
-
-    def is_available(self) -> bool:
-        """Check if 1Password CLI is available and signed in.
-
-        Returns:
-            True if 1Password CLI is available and ready to use
-        """
-        if self._is_available is not None:
-            return self._is_available
-
-        try:
-            # Check if op command exists
-            result = subprocess.run(
-                ["op", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode != 0:
-                self._is_available = False
-                return False
-
-            # Check if signed in
-            result = subprocess.run(
-                ["op", "account", "list"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode != 0:
-                logger.warning("1Password CLI installed but not signed in. Run: eval $(op signin)")
-                self._is_available = False
-                return False
-
-            self._is_available = True
-            logger.debug("1Password CLI is available and ready")
-            return True
-
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
-            logger.debug(f"1Password CLI not available: {e}")
-            self._is_available = False
-            return False
-
-    def get_field(self, field_name: str) -> str | None:
-        """Get a specific field value from 1Password.
-
-        Args:
-            field_name: The field label to retrieve
-
-        Returns:
-            The field value or None if not found
-        """
-        if not self.is_available():
-            return None
-
-        try:
-            result = subprocess.run(
-                [
-                    "op",
-                    "item",
-                    "get",
-                    self.item_name,
-                    "--vault",
-                    self.vault_name,
-                    "--fields",
-                    field_name,
-                    "--reveal",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if result.returncode == 0:
-                value = result.stdout.strip()
-                if value:
-                    logger.debug(f"Retrieved {field_name} from 1Password")
-                    return value
-
-            logger.debug(f"Field {field_name} not found in 1Password")
-            return None
-
-        except (subprocess.TimeoutExpired, Exception) as e:
-            logger.warning(f"Error retrieving {field_name} from 1Password: {e}")
-            return None
-
-    def get_all_fields(self) -> dict[str, str]:
-        """Get all fields from 1Password item.
-
-        Returns:
-            Dictionary of field names and values
-        """
-        if not self.is_available():
-            return {}
-
-        try:
-            # Get the item in JSON format
-            result = subprocess.run(
-                [
-                    "op",
-                    "item",
-                    "get",
-                    self.item_name,
-                    "--vault",
-                    self.vault_name,
-                    "--format",
-                    "json",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if result.returncode != 0:
-                logger.warning(f"Item {self.item_name} not found in 1Password")
-                return {}
-
-            item_data = json.loads(result.stdout)
-            fields = {}
-
-            # Extract fields
-            for field in item_data.get("fields", []):
-                label = field.get("label")
-                value = field.get("value")
-                if label and value:
-                    fields[label] = value
-
-            logger.info(f"Retrieved {len(fields)} fields from 1Password")
-            return fields
-
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
-            logger.warning(f"Error retrieving fields from 1Password: {e}")
-            return {}
-
-    def set_field(self, field_name: str, value: str) -> bool:
-        """Set a field value in 1Password.
-
-        Args:
-            field_name: The field label to set
-            value: The value to set
-
-        Returns:
-            True if successful, False otherwise
-        """
-        if not self.is_available():
-            return False
-
-        try:
-            result = subprocess.run(
-                [
-                    "op",
-                    "item",
-                    "edit",
-                    self.item_name,
-                    "--vault",
-                    self.vault_name,
-                    f"{field_name}[concealed]={value}",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if result.returncode == 0:
-                logger.info(f"Updated {field_name} in 1Password")
-                return True
-
-            logger.warning(f"Failed to update {field_name} in 1Password")
-            return False
-
-        except (subprocess.TimeoutExpired, Exception) as e:
-            logger.warning(f"Error setting {field_name} in 1Password: {e}")
-            return False
+VAULT = "revolut-trader"
+CREDENTIALS_ITEM = "revolut-trader-credentials"
+CONFIG_ITEM = "revolut-trader-config"
 
 
-class ConfigCache:
-    """Fast config cache with batch fetching from 1Password.
+def _run_op(*args: str, timeout: int = 10) -> str | None:
+    """Execute op CLI command. Returns stdout on success, None on any failure."""
+    try:
+        result = subprocess.run(
+            ["op", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.stdout if result.returncode == 0 else None
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        logger.debug(f"op command failed: {e}")
+        return None
 
-    Fetches ALL config values in ONE 1Password call and caches them
-    in memory with TTL. This is ~5-10x faster than individual calls.
+
+def _fetch_item_fields(item_name: str) -> dict[str, str]:
+    """Fetch all fields from a 1Password item as a flat dict."""
+    output = _run_op("item", "get", item_name, "--vault", VAULT, "--format", "json")
+    if not output:
+        logger.warning(f"1Password item '{item_name}' not found or empty")
+        return {}
+    try:
+        item_data = json.loads(output)
+        return {
+            field["label"]: field["value"]
+            for field in item_data.get("fields", [])
+            if field.get("label") and field.get("value")
+        }
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.warning(f"Failed to parse 1Password item '{item_name}': {e}")
+        return {}
+
+
+class _VaultCache:
+    """Single in-memory cache for all 1Password values (credentials + config).
+
+    Batch-fetches from both items on each refresh cycle and merges them.
+    Thread-safe via Lock. Cache TTL: 5 minutes.
     """
 
-    def __init__(self, ttl_seconds: int = 300):
-        """Initialize config cache.
+    TTL = 300  # seconds
 
-        Args:
-            ttl_seconds: Time-to-live for cache in seconds (default: 5 minutes)
-        """
+    def __init__(self) -> None:
         self._cache: dict[str, str] = {}
         self._cache_time: float | None = None
-        self._ttl = ttl_seconds
-        self._lock = Lock()  # Thread-safe cache access
-        self._client = OnePasswordClient(
-            vault_name="revolut-trader",
-            item_name="revolut-trader-config",
+        self._lock = Lock()
+        self._signed_in: bool | None = None
+
+    def is_available(self) -> bool:
+        """Check if 1Password CLI is installed and the user is signed in."""
+        if self._signed_in is None:
+            if _run_op("--version", timeout=5) is None:
+                self._signed_in = False
+            else:
+                self._signed_in = _run_op("account", "list", timeout=5) is not None
+                if not self._signed_in:
+                    logger.warning("1Password CLI installed but not signed in. Run: eval $(op signin)")
+        return self._signed_in
+
+    def _is_stale(self) -> bool:
+        return (
+            not self._cache
+            or self._cache_time is None
+            or (time.time() - self._cache_time) > self.TTL
         )
 
-    def get(self, key: str, default: str | None = None) -> str | None:
-        """Get config value from cache (fetches from 1Password if stale).
-
-        Args:
-            key: Configuration key
-            default: Default value if not found
-
-        Returns:
-            Configuration value or default
-        """
-        with self._lock:
-            # Refresh cache if expired or empty
-            if self._is_cache_stale():
-                self._refresh_cache()
-
-            # Return from cache or default
-            return self._cache.get(key, default)
-
-    def _is_cache_stale(self) -> bool:
-        """Check if cache needs refresh."""
-        if not self._cache or self._cache_time is None:
-            return True
-        return (time.time() - self._cache_time) > self._ttl
-
-    def _refresh_cache(self) -> None:
-        """Refresh cache by batch-fetching all config from 1Password."""
-        if not self._client.is_available():
-            logger.debug("1Password not available, cache not refreshed")
-            return
-
-        # Batch fetch ALL fields in ONE call
-        start_time = time.time()
-        all_fields = self._client.get_all_fields()
-
-        if all_fields:
-            self._cache = all_fields
-            self._cache_time = time.time()
-            elapsed = (time.time() - start_time) * 1000  # ms
-            logger.info(
-                f"✅ Config cache refreshed: {len(all_fields)} fields in {elapsed:.0f}ms "
-                f"(cached for {self._ttl}s)"
+    def _refresh(self) -> None:
+        """Batch-fetch all fields from both 1Password items and merge into cache."""
+        if not self.is_available():
+            raise RuntimeError(
+                "1Password is required but not available.\n"
+                "1. Install: brew install --cask 1password-cli\n"
+                "2. Sign in: eval $(op signin)\n"
+                "3. Setup credentials: make ops"
             )
-        else:
-            logger.warning("Failed to refresh config cache from 1Password")
 
-    def invalidate(self) -> None:
-        """Force cache invalidation (next get() will refresh)."""
+        credentials = _fetch_item_fields(CREDENTIALS_ITEM)
+        config = _fetch_item_fields(CONFIG_ITEM)
+        merged = {**credentials, **config}
+
+        if not merged:
+            raise RuntimeError(
+                f"No fields found in 1Password vault '{VAULT}'.\n"
+                "Run: make ops && make opconfig-init"
+            )
+
+        self._cache = merged
+        self._cache_time = time.time()
+        logger.info(f"1Password cache refreshed: {len(merged)} fields loaded")
+
+    def get(self, key: str) -> str:
+        """Get a required value. Raises RuntimeError if 1Password unavailable or key missing."""
         with self._lock:
-            self._cache_time = None
-            logger.debug("Config cache invalidated")
+            if self._is_stale():
+                self._refresh()
+            value = self._cache.get(key)
 
-    def get_cache_stats(self) -> dict:
-        """Get cache statistics for debugging."""
-        with self._lock:
-            age = (time.time() - self._cache_time) if self._cache_time else None
-            return {
-                "cached_keys": len(self._cache),
-                "cache_age_seconds": age,
-                "ttl_seconds": self._ttl,
-                "is_stale": self._is_cache_stale(),
-            }
-
-
-# Global config cache instance (singleton)
-_config_cache = ConfigCache(ttl_seconds=300)  # 5 minute TTL
-
-
-def get_config(
-    key: str,
-    default: str | None = None,
-) -> str | None:
-    """Get a configuration value from 1Password with intelligent caching.
-
-    Uses a fast in-memory cache that batch-fetches ALL config in ONE 1Password call.
-    Much faster than individual calls (~5-10x speedup).
-
-    Cache TTL: 5 minutes (configurable in ConfigCache)
-
-    Args:
-        key: The configuration key (e.g., "TRADING_MODE", "BASE_CURRENCY")
-        default: Default value if not found in 1Password
-
-    Returns:
-        The configuration value from 1Password cache, or default if not found
-
-    Examples:
-        >>> get_config("TRADING_MODE", "paper")
-        "live"  # If set in 1Password
-        >>> get_config("BASE_CURRENCY", "EUR")
-        "EUR"  # Falls back to default if not in 1Password
-    """
-    # Use global cache - batch fetches all config in one call
-    return _config_cache.get(key, default)
-
-
-def invalidate_config_cache() -> None:
-    """Invalidate the config cache (force refresh on next access).
-
-    Useful for testing or when you know config has changed in 1Password.
-    """
-    _config_cache.invalidate()
-    logger.info("Config cache invalidated - will refresh on next access")
-
-
-def get_config_cache_stats() -> dict:
-    """Get config cache statistics for debugging.
-
-    Returns:
-        Dictionary with cache stats (keys, age, TTL, staleness)
-    """
-    return _config_cache.get_cache_stats()
-
-
-def get_credential(
-    key: str,
-    default: str | None = None,
-) -> str | None:
-    """Get a credential from 1Password only (no .env fallback).
-
-    Args:
-        key: The credential key
-        default: Default value if not found
-
-    Returns:
-        The credential value or default
-
-    Raises:
-        RuntimeError: If 1Password is not available (when no default provided)
-    """
-    client = OnePasswordClient()
-
-    if not client.is_available():
-        if default is not None:
-            logger.warning(f"1Password not available, using default for {key}")
-            return default
-        raise RuntimeError(
-            "1Password is required but not available. Please:\n"
-            "1. Install 1Password CLI: brew install --cask 1password-cli\n"
-            "2. Sign in: eval $(op signin)\n"
-            "3. Setup credentials: make ops"
-        )
-
-    value = client.get_field(key)
-    if value:
+        if not value:
+            raise RuntimeError(
+                f"{key} not found in 1Password vault '{VAULT}'.\n"
+                f"Run: make opconfig-set KEY={key} VALUE=<value>"
+            )
         return value
 
-    if default is not None:
-        return default
+    def get_optional(self, key: str) -> str | None:
+        """Get an optional value. Returns None if 1Password unavailable or key missing."""
+        try:
+            with self._lock:
+                if self._is_stale():
+                    self._refresh()
+            return self._cache.get(key)
+        except RuntimeError:
+            return None
 
-    raise RuntimeError(
-        f"Credential '{key}' not found in 1Password and no default provided. "
-        f"Please store it: op item edit revolut-trader-credentials --vault revolut-trader {key}[concealed]=YOUR_VALUE"
-    )
+    def set_credential(self, item_name: str, field_name: str, value: str) -> bool:
+        """Store a concealed value in a 1Password item. Invalidates cache on success."""
+        result = _run_op(
+            "item", "edit", item_name,
+            "--vault", VAULT,
+            f"{field_name}[concealed]={value}",
+        )
+        if result is not None:
+            with self._lock:
+                self._cache_time = None  # Invalidate so next read picks up the new value
+            logger.info(f"Stored '{field_name}' in 1Password item '{item_name}'")
+            return True
+        logger.warning(f"Failed to store '{field_name}' in 1Password item '{item_name}'")
+        return False
+
+    def invalidate(self) -> None:
+        """Force cache refresh on next access."""
+        with self._lock:
+            self._cache_time = None
+        logger.debug("1Password cache invalidated")
+
+
+# Module-level singleton — the ONLY place in the codebase that talks to 1Password.
+_vault = _VaultCache()
+
+
+def get(key: str) -> str:
+    """Get any required credential or configuration value from 1Password.
+
+    Args:
+        key: Field name (e.g., "REVOLUT_API_KEY", "TRADING_MODE")
+
+    Returns:
+        The field value from 1Password
+
+    Raises:
+        RuntimeError: If 1Password is unavailable or the key is not found
+    """
+    return _vault.get(key)
+
+
+def get_optional(key: str) -> str | None:
+    """Get an optional credential or configuration value from 1Password.
+
+    Returns None instead of raising if the key is not found.
+    Use this for optional features (e.g., Telegram notifications).
+
+    Args:
+        key: Field name (e.g., "TELEGRAM_BOT_TOKEN")
+
+    Returns:
+        The field value or None if not found
+    """
+    return _vault.get_optional(key)
+
+
+def is_available() -> bool:
+    """Check if 1Password CLI is installed and the user is signed in."""
+    return _vault.is_available()
+
+
+def set_credential(item_name: str, field_name: str, value: str) -> bool:
+    """Store a concealed value in 1Password. Used for initial setup only.
+
+    Args:
+        item_name: The 1Password item name (e.g., CREDENTIALS_ITEM or CONFIG_ITEM)
+        field_name: The field label
+        value: The value to store
+
+    Returns:
+        True if successful
+    """
+    return _vault.set_credential(item_name, field_name, value)
+
+
+def invalidate_cache() -> None:
+    """Force cache refresh on next access."""
+    _vault.invalidate()
