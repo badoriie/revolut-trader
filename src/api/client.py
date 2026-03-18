@@ -286,6 +286,9 @@ class RevolutAPIClient:
         balances: dict[str, dict[str, float]] = {}
         total_base = 0.0
 
+        # Collect non-base currencies that need FX conversion
+        fx_needed: dict[str, float] = {}  # currency -> total amount
+
         for item in raw:
             currency = item.get("currency", "UNKNOWN")
             available = float(item.get("available", "0"))
@@ -300,8 +303,19 @@ class RevolutAPIClient:
             }
             if currency == base_currency or currency == f"{base_currency}E":
                 total_base += total
-            elif base_currency == "EUR" and currency in ("USD", "USDC", "USDT"):
-                total_base += total * 0.92  # approximate; replace with real FX in prod
+            elif total > 0:
+                fx_needed[currency] = total
+
+        # Resolve FX rates live from the order book
+        for currency, amount in fx_needed.items():
+            symbol = f"{currency}-{base_currency}"
+            try:
+                ticker = await self.get_ticker(symbol)
+                rate = float(ticker.get("last", 0))
+                if rate > 0:
+                    total_base += amount * rate
+            except Exception:
+                pass  # skip currencies with no tradeable pair
 
         return {
             "balances": balances,
