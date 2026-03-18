@@ -279,16 +279,21 @@ class RevolutAPIClient:
             "currencies": list(balances.keys()),
         }
 
-    async def get_market_data(self, symbol: str) -> dict[str, Any]:
-        """Get market data for a symbol."""
-        response = await self._request("GET", f"/market-data/{symbol}")
-        if not isinstance(response, dict):
-            raise ValueError(f"Expected dict response, got {type(response)}")
-        return response
+    async def get_order_book(self, symbol: str, limit: int = 20) -> dict[str, Any]:
+        """Get order book snapshot for a symbol.
 
-    async def get_order_book(self, symbol: str, depth: int = 10) -> dict[str, Any]:
-        """Get order book for a symbol."""
-        response = await self._request("GET", f"/orderbook/{symbol}", params={"depth": depth})
+        Args:
+            symbol: Trading pair (e.g., "BTC-USD")
+            limit: Depth of order book (1-20, default 20)
+
+        Returns:
+            Raw order book dict with "data.bids" and "data.asks" arrays.
+
+        Reference: https://developer.revolut.com/docs/x-api/get-order-book
+        """
+        response = await self._request(
+            "GET", f"/public/order-book/{symbol}", params={"limit": limit}
+        )
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response
@@ -365,35 +370,189 @@ class RevolutAPIClient:
             "price": order_response.data.price,
         }
 
-    async def cancel_order(self, order_id: str) -> dict[str, Any]:
-        """Cancel an existing order."""
-        logger.info(f"Cancelling order: {order_id}")
-        response = await self._request("DELETE", f"/orders/{order_id}")
+    async def cancel_order(self, venue_order_id: str) -> dict[str, Any]:
+        """Cancel an active order by its venue order ID.
+
+        Args:
+            venue_order_id: UUID of the order to cancel
+
+        Returns:
+            Empty dict on success (API returns 200 with no body).
+
+        Reference: https://developer.revolut.com/docs/x-api/cancel-order
+        """
+        logger.info(f"Cancelling order: {venue_order_id}")
+        response = await self._request("DELETE", f"/orders/{venue_order_id}")
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response
 
-    async def get_order(self, order_id: str) -> dict[str, Any]:
-        """Get order details."""
-        response = await self._request("GET", f"/orders/{order_id}")
+    async def cancel_all_orders(self) -> dict[str, Any]:
+        """Cancel all active limit, conditional, and TPSL orders.
+
+        Returns:
+            Empty dict on success (API returns 200 with no body).
+
+        Reference: https://developer.revolut.com/docs/x-api/cancel-all-orders
+        """
+        logger.info("Cancelling all active orders")
+        response = await self._request("DELETE", "/orders")
+        if not isinstance(response, dict):
+            return {}
+        return response
+
+    async def get_order(self, venue_order_id: str) -> dict[str, Any]:
+        """Get details for a specific order by its venue order ID.
+
+        Args:
+            venue_order_id: UUID of the order
+
+        Returns:
+            Order dict with id, symbol, side, type, quantity, price, status, etc.
+
+        Reference: https://developer.revolut.com/docs/x-api/get-order
+        """
+        response = await self._request("GET", f"/orders/{venue_order_id}")
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response
 
-    async def get_open_orders(self, symbol: str | None = None) -> dict[str, Any]:
-        """Get all active/open orders."""
-        params = {"symbol": symbol} if symbol else {}
-        response = await self._request("GET", "/orders/active", params=params)
+    async def get_order_fills(self, venue_order_id: str) -> dict[str, Any]:
+        """Get the fills (executions) for a specific order.
+
+        Args:
+            venue_order_id: UUID of the order
+
+        Returns:
+            Dict with "data" list of fill objects (price, quantity, timestamp, trade ID, etc.).
+
+        Reference: https://developer.revolut.com/docs/x-api/get-order-fills
+        """
+        response = await self._request("GET", f"/orders/{venue_order_id}/fills")
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response
 
-    async def get_trades(self, symbol: str | None = None, limit: int = 100) -> dict[str, Any]:
-        """Get recent trades."""
+    async def get_tickers(self) -> list[Any]:
+        """Get latest market data snapshots for all supported currency pairs.
+
+        Returns:
+            List of ticker objects with current market snapshots for each pair.
+
+        Reference: https://developer.revolut.com/docs/x-api/get-tickers
+        """
+        response = await self._request("GET", "/tickers")
+        if not isinstance(response, list):
+            raise ValueError(f"Expected list response, got {type(response)}")
+        return response
+
+    async def get_open_orders(
+        self,
+        symbols: list[str] | None = None,
+        side: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Get all active (open) orders.
+
+        Args:
+            symbols: Filter by trading pairs (e.g., ["BTC-USD"])
+            side: Filter by "buy" or "sell"
+            cursor: Pagination token from previous response
+            limit: Number of results (1-100, default 100)
+
+        Returns:
+            Dict with "data" list of active orders and "metadata.next_cursor".
+
+        Reference: https://developer.revolut.com/docs/x-api/get-open-orders
+        """
+        params: dict[str, Any] = {
+            "order_states": "pending_new,new,partially_filled",
+            "limit": limit,
+        }
+        if symbols:
+            params["symbols"] = ",".join(symbols)
+        if side:
+            params["side"] = side
+        if cursor:
+            params["cursor"] = cursor
+
+        response = await self._request("GET", "/orders", params=params)
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
+
+    async def get_historical_orders(
+        self,
+        symbols: list[str] | None = None,
+        start_date: int | None = None,
+        end_date: int | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Get historical (completed) orders.
+
+        Args:
+            symbols: Filter by trading pairs (e.g., ["BTC-USD"])
+            start_date: Start timestamp in Unix milliseconds (defaults to 7 days before end_date)
+            end_date: End timestamp in Unix milliseconds (defaults to now)
+            cursor: Pagination token from previous response
+            limit: Number of results (1-100, default 100)
+
+        Returns:
+            Dict with "data" list of orders and "metadata.next_cursor".
+
+        Reference: https://developer.revolut.com/docs/x-api/get-open-orders
+        """
+        params: dict[str, Any] = {
+            "order_states": "filled,cancelled,rejected,replaced",
+            "limit": limit,
+        }
+        if symbols:
+            params["symbols"] = ",".join(symbols)
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if cursor:
+            params["cursor"] = cursor
+
+        response = await self._request("GET", "/orders", params=params)
+        if not isinstance(response, dict):
+            raise ValueError(f"Expected dict response, got {type(response)}")
+        return response
+
+    async def get_trades(
+        self,
+        symbol: str,
+        start_date: int | None = None,
+        end_date: int | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Get private trade history (fills) for the authenticated client.
+
+        Args:
+            symbol: Trading pair (e.g., "BTC-USD") — required path parameter
+            start_date: Start timestamp in Unix milliseconds (defaults to 7 days before end_date)
+            end_date: End timestamp in Unix milliseconds (defaults to now; max range 30 days)
+            cursor: Pagination token from previous response
+            limit: Number of results (1-100, default 100)
+
+        Returns:
+            Dict with "data" list of trade objects and "metadata.next_cursor".
+
+        Reference: https://developer.revolut.com/docs/x-api/get-trades
+        """
         params: dict[str, Any] = {"limit": limit}
-        if symbol:
-            params["symbol"] = symbol
-        response = await self._request("GET", "/trades", params=params)
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if cursor:
+            params["cursor"] = cursor
+
+        response = await self._request("GET", f"/private/trades/{symbol}", params=params)
         if not isinstance(response, dict):
             raise ValueError(f"Expected dict response, got {type(response)}")
         return response
@@ -455,25 +614,31 @@ class RevolutAPIClient:
         symbol: str,
         interval: int = 60,
         since: int | None = None,
+        until: int | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Get historical OHLCV candles for a symbol.
 
         Args:
             symbol: Trading pair (e.g., "BTC-USD")
-            interval: Time interval in minutes. Accepted: 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320
-            since: Start timestamp in Unix milliseconds (optional)
-            limit: Maximum number of candles to return (default: 100)
+            interval: Time interval in minutes. Accepted: 1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320
+            since: Start timestamp in Unix milliseconds (defaults to end - interval*100)
+            until: End timestamp in Unix milliseconds (defaults to now)
+            limit: Maximum number of candles to return, applied client-side (default: 100)
 
         Returns:
             List of candle dictionaries with: start, open, high, low, close, volume
 
         Raises:
             ValidationError: If API response doesn't match expected format
+
+        Reference: https://developer.revolut.com/docs/x-api/get-candles
         """
-        params = {"interval": interval}
+        params: dict[str, Any] = {"interval": interval}
         if since:
             params["since"] = since
+        if until:
+            params["until"] = until
 
         # Try the likely endpoint path
         try:
