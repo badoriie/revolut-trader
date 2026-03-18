@@ -233,10 +233,23 @@ async def get_multiple_tickers(api_client: RevolutAPIClient, symbols: list[str])
             print(f"{symbol:<12} {'ERROR':>10}")
 
 
+def _parse_timestamp(ts: str | int | None) -> str:
+    """Parse a timestamp that may be Unix ms (int) or ISO 8601 (str)."""
+    from datetime import datetime, timezone
+
+    if ts is None:
+        return ""
+    try:
+        if isinstance(ts, (int, float)):
+            return datetime.fromtimestamp(int(ts) / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        # ISO 8601 string e.g. "2026-03-18T12:46:50.592188Z"
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M:%S UTC")
+    except Exception:
+        return str(ts)
+
+
 async def get_order_book(api_client: RevolutAPIClient, symbol: str, depth: int = 20) -> None:
     """Display raw order book snapshot (bids and asks)."""
-    from datetime import datetime
-
     print(f"\n📖 Order Book: {symbol}  (depth={depth})")
     print("=" * 60)
 
@@ -246,7 +259,7 @@ async def get_order_book(api_client: RevolutAPIClient, symbol: str, depth: int =
         bids = book.get("data", {}).get("bids", [])
         ts = book.get("metadata", {}).get("timestamp")
         if ts:
-            print(f"Snapshot: {datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d %H:%M:%S')}\n")
+            print(f"Snapshot: {_parse_timestamp(ts)}\n")
 
         col = f"{'Price':>14}  {'Qty':>14}"
         print(f"  {'ASKS':^31}")
@@ -306,8 +319,6 @@ async def get_open_orders(
     api_client: RevolutAPIClient, symbol: str | None = None
 ) -> None:
     """Display active (open) orders."""
-    from datetime import datetime
-
     label = f"  [{symbol}]" if symbol else ""
     print(f"\n📋 Open Orders{label}")
     print("=" * 60)
@@ -325,7 +336,7 @@ async def get_open_orders(
         print("-" * 100)
         for o in orders:
             ts = o.get("created_date") or o.get("created_at", "")
-            ts_str = datetime.fromtimestamp(int(ts) / 1000).strftime("%H:%M:%S") if ts else ""
+            ts_str = _parse_timestamp(ts) if ts else ""
             print(
                 f"{o.get('id', '?'):<38} "
                 f"{o.get('symbol', '?'):<10} "
@@ -347,8 +358,6 @@ async def get_historical_orders(
     api_client: RevolutAPIClient, symbol: str | None = None, limit: int = 20
 ) -> None:
     """Display completed/cancelled orders."""
-    from datetime import datetime
-
     label = f"  [{symbol}]" if symbol else ""
     print(f"\n📜 Historical Orders{label}  (limit={limit})")
     print("=" * 60)
@@ -382,8 +391,6 @@ async def get_trades(
     api_client: RevolutAPIClient, symbol: str, limit: int = 20
 ) -> None:
     """Display private trade history for a symbol."""
-    from datetime import datetime
-
     print(f"\n💱 Trade History: {symbol}  (limit={limit})")
     print("=" * 60)
 
@@ -399,7 +406,7 @@ async def get_trades(
         print("-" * 80)
         for t in trades:
             ts = t.get("tdt", "")
-            ts_str = datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d %H:%M:%S") if ts else ""
+            ts_str = _parse_timestamp(ts) if ts else ""
             print(
                 f"{ts_str:<20} "
                 f"{t.get('s', '?'):<6} "
@@ -417,8 +424,6 @@ async def get_trades(
 
 async def get_order(api_client: RevolutAPIClient, order_id: str) -> None:
     """Display details for a specific order."""
-    from datetime import datetime
-
     print(f"\n🔍 Order: {order_id}")
     print("=" * 60)
 
@@ -426,7 +431,7 @@ async def get_order(api_client: RevolutAPIClient, order_id: str) -> None:
         o = await api_client.get_order(order_id)
         created = o.get("created_date") or o.get("created_at", "")
         updated = o.get("updated_date") or o.get("updated_at", "")
-        fmt = lambda ts: datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d %H:%M:%S") if ts else "?"  # noqa: E731
+        fmt = lambda ts: _parse_timestamp(ts) if ts else "?"  # noqa: E731
 
         print(f"\n  Venue ID:       {o.get('id', '?')}")
         print(f"  Client ID:      {o.get('client_order_id', '?')}")
