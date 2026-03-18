@@ -357,18 +357,22 @@ PRIVATE_TRADES_RESPONSE = {
 class TestGetBalance:
     async def test_calls_balances_endpoint(self, client):
         mock = _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         await client.get_balance()
-        assert mock.call_args.kwargs["method"] == "GET"
-        assert mock.call_args.kwargs["url"] == f"{BASE_URL}/balances"
+        first_call = mock.call_args_list[0]
+        assert first_call.kwargs["method"] == "GET"
+        assert first_call.kwargs["url"] == f"{BASE_URL}/balances"
 
     async def test_returns_currency_keyed_dict(self, client):
         _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert "BTC" in result["balances"]
         assert "EUR" in result["balances"]
 
     async def test_balance_values_parsed_correctly(self, client):
         _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         btc = result["balances"]["BTC"]
         assert btc["available"] == 0.5
@@ -377,20 +381,58 @@ class TestGetBalance:
 
     async def test_staked_field_included(self, client):
         _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert "staked" in result["balances"]["BTC"]
         assert result["balances"]["BTC"]["staked"] == 0.0
 
     async def test_includes_currencies_list(self, client):
         _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert set(result["currencies"]) == {"BTC", "EUR"}
 
     async def test_includes_total_base_currency(self, client):
         _mock_http(client, BALANCE_RESPONSE)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert "total_eur" in result
         assert result["total_eur"] == 5000.0
+
+    async def test_fx_conversion_uses_live_rate(self, client):
+        """Non-base currencies are converted using a live ticker rate."""
+        response = [
+            {"currency": "EUR", "available": "1000.00", "staked": "0", "reserved": "0", "total": "1000.00"},
+            {"currency": "USD", "available": "500.00", "staked": "0", "reserved": "0", "total": "500.00"},
+        ]
+        _mock_http(client, response)
+        client.get_ticker = AsyncMock(return_value={"last": "0.91", "bid": "0.90", "ask": "0.92", "symbol": "USD-EUR"})
+        result = await client.get_balance()
+        assert result["total_eur"] == pytest.approx(1000.0 + 500.0 * 0.91)
+        client.get_ticker.assert_awaited_once_with("USD-EUR")
+
+    async def test_fx_conversion_skipped_on_ticker_failure(self, client):
+        """If ticker lookup fails for a currency, its value is excluded (not an error)."""
+        response = [
+            {"currency": "EUR", "available": "2000.00", "staked": "0", "reserved": "0", "total": "2000.00"},
+            {"currency": "BTC", "available": "1.0", "staked": "0", "reserved": "0", "total": "1.0"},
+        ]
+        _mock_http(client, response)
+        client.get_ticker = AsyncMock(side_effect=ValueError("no order book"))
+        result = await client.get_balance()
+        assert result["total_eur"] == 2000.0  # BTC excluded, no error raised
+
+    async def test_zero_balance_currencies_skipped_for_fx(self, client):
+        """Currencies with zero total don't trigger a ticker lookup."""
+        response = [
+            {"currency": "EUR", "available": "3000.00", "staked": "0", "reserved": "0", "total": "3000.00"},
+            {"currency": "USD", "available": "0", "staked": "0", "reserved": "0", "total": "0"},
+        ]
+        _mock_http(client, response)
+        client.get_ticker = AsyncMock()
+        result = await client.get_balance()
+        assert result["total_eur"] == 3000.0
+        client.get_ticker.assert_not_awaited()
 
     async def test_raises_value_error_on_non_list_response(self, client):
         _mock_http(client, {"error": "unexpected dict"})
@@ -1457,6 +1499,8 @@ class TestCheckPermissions:
     def _setup(self, client, balance_resp, order_status: int):
         order_resp = self._http_error_resp(order_status)
         client.client.request = AsyncMock(side_effect=[balance_resp, order_resp])
+        # Prevent get_balance's FX ticker lookups from consuming side_effect slots
+        client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
 
     async def test_view_true_when_balance_succeeds(self, client):
         self._setup(client, self._balance_ok_resp(), order_status=400)
