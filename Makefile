@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-candles
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-order-book api-candles api-open-orders api-historical-orders api-trades api-order
 
 # ============================================================================
 # 1Password vault/item names — must match src/utils/onepassword.py constants
@@ -37,12 +37,18 @@ help:
 	@echo "  make backtest          - Run strategy backtesting (STRATEGY=... DAYS=...)"
 	@echo ""
 	@echo "API Testing:"
-	@echo "  make api-ready         - Check API is ready for BOTH viewing and trading"
-	@echo "  make api-test          - Test API connection"
-	@echo "  make api-balance       - Get account balance"
-	@echo "  make api-ticker        - Get ticker (SYMBOL=BTC-EUR)"
-	@echo "  make api-tickers       - Get multiple tickers (SYMBOLS=BTC-EUR,ETH-EUR)"
-	@echo "  make api-candles       - Get candles (SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10)"
+	@echo "  make api-ready                    - Check API permissions (view + trade)"
+	@echo "  make api-test                     - Test authenticated connection"
+	@echo "  make api-balance                  - Account balances"
+	@echo "  make api-ticker SYMBOL=BTC-EUR    - Single ticker (via order book)"
+	@echo "  make api-tickers SYMBOLS=BTC-EUR  - Multiple tickers"
+	@echo "  make api-all-tickers              - All pairs (GET /tickers)"
+	@echo "  make api-order-book SYMBOL=BTC-EUR [DEPTH=20] - Raw order book snapshot"
+	@echo "  make api-candles SYMBOL=BTC-EUR [INTERVAL=60] [LIMIT=10]"
+	@echo "  make api-open-orders [SYMBOL=BTC-EUR]         - Active orders"
+	@echo "  make api-historical-orders [SYMBOL=BTC-EUR] [LIMIT=20] - Completed orders"
+	@echo "  make api-trades SYMBOL=BTC-EUR [LIMIT=20]     - Private trade history"
+	@echo "  make api-order ORDER_ID=<uuid>                - Single order details"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -335,6 +341,34 @@ api-candles:
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
 	uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
+
+api-all-tickers:
+	@uv run python cli/api_test.py all-tickers
+
+api-order-book:
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
+	@DEPTH=$${DEPTH:-20}; \
+	uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
+
+api-open-orders:
+	@ARGS=""; \
+	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
+	uv run python cli/api_test.py open-orders $$ARGS
+
+api-historical-orders:
+	@LIMIT=$${LIMIT:-20}; \
+	ARGS="--limit $$LIMIT"; \
+	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
+	uv run python cli/api_test.py historical-orders $$ARGS
+
+api-trades:
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR [LIMIT=20]"; exit 1; fi
+	@LIMIT=$${LIMIT:-20}; \
+	uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
+
+api-order:
+	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
+	@uv run python cli/api_test.py order --order-id $(ORDER_ID)
 
 # ============================================================================
 # Code Quality

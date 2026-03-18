@@ -597,61 +597,80 @@ class TestGetCandles:
 
 
 class TestCheckPermissions:
-    def _setup_two_calls(self, client, balance_ok: bool, order_status: int):
-        """Set up sequential mocks: first call for get_balance, second for POST /orders probe."""
-        if balance_ok:
-            balance_resp = MagicMock()
-            balance_resp.status_code = 200
-            balance_resp.content = b"content"
-            balance_resp.json.return_value = BALANCE_RESPONSE
-            balance_resp.raise_for_status = MagicMock()
-        else:
-            balance_resp = MagicMock()
-            balance_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-                "unauthorized",
-                request=MagicMock(),
-                response=MagicMock(status_code=401),
-            )
+    def _balance_ok_resp(self):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"content"
+        resp.json.return_value = BALANCE_RESPONSE
+        resp.raise_for_status = MagicMock()
+        return resp
 
-        order_resp = MagicMock()
-        order_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
-            f"HTTP {order_status}",
+    def _http_error_resp(self, status_code: int):
+        resp = MagicMock()
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            f"HTTP {status_code}",
             request=MagicMock(),
-            response=MagicMock(status_code=order_status),
+            response=MagicMock(status_code=status_code),
         )
+        return resp
 
+    def _setup(self, client, balance_resp, order_status: int):
+        order_resp = self._http_error_resp(order_status)
         client.client.request = AsyncMock(side_effect=[balance_resp, order_resp])
 
     async def test_view_true_when_balance_succeeds(self, client):
-        self._setup_two_calls(client, balance_ok=True, order_status=400)
+        self._setup(client, self._balance_ok_resp(), order_status=400)
         result = await client.check_permissions()
         assert result["view"] is True
+        assert result["view_error"] is None
 
-    async def test_view_false_when_balance_fails(self, client):
-        self._setup_two_calls(client, balance_ok=False, order_status=401)
+    async def test_view_false_and_error_deactivated_on_401(self, client):
+        self._setup(client, self._http_error_resp(401), order_status=401)
         result = await client.check_permissions()
         assert result["view"] is False
+        assert result["view_error"] == "deactivated"
+
+    async def test_view_false_and_error_forbidden_on_403(self, client):
+        self._setup(client, self._http_error_resp(403), order_status=403)
+        result = await client.check_permissions()
+        assert result["view"] is False
+        assert result["view_error"] == "forbidden"
+
+    async def test_view_false_and_error_http_code_on_other_status(self, client):
+        self._setup(client, self._http_error_resp(500), order_status=401)
+        result = await client.check_permissions()
+        assert result["view"] is False
+        assert result["view_error"] == "http_500"
+
+    async def test_view_false_and_error_unreachable_on_connect_error(self, client):
+        order_resp = self._http_error_resp(401)
+        client.client.request = AsyncMock(
+            side_effect=[httpx.ConnectError("connection refused"), order_resp]
+        )
+        result = await client.check_permissions()
+        assert result["view"] is False
+        assert result["view_error"] == "unreachable"
 
     async def test_trade_true_when_order_probe_returns_400(self, client):
         """400 = auth passed, payload validation failed → key has trading permissions."""
-        self._setup_two_calls(client, balance_ok=True, order_status=400)
+        self._setup(client, self._balance_ok_resp(), order_status=400)
         result = await client.check_permissions()
         assert result["trade"] is True
 
     async def test_trade_true_when_order_probe_returns_422(self, client):
         """422 = unprocessable entity (past auth layer) → key has trading permissions."""
-        self._setup_two_calls(client, balance_ok=True, order_status=422)
+        self._setup(client, self._balance_ok_resp(), order_status=422)
         result = await client.check_permissions()
         assert result["trade"] is True
 
     async def test_trade_false_when_order_probe_returns_401(self, client):
         """401 = unauthorized → key does not have trading permissions."""
-        self._setup_two_calls(client, balance_ok=True, order_status=401)
+        self._setup(client, self._balance_ok_resp(), order_status=401)
         result = await client.check_permissions()
         assert result["trade"] is False
 
     async def test_trade_false_when_order_probe_returns_403(self, client):
         """403 = forbidden → key does not have trading permissions."""
-        self._setup_two_calls(client, balance_ok=True, order_status=403)
+        self._setup(client, self._balance_ok_resp(), order_status=403)
         result = await client.check_permissions()
         assert result["trade"] is False
