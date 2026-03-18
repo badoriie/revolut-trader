@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-order-book api-candles api-open-orders api-historical-orders api-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
 # 1Password vault/item names — must match src/utils/onepassword.py constants
@@ -43,13 +43,20 @@ help:
 	@echo "  make api-ticker SYMBOL=BTC-EUR    - Single ticker (via order book)"
 	@echo "  make api-tickers SYMBOLS=BTC-EUR  - Multiple tickers"
 	@echo "  make api-all-tickers              - All pairs (GET /tickers)"
-	@echo "  make api-order-book SYMBOL=BTC-EUR            - Raw order book snapshot"
+	@echo "  make api-currencies               - All currencies (GET /configuration/currencies)"
+	@echo "  make api-currency-pairs           - All pairs config (GET /configuration/pairs)"
+	@echo "  make api-last-public-trades       - Last 100 public trades (unauthenticated)"
+	@echo "  make api-order-book SYMBOL=BTC-EUR            - Raw order book snapshot (authenticated)"
 	@echo "  make api-order-book SYMBOL=BTC-EUR DEPTH=5   - With custom depth (1-20)"
 	@echo "  make api-candles SYMBOL=BTC-EUR                - Candles (60min, last 10)"
 	@echo "  make api-candles SYMBOL=BTC-EUR INTERVAL=15 LIMIT=20"
-	@echo "  make api-open-orders [SYMBOL=BTC-EUR]         - Active orders"
-	@echo "  make api-historical-orders [SYMBOL=BTC-EUR] [LIMIT=20] - Completed orders"
-	@echo "  make api-trades SYMBOL=BTC-EUR [LIMIT=20]     - Private trade history"
+	@echo "  make api-open-orders                          - All active orders"
+	@echo "  make api-open-orders SYMBOL=BTC-EUR           - Active orders for one pair"
+	@echo "  make api-historical-orders                    - Completed/cancelled orders"
+	@echo "  make api-historical-orders SYMBOL=BTC-EUR LIMIT=50"
+	@echo "  make api-trades SYMBOL=BTC-EUR                - Private trade history"
+	@echo "  make api-trades SYMBOL=BTC-EUR LIMIT=50"
+	@echo "  make api-public-trades SYMBOL=BTC-EUR         - Public trade history"
 	@echo "  make api-order ORDER_ID=<uuid>                - Single order details"
 	@echo ""
 	@echo "Code Quality:"
@@ -347,6 +354,15 @@ api-candles:
 api-all-tickers:
 	@uv run python cli/api_test.py all-tickers
 
+api-currencies:
+	@uv run python cli/api_test.py currencies
+
+api-currency-pairs:
+	@uv run python cli/api_test.py currency-pairs
+
+api-last-public-trades:
+	@uv run python cli/api_test.py last-public-trades
+
 api-order-book:
 	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
 	@DEPTH=$${DEPTH:-20}; \
@@ -364,9 +380,13 @@ api-historical-orders:
 	uv run python cli/api_test.py historical-orders $$ARGS
 
 api-trades:
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR [LIMIT=20]"; exit 1; fi
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
 	@LIMIT=$${LIMIT:-20}; \
 	uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
+
+api-public-trades:
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
+	@uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
 
 api-order:
 	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
