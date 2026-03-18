@@ -101,8 +101,7 @@ def setup_database_encryption() -> str:
     """
     if not op.is_available():
         raise RuntimeError(
-            "1Password CLI not available. "
-            "Install it with: brew install --cask 1password-cli"
+            "1Password CLI not available. Install it with: brew install --cask 1password-cli"
         )
 
     existing_key = op.get_optional("DATABASE_ENCRYPTION_KEY")

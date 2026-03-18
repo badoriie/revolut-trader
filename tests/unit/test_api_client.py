@@ -11,11 +11,12 @@ Coverage goals per endpoint:
   ✓ Edge-cases specific to each endpoint
 """
 
+from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs, urlparse
+
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from unittest.mock import AsyncMock, MagicMock
-from urllib.parse import parse_qs, urlparse
 
 from src.api.client import RevolutAPIClient, RevolutAPIError
 
@@ -402,11 +403,25 @@ class TestGetBalance:
     async def test_fx_conversion_uses_live_rate(self, client):
         """Non-base currencies are converted using a live ticker rate."""
         response = [
-            {"currency": "EUR", "available": "1000.00", "staked": "0", "reserved": "0", "total": "1000.00"},
-            {"currency": "USD", "available": "500.00", "staked": "0", "reserved": "0", "total": "500.00"},
+            {
+                "currency": "EUR",
+                "available": "1000.00",
+                "staked": "0",
+                "reserved": "0",
+                "total": "1000.00",
+            },
+            {
+                "currency": "USD",
+                "available": "500.00",
+                "staked": "0",
+                "reserved": "0",
+                "total": "500.00",
+            },
         ]
         _mock_http(client, response)
-        client.get_ticker = AsyncMock(return_value={"last": "0.91", "bid": "0.90", "ask": "0.92", "symbol": "USD-EUR"})
+        client.get_ticker = AsyncMock(
+            return_value={"last": "0.91", "bid": "0.90", "ask": "0.92", "symbol": "USD-EUR"}
+        )
         result = await client.get_balance()
         assert result["total_eur"] == pytest.approx(1000.0 + 500.0 * 0.91)
         client.get_ticker.assert_awaited_once_with("USD-EUR")
@@ -414,7 +429,13 @@ class TestGetBalance:
     async def test_fx_conversion_skipped_on_ticker_failure(self, client):
         """If ticker lookup fails for a currency, its value is excluded (not an error)."""
         response = [
-            {"currency": "EUR", "available": "2000.00", "staked": "0", "reserved": "0", "total": "2000.00"},
+            {
+                "currency": "EUR",
+                "available": "2000.00",
+                "staked": "0",
+                "reserved": "0",
+                "total": "2000.00",
+            },
             {"currency": "BTC", "available": "1.0", "staked": "0", "reserved": "0", "total": "1.0"},
         ]
         _mock_http(client, response)
@@ -425,7 +446,13 @@ class TestGetBalance:
     async def test_zero_balance_currencies_skipped_for_fx(self, client):
         """Currencies with zero total don't trigger a ticker lookup."""
         response = [
-            {"currency": "EUR", "available": "3000.00", "staked": "0", "reserved": "0", "total": "3000.00"},
+            {
+                "currency": "EUR",
+                "available": "3000.00",
+                "staked": "0",
+                "reserved": "0",
+                "total": "3000.00",
+            },
             {"currency": "USD", "available": "0", "staked": "0", "reserved": "0", "total": "0"},
         ]
         _mock_http(client, response)
@@ -682,6 +709,7 @@ class TestCreateOrder:
 
     async def test_client_order_id_is_uuid(self, client):
         import uuid as _uuid
+
         mock = _mock_http(client, ORDER_CREATION_RESPONSE)
         await client.create_order("BTC-EUR", "buy", "limit", 0.01, price=50000.0)
         _uuid.UUID(mock.call_args.kwargs["json"]["client_order_id"])
@@ -1396,8 +1424,13 @@ class TestGetTickers:
     async def test_handles_bare_list_fallback(self, client):
         """Defensive: if API returns a bare list (no envelope), return it directly."""
         bare_list = [
-            {"symbol": "BTC/EUR", "bid": "49900", "ask": "50100",
-             "mid": "50000", "last_price": "50000"},
+            {
+                "symbol": "BTC/EUR",
+                "bid": "49900",
+                "ask": "50100",
+                "mid": "50000",
+                "last_price": "50000",
+            },
         ]
         _mock_http(client, bare_list)
         result = await client.get_tickers()

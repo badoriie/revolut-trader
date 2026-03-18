@@ -101,8 +101,7 @@ class TradingBot:
         perms = await self.api_client.check_permissions()
         if not perms["view"]:
             raise RuntimeError(
-                "API key cannot read market data. "
-                "Check credentials with 'make api-ready'."
+                "API key cannot read market data. Check credentials with 'make api-ready'."
             )
         if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
             raise RuntimeError(
@@ -111,7 +110,9 @@ class TradingBot:
                 "trading permissions in Revolut X."
             )
         if not perms["trade"]:
-            logger.info("API key is read-only — running in simulation mode (orders will not be sent to exchange)")
+            logger.info(
+                "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
+            )
 
         # Initialize risk manager
         self.risk_manager = RiskManager(risk_level=self.risk_level)

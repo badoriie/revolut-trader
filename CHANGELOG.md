@@ -45,17 +45,14 @@
     - Saves to database immediately (primary)
     - Daily JSON backup at midnight
     - Load from either source for disaster recovery
-  - **Migration Tools**: Easy migration path from SQLite to PostgreSQL
-    - New `src/utils/db_migration.py` - Database migration utilities
-    - New `cli/db_manage.py` - CLI tool for database management
+  - **Database Tools**: `cli/db_manage.py` — CLI tool for database management
     - Export to JSON/CSV for analysis
-    - Data integrity verification after migration
+    - Data integrity verification
   - **Makefile Commands**: Convenient database management
     - `make db-stats` - Show database statistics
     - `make db-analytics` - Show trading analytics (last 30 days)
     - `make db-export` - Export data to JSON files
     - `make db-export-csv` - Export to CSV for analysis
-    - `make db-migrate` - Migrate SQLite to PostgreSQL
   - **Updated bot.py**: Integrated hybrid persistence
     - Session tracking on start/stop
     - Immediate database saves for real-time analytics
@@ -65,7 +62,7 @@
   - Portfolio snapshots saved periodically and on shutdown
   - Trade history automatically saved after each filled order
   - Data stored in `data/trading.db` (SQLite) with JSON backup in `data/`
-  - Migration path to PostgreSQL for production use
+  - SQLite only — no external database dependency
 
 - **Backtest Results Database**: Backtest results now stored in database
 
