@@ -1,6 +1,24 @@
-"""Database persistence layer using SQLAlchemy (SQLite)."""
+"""Database persistence layer using SQLAlchemy (SQLite).
+
+Design notes
+------------
+* A ``_session()`` context manager centralises commit/rollback/close so every
+  public method is a single ``with self._session() as sess:`` block — no more
+  duplicated try/except/finally.
+* Sensitive fields are encrypted **at the application layer** before writing:
+  - ``SessionDB.trading_pairs`` — reveals which instruments are being traded.
+  - ``LogEntryDB.message``     — may contain balances, order details, etc.
+  All other fields (strategy, risk_level, trading_mode, symbol names) are
+  stored as **plaintext** so they can be used in SQL WHERE / ORDER BY clauses.
+* All monetary values are ``Decimal`` — no ``float()`` casts are introduced.
+* Bulk inserts use ``add_all()`` (``bulk_save_objects()`` is deprecated).
+"""
+
+from __future__ import annotations
 
 import json
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -9,6 +27,7 @@ from typing import Any
 from loguru import logger
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from src.models.db import (
     DB_URL,
@@ -26,22 +45,49 @@ from src.utils.db_encryption import DatabaseEncryption
 
 
 class DatabasePersistence:
-    """Database-based persistence for trading data using SQLAlchemy (SQLite)."""
+    """Database-backed persistence for all trading data.
 
-    def __init__(self):
+    SQLite is the storage engine; SQLAlchemy 2.0 ORM is the access layer.
+    Encryption is applied at the application level for genuinely sensitive
+    fields only (trading_pairs, log messages).
+    """
+
+    def __init__(self) -> None:
         Path(DB_URL.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_db_engine()
-        self.Session = get_session_factory(self.engine)
-
-        # Initialize schema
+        self._Session = get_session_factory(self.engine)
         init_database(self.engine)
-
-        # Initialize encryption for sensitive fields
         self.encryption = DatabaseEncryption()
-
-        logger.info(f"Database persistence initialized: {DB_URL}")
+        logger.info(f"Database persistence initialised: {DB_URL}")
         if self.encryption.is_enabled:
             logger.info("✓ Database field encryption enabled")
+
+    # ---------------------------------------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------------------------------------
+
+    @contextmanager
+    def _session(self) -> Generator[Session, None, None]:
+        """Yield a SQLAlchemy session that auto-commits or rolls back.
+
+        Commits on clean exit; rolls back and re-raises ``SQLAlchemyError``
+        so callers can catch it (or let it propagate).  Closes the session
+        in all cases.
+        """
+        sess = self._Session()
+        try:
+            yield sess
+            sess.commit()
+        except SQLAlchemyError as exc:
+            sess.rollback()
+            logger.error(f"Database error: {exc}")
+            raise
+        finally:
+            sess.close()
+
+    # ---------------------------------------------------------------------------
+    # Portfolio snapshots
+    # ---------------------------------------------------------------------------
 
     def save_portfolio_snapshot(
         self,
@@ -50,224 +96,199 @@ class DatabasePersistence:
         risk_level: str,
         trading_mode: str,
     ) -> None:
-        """Save a single portfolio snapshot to database.
+        """Persist a single portfolio snapshot.
+
+        Categorical fields (strategy, risk_level, trading_mode) are stored as
+        plaintext — they are not sensitive and must be filterable in SQL.
 
         Args:
-            snapshot: Portfolio snapshot to save
-            strategy: Trading strategy name
-            risk_level: Risk level setting
-            trading_mode: Trading mode (paper/live)
+            snapshot: Domain snapshot object to persist.
+            strategy: Trading strategy name (e.g. ``"momentum"``).
+            risk_level: Risk level label (e.g. ``"moderate"``).
+            trading_mode: Execution mode (e.g. ``"paper"`` or ``"live"``).
         """
-        session = self.Session()
         try:
-            # Encrypt sensitive text fields
-            encrypted_strategy = self.encryption.encrypt(strategy)
-            encrypted_risk_level = self.encryption.encrypt(risk_level)
-            encrypted_trading_mode = self.encryption.encrypt(trading_mode)
-
-            db_snapshot = PortfolioSnapshotDB(
-                timestamp=snapshot.timestamp,
-                total_value=float(snapshot.total_value),
-                cash_balance=float(snapshot.cash_balance),
-                positions_value=float(snapshot.positions_value),
-                unrealized_pnl=float(snapshot.unrealized_pnl),
-                realized_pnl=float(snapshot.realized_pnl),
-                total_pnl=float(snapshot.total_pnl),
-                daily_pnl=float(snapshot.daily_pnl),
-                num_positions=snapshot.num_positions,
-                strategy=encrypted_strategy,
-                risk_level=encrypted_risk_level,
-                trading_mode=encrypted_trading_mode,
-            )
-
-            session.add(db_snapshot)
-            session.commit()
+            with self._session() as sess:
+                sess.add(
+                    PortfolioSnapshotDB(
+                        timestamp=snapshot.timestamp,
+                        total_value=snapshot.total_value,
+                        cash_balance=snapshot.cash_balance,
+                        positions_value=snapshot.positions_value,
+                        unrealized_pnl=snapshot.unrealized_pnl,
+                        realized_pnl=snapshot.realized_pnl,
+                        total_pnl=snapshot.total_pnl,
+                        daily_pnl=snapshot.daily_pnl,
+                        num_positions=snapshot.num_positions,
+                        strategy=strategy,
+                        risk_level=risk_level,
+                        trading_mode=trading_mode,
+                    )
+                )
             logger.debug(f"Saved portfolio snapshot: {snapshot.total_value}")
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to save portfolio snapshot: {e}")
-        finally:
-            session.close()
+        except SQLAlchemyError:
+            pass  # already logged by _session()
 
     def save_portfolio_snapshots_bulk(
         self, snapshots: list[PortfolioSnapshot], metadata: dict[str, Any]
     ) -> None:
-        """Save multiple snapshots in bulk (more efficient).
+        """Persist multiple snapshots in a single transaction.
 
         Args:
-            snapshots: List of portfolio snapshots
-            metadata: Session metadata (strategy, risk_level, etc.)
+            snapshots: Portfolio snapshots to persist.
+            metadata: Dict with optional keys ``strategy``, ``risk_level``,
+                      and ``trading_mode``.
         """
         if not snapshots:
             return
-
-        session = self.Session()
+        strategy = metadata.get("strategy", "")
+        risk_level = metadata.get("risk_level", "")
+        trading_mode = metadata.get("trading_mode", "")
         try:
-            # Encrypt metadata once for all snapshots
-            encrypted_strategy = self.encryption.encrypt(metadata.get("strategy", ""))
-            encrypted_risk_level = self.encryption.encrypt(metadata.get("risk_level", ""))
-            encrypted_trading_mode = self.encryption.encrypt(metadata.get("trading_mode", ""))
-
-            db_snapshots = [
-                PortfolioSnapshotDB(
-                    timestamp=s.timestamp,
-                    total_value=float(s.total_value),
-                    cash_balance=float(s.cash_balance),
-                    positions_value=float(s.positions_value),
-                    unrealized_pnl=float(s.unrealized_pnl),
-                    realized_pnl=float(s.realized_pnl),
-                    total_pnl=float(s.total_pnl),
-                    daily_pnl=float(s.daily_pnl),
-                    num_positions=s.num_positions,
-                    strategy=encrypted_strategy,
-                    risk_level=encrypted_risk_level,
-                    trading_mode=encrypted_trading_mode,
+            with self._session() as sess:
+                sess.add_all(
+                    [
+                        PortfolioSnapshotDB(
+                            timestamp=s.timestamp,
+                            total_value=s.total_value,
+                            cash_balance=s.cash_balance,
+                            positions_value=s.positions_value,
+                            unrealized_pnl=s.unrealized_pnl,
+                            realized_pnl=s.realized_pnl,
+                            total_pnl=s.total_pnl,
+                            daily_pnl=s.daily_pnl,
+                            num_positions=s.num_positions,
+                            strategy=strategy,
+                            risk_level=risk_level,
+                            trading_mode=trading_mode,
+                        )
+                        for s in snapshots
+                    ]
                 )
-                for s in snapshots
-            ]
-
-            session.bulk_save_objects(db_snapshots)
-            session.commit()
             logger.debug(f"Saved {len(snapshots)} portfolio snapshots in bulk")
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to save snapshots in bulk: {e}")
-        finally:
-            session.close()
+        except SQLAlchemyError:
+            pass
 
     def load_portfolio_snapshots(
         self, since: datetime | None = None, limit: int = 1000
     ) -> list[dict[str, Any]]:
-        """Load portfolio snapshots from database.
+        """Load portfolio snapshots in chronological (ascending) order.
 
         Args:
-            since: Load snapshots since this datetime (default: last 1000)
-            limit: Maximum number of snapshots to load
+            since: Inclusive UTC lower bound on timestamp.
+            limit: Maximum rows to return.
 
         Returns:
-            List of snapshot dictionaries
+            List of snapshot dicts with string-serialised Decimal values.
         """
-        session = self.Session()
         try:
-            query = session.query(PortfolioSnapshotDB).order_by(desc(PortfolioSnapshotDB.timestamp))
-
-            if since:
-                query = query.filter(PortfolioSnapshotDB.timestamp >= since)
-
-            snapshots = query.limit(limit).all()
-
-            results = [
-                {
-                    "timestamp": s.timestamp.isoformat(),
-                    "total_value": str(s.total_value),
-                    "cash_balance": str(s.cash_balance),
-                    "positions_value": str(s.positions_value),
-                    "unrealized_pnl": str(s.unrealized_pnl),
-                    "realized_pnl": str(s.realized_pnl),
-                    "total_pnl": str(s.total_pnl),
-                    "daily_pnl": str(s.daily_pnl),
-                    "num_positions": s.num_positions,
-                    "strategy": self.encryption.decrypt(s.strategy) if s.strategy else None,
-                    "risk_level": self.encryption.decrypt(s.risk_level) if s.risk_level else None,
-                }
-                for s in reversed(snapshots)  # Chronological order
-            ]
-
-            logger.info(f"Loaded {len(results)} portfolio snapshots from database")
-            return results
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to load portfolio snapshots: {e}")
+            with self._session() as sess:
+                query = sess.query(PortfolioSnapshotDB).order_by(PortfolioSnapshotDB.timestamp)
+                if since:
+                    query = query.filter(PortfolioSnapshotDB.timestamp >= since)
+                rows = query.limit(limit).all()
+                results = [
+                    {
+                        "timestamp": r.timestamp.isoformat(),
+                        "total_value": str(r.total_value),
+                        "cash_balance": str(r.cash_balance),
+                        "positions_value": str(r.positions_value),
+                        "unrealized_pnl": str(r.unrealized_pnl),
+                        "realized_pnl": str(r.realized_pnl),
+                        "total_pnl": str(r.total_pnl),
+                        "daily_pnl": str(r.daily_pnl),
+                        "num_positions": r.num_positions,
+                        "strategy": r.strategy,
+                        "risk_level": r.risk_level,
+                    }
+                    for r in rows
+                ]
+                logger.info(f"Loaded {len(results)} portfolio snapshots")
+                return results
+        except SQLAlchemyError:
             return []
-        finally:
-            session.close()
+
+    # ---------------------------------------------------------------------------
+    # Trades
+    # ---------------------------------------------------------------------------
 
     def save_trade(self, order: Order) -> None:
-        """Save a completed trade to database.
+        """Persist a completed order as a trade record.
+
+        The ``strategy`` field is stored as plaintext — it is a label such as
+        ``"momentum"`` and is not sensitive.
 
         Args:
-            order: Completed order to save
+            order: Filled or cancelled Order domain object.
         """
-        session = self.Session()
         try:
-            # Encrypt strategy field
-            encrypted_strategy = self.encryption.encrypt(order.strategy) if order.strategy else None
-
-            db_trade = TradeDB(
-                order_id=order.order_id or f"order_{datetime.now(UTC).timestamp()}",
-                symbol=order.symbol,
-                side=order.side.value,
-                order_type=order.order_type.value,
-                quantity=float(order.quantity),
-                price=float(order.price) if order.price else 0.0,
-                filled_quantity=float(order.filled_quantity),
-                status=order.status.value,
-                strategy=encrypted_strategy,
-                created_at=order.created_at,
-                filled_at=datetime.now(UTC) if order.status.value == "FILLED" else None,
-            )
-
-            session.add(db_trade)
-            session.commit()
+            with self._session() as sess:
+                sess.add(
+                    TradeDB(
+                        order_id=order.order_id or f"order_{datetime.now(UTC).timestamp()}",
+                        symbol=order.symbol,
+                        side=order.side.value,
+                        order_type=order.order_type.value,
+                        quantity=order.quantity,
+                        price=order.price if order.price is not None else Decimal(0),
+                        filled_quantity=order.filled_quantity,
+                        status=order.status.value,
+                        strategy=order.strategy,
+                        created_at=order.created_at,
+                        filled_at=(datetime.now(UTC) if order.status.value == "FILLED" else None),
+                    )
+                )
             logger.debug(f"Saved trade: {order.symbol} {order.side} {order.quantity}")
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to save trade: {e}")
-        finally:
-            session.close()
+        except SQLAlchemyError:
+            pass
 
     def load_trade_history(
-        self, since: datetime | None = None, symbol: str | None = None, limit: int = 1000
+        self,
+        since: datetime | None = None,
+        symbol: str | None = None,
+        limit: int = 1000,
     ) -> list[dict[str, Any]]:
-        """Load trade history from database.
+        """Load trade history in chronological (ascending) order.
 
         Args:
-            since: Load trades since this datetime
-            symbol: Filter by symbol (optional)
-            limit: Maximum number of trades to load
+            since: Inclusive UTC lower bound on ``created_at``.
+            symbol: Optional exact-match symbol filter.
+            limit: Maximum rows to return.
 
         Returns:
-            List of trade dictionaries
+            List of trade dicts with string-serialised Decimal values.
         """
-        session = self.Session()
         try:
-            query = session.query(TradeDB).order_by(desc(TradeDB.created_at))
-
-            if since:
-                query = query.filter(TradeDB.created_at >= since)
-
-            if symbol:
-                query = query.filter(TradeDB.symbol == symbol)
-
-            trades = query.limit(limit).all()
-
-            results = [
-                {
-                    "order_id": t.order_id,
-                    "symbol": t.symbol,
-                    "side": t.side,
-                    "order_type": t.order_type,
-                    "quantity": str(t.quantity),
-                    "price": str(t.price),
-                    "filled_quantity": str(t.filled_quantity),
-                    "status": t.status,
-                    "strategy": self.encryption.decrypt(t.strategy) if t.strategy else None,
-                    "created_at": t.created_at.isoformat(),
-                }
-                for t in reversed(trades)  # Chronological order
-            ]
-
-            logger.info(f"Loaded {len(results)} trades from database")
-            return results
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to load trade history: {e}")
+            with self._session() as sess:
+                query = sess.query(TradeDB).order_by(TradeDB.created_at)
+                if since:
+                    query = query.filter(TradeDB.created_at >= since)
+                if symbol:
+                    query = query.filter(TradeDB.symbol == symbol)
+                rows = query.limit(limit).all()
+                results = [
+                    {
+                        "order_id": r.order_id,
+                        "symbol": r.symbol,
+                        "side": r.side,
+                        "order_type": r.order_type,
+                        "quantity": str(r.quantity),
+                        "price": str(r.price),
+                        "filled_quantity": str(r.filled_quantity),
+                        "status": r.status,
+                        "strategy": r.strategy,
+                        "created_at": r.created_at.isoformat(),
+                    }
+                    for r in rows
+                ]
+                logger.info(f"Loaded {len(results)} trades")
+                return results
+        except SQLAlchemyError:
             return []
-        finally:
-            session.close()
+
+    # ---------------------------------------------------------------------------
+    # Trading sessions
+    # ---------------------------------------------------------------------------
 
     def create_session(
         self,
@@ -277,142 +298,123 @@ class DatabasePersistence:
         trading_pairs: list[str],
         initial_balance: Decimal,
     ) -> int:
-        """Create a new trading session record.
+        """Create a new trading session record and return its primary key.
 
-        Args:
-            strategy: Trading strategy name
-            risk_level: Risk level setting
-            trading_mode: Trading mode (paper/live)
-            trading_pairs: List of trading pairs
-            initial_balance: Starting balance
+        ``trading_pairs`` is encrypted because it reveals the exact instruments
+        the bot is actively trading — potentially sensitive alpha information.
+        All other metadata is stored as plaintext for SQL filterability.
 
         Returns:
-            Session ID
+            New session primary key, or ``-1`` on failure.
         """
-        session = self.Session()
         try:
-            # Encrypt sensitive text fields
-            encrypted_strategy = self.encryption.encrypt(strategy)
-            encrypted_risk_level = self.encryption.encrypt(risk_level)
-            encrypted_trading_mode = self.encryption.encrypt(trading_mode)
-            encrypted_trading_pairs = self.encryption.encrypt(json.dumps(trading_pairs))
-
-            db_session = SessionDB(
-                started_at=datetime.now(UTC),
-                strategy=encrypted_strategy,
-                risk_level=encrypted_risk_level,
-                trading_mode=encrypted_trading_mode,
-                trading_pairs=encrypted_trading_pairs,
-                initial_balance=float(initial_balance),
-                status="ACTIVE",
-            )
-
-            session.add(db_session)
-            session.commit()
-            session_id: int = db_session.id  # type: ignore[assignment]
-
+            with self._session() as sess:
+                record = SessionDB(
+                    started_at=datetime.now(UTC),
+                    strategy=strategy,
+                    risk_level=risk_level,
+                    trading_mode=trading_mode,
+                    trading_pairs=self.encryption.encrypt(json.dumps(trading_pairs)),
+                    initial_balance=initial_balance,
+                    status="ACTIVE",
+                )
+                sess.add(record)
+                sess.flush()  # populate .id before commit
+                session_id: int = record.id  # type: ignore[assignment]
             logger.info(f"Created trading session: {session_id}")
             return session_id
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to create session: {e}")
+        except SQLAlchemyError:
             return -1
-        finally:
-            session.close()
 
     def end_session(
-        self, session_id: int, final_balance: Decimal, total_pnl: Decimal, total_trades: int
+        self,
+        session_id: int,
+        final_balance: Decimal,
+        total_pnl: Decimal,
+        total_trades: int,
     ) -> None:
-        """End a trading session.
+        """Close a trading session and record final metrics.
 
         Args:
-            session_id: Session ID to end
-            final_balance: Final account balance
-            total_pnl: Total profit/loss
-            total_trades: Total number of trades executed
+            session_id: Primary key of the session to close.
+            final_balance: Account balance at session end.
+            total_pnl: Net profit/loss for the session.
+            total_trades: Total number of orders executed.
         """
-        session = self.Session()
         try:
-            db_session = session.query(SessionDB).filter_by(id=session_id).first()
+            with self._session() as sess:
+                record = sess.query(SessionDB).filter_by(id=session_id).first()
+                if record:
+                    record.ended_at = datetime.now(UTC)
+                    record.final_balance = final_balance
+                    record.total_pnl = total_pnl
+                    record.total_trades = total_trades
+                    record.status = "STOPPED"
+            logger.info(f"Ended trading session: {session_id}")
+        except SQLAlchemyError:
+            pass
 
-            if db_session:
-                db_session.ended_at = datetime.now(UTC)
-                db_session.final_balance = float(final_balance)
-                db_session.total_pnl = float(total_pnl)
-                db_session.total_trades = total_trades
-                db_session.status = "STOPPED"
-
-                session.commit()
-                logger.info(f"Ended trading session: {session_id}")
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to end session: {e}")
-        finally:
-            session.close()
+    # ---------------------------------------------------------------------------
+    # Analytics
+    # ---------------------------------------------------------------------------
 
     def get_analytics(self, days: int = 30) -> dict[str, Any]:
-        """Get trading analytics for the specified period.
+        """Compute rolling trading analytics over the last *days* calendar days.
+
+        Returns a dict with keys: ``period_days``, ``total_snapshots``,
+        ``total_trades``, ``winning_trades``, ``total_pnl``, ``win_rate``,
+        and optionally ``initial_value``, ``final_value``, ``return_pct``.
 
         Args:
-            days: Number of days to analyze
+            days: Look-back window in calendar days.
 
         Returns:
-            Dictionary with analytics data
+            Analytics dict, or empty dict on database error.
         """
-        session = self.Session()
         try:
-            since = datetime.now(UTC) - timedelta(days=days)
-
-            # Portfolio performance
-            snapshots = (
-                session.query(PortfolioSnapshotDB)
-                .filter(PortfolioSnapshotDB.timestamp >= since)
-                .order_by(PortfolioSnapshotDB.timestamp)
-                .all()
-            )
-
-            # Trade statistics
-            total_trades = (
-                session.query(func.count(TradeDB.id)).filter(TradeDB.created_at >= since).scalar()
-            )
-
-            winning_trades = (
-                session.query(func.count(TradeDB.id))
-                .filter(TradeDB.created_at >= since, TradeDB.pnl > 0)
-                .scalar()
-            )
-
-            total_pnl = (
-                session.query(func.sum(TradeDB.pnl)).filter(TradeDB.created_at >= since).scalar()
-            )
-
-            analytics = {
-                "period_days": days,
-                "total_snapshots": len(snapshots),
-                "total_trades": total_trades or 0,
-                "winning_trades": winning_trades or 0,
-                "total_pnl": float(total_pnl) if total_pnl else 0.0,
-                "win_rate": (winning_trades / total_trades * 100) if total_trades else 0.0,
-            }
-
-            if snapshots:
-                analytics["initial_value"] = float(snapshots[0].total_value)
-                analytics["final_value"] = float(snapshots[-1].total_value)
-                analytics["return_pct"] = (
-                    (analytics["final_value"] - analytics["initial_value"])
-                    / analytics["initial_value"]
-                    * 100
+            with self._session() as sess:
+                since = datetime.now(UTC) - timedelta(days=days)
+                snapshots = (
+                    sess.query(PortfolioSnapshotDB)
+                    .filter(PortfolioSnapshotDB.timestamp >= since)
+                    .order_by(PortfolioSnapshotDB.timestamp)
+                    .all()
                 )
-
-            return analytics
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get analytics: {e}")
+                total_trades = (
+                    sess.query(func.count(TradeDB.id)).filter(TradeDB.created_at >= since).scalar()
+                )
+                winning_trades = (
+                    sess.query(func.count(TradeDB.id))
+                    .filter(TradeDB.created_at >= since, TradeDB.pnl > 0)
+                    .scalar()
+                )
+                total_pnl = (
+                    sess.query(func.sum(TradeDB.pnl)).filter(TradeDB.created_at >= since).scalar()
+                )
+                analytics: dict[str, Any] = {
+                    "period_days": days,
+                    "total_snapshots": len(snapshots),
+                    "total_trades": total_trades or 0,
+                    "winning_trades": winning_trades or 0,
+                    "total_pnl": float(total_pnl) if total_pnl else 0.0,
+                    "win_rate": ((winning_trades / total_trades * 100) if total_trades else 0.0),
+                }
+                if snapshots:
+                    analytics["initial_value"] = float(snapshots[0].total_value)
+                    analytics["final_value"] = float(snapshots[-1].total_value)
+                    if analytics["initial_value"]:
+                        analytics["return_pct"] = (
+                            (analytics["final_value"] - analytics["initial_value"])
+                            / analytics["initial_value"]
+                            * 100
+                        )
+                return analytics
+        except SQLAlchemyError:
             return {}
-        finally:
-            session.close()
+
+    # ---------------------------------------------------------------------------
+    # Backtest runs
+    # ---------------------------------------------------------------------------
 
     def save_backtest_run(
         self,
@@ -421,253 +423,216 @@ class DatabasePersistence:
         symbols: list[str],
         days: int,
         interval: str,
-        initial_capital: float,
+        initial_capital: Decimal | float,
         results: dict[str, Any],
-        equity_curve_file: str | None = None,
-        trades_file: str | None = None,
     ) -> int:
-        """Save backtest run results to database.
+        """Persist a completed backtest run and return its primary key.
+
+        ``symbols`` is stored as a **plaintext** JSON array — trading symbol
+        names are public market identifiers and need not be encrypted.
 
         Args:
-            strategy: Strategy name
-            risk_level: Risk level used
-            symbols: List of trading symbols
-            days: Number of days tested
-            interval: Candle interval
-            initial_capital: Starting capital
-            results: Backtest results dictionary
-            equity_curve_file: Path to equity curve JSON
-            trades_file: Path to trades JSON
+            strategy: Strategy name used for the run.
+            risk_level: Risk level label.
+            symbols: List of traded symbols (e.g. ``["BTC-EUR"]``).
+            days: Historical window in days.
+            interval: Candle interval string (e.g. ``"60"``).
+            initial_capital: Starting capital (Decimal preferred).
+            results: Dict from ``BacktestResults`` with keys: ``final_capital``,
+                     ``total_pnl``, ``return_pct``, ``total_trades``,
+                     ``winning_trades``, ``losing_trades``, ``win_rate``,
+                     ``max_drawdown``, and optionally ``profit_factor`` /
+                     ``sharpe_ratio``.
 
         Returns:
-            Backtest run ID
+            New backtest run primary key, or ``-1`` on failure.
         """
-        session = self.Session()
         try:
-            # Encrypt sensitive text fields
-            encrypted_strategy = self.encryption.encrypt(strategy)
-            encrypted_risk_level = self.encryption.encrypt(risk_level)
-            encrypted_symbols = self.encryption.encrypt(json.dumps(symbols))
-
-            backtest_run = BacktestRunDB(
-                run_at=datetime.now(UTC),
-                strategy=encrypted_strategy,
-                risk_level=encrypted_risk_level,
-                symbols=encrypted_symbols,
-                days=days,
-                interval=interval,
-                initial_capital=initial_capital,
-                final_capital=results["final_capital"],
-                total_pnl=results["total_pnl"],
-                return_pct=results["return_pct"],
-                total_trades=results["total_trades"],
-                winning_trades=results["winning_trades"],
-                losing_trades=results["losing_trades"],
-                win_rate=results["win_rate"],
-                profit_factor=results.get("profit_factor"),
-                max_drawdown=results["max_drawdown"],
-                sharpe_ratio=results.get("sharpe_ratio"),
-                equity_curve_file=equity_curve_file,
-                trades_file=trades_file,
-            )
-
-            session.add(backtest_run)
-            session.commit()
-            run_id: int = backtest_run.id  # type: ignore[assignment]
-
+            with self._session() as sess:
+                record = BacktestRunDB(
+                    run_at=datetime.now(UTC),
+                    strategy=strategy,
+                    risk_level=risk_level,
+                    symbols=json.dumps(symbols),
+                    days=days,
+                    interval=interval,
+                    initial_capital=initial_capital,
+                    final_capital=results["final_capital"],
+                    total_pnl=results["total_pnl"],
+                    return_pct=results["return_pct"],
+                    total_trades=results["total_trades"],
+                    winning_trades=results["winning_trades"],
+                    losing_trades=results["losing_trades"],
+                    win_rate=results["win_rate"],
+                    profit_factor=results.get("profit_factor"),
+                    max_drawdown=results["max_drawdown"],
+                    sharpe_ratio=results.get("sharpe_ratio"),
+                )
+                sess.add(record)
+                sess.flush()
+                run_id: int = record.id  # type: ignore[assignment]
             logger.info(
-                f"Saved backtest run: {run_id} ({strategy}, return={results['return_pct']:.2f}%)"
+                f"Saved backtest run: {run_id} "
+                f"({strategy}, return={results['return_pct']:.2f}%)"
             )
             return run_id
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to save backtest run: {e}")
+        except SQLAlchemyError:
             return -1
-        finally:
-            session.close()
 
     def load_backtest_runs(
         self, strategy: str | None = None, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Load backtest run history.
+        """Load backtest run history in reverse-chronological order.
 
         Args:
-            strategy: Filter by strategy (optional)
-            limit: Maximum number of runs to load
+            strategy: Optional exact-match filter on strategy name (plaintext).
+            limit: Maximum rows to return.
 
         Returns:
-            List of backtest run dictionaries
+            List of backtest run dicts.
         """
-        session = self.Session()
         try:
-            query = session.query(BacktestRunDB).order_by(desc(BacktestRunDB.run_at))
-
-            if strategy:
-                # Filter requires encrypted value for comparison
-                encrypted_strategy = self.encryption.encrypt(strategy)
-                query = query.filter(BacktestRunDB.strategy == encrypted_strategy)
-
-            runs = query.limit(limit).all()
-
-            results = [
-                {
-                    "id": r.id,
-                    "run_at": r.run_at.isoformat(),
-                    "strategy": self.encryption.decrypt(r.strategy) if r.strategy else None,
-                    "risk_level": self.encryption.decrypt(r.risk_level) if r.risk_level else None,
-                    "symbols": json.loads(
-                        self.encryption.decrypt(r.symbols) if r.symbols else "[]"
-                    ),
-                    "days": r.days,
-                    "interval": r.interval,
-                    "initial_capital": r.initial_capital,
-                    "final_capital": r.final_capital,
-                    "total_pnl": r.total_pnl,
-                    "return_pct": r.return_pct,
-                    "total_trades": r.total_trades,
-                    "winning_trades": r.winning_trades,
-                    "losing_trades": r.losing_trades,
-                    "win_rate": r.win_rate,
-                    "profit_factor": r.profit_factor,
-                    "max_drawdown": r.max_drawdown,
-                    "sharpe_ratio": r.sharpe_ratio,
-                    "equity_curve_file": r.equity_curve_file,
-                    "trades_file": r.trades_file,
-                }
-                for r in runs
-            ]
-
-            logger.info(f"Loaded {len(results)} backtest runs from database")
-            return results
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to load backtest runs: {e}")
+            with self._session() as sess:
+                query = sess.query(BacktestRunDB).order_by(desc(BacktestRunDB.run_at))
+                if strategy:
+                    query = query.filter(BacktestRunDB.strategy == strategy)
+                rows = query.limit(limit).all()
+                return [
+                    {
+                        "id": r.id,
+                        "run_at": r.run_at.isoformat(),
+                        "strategy": r.strategy,
+                        "risk_level": r.risk_level,
+                        "symbols": json.loads(r.symbols) if r.symbols else [],
+                        "days": r.days,
+                        "interval": r.interval,
+                        "initial_capital": r.initial_capital,
+                        "final_capital": r.final_capital,
+                        "total_pnl": r.total_pnl,
+                        "return_pct": r.return_pct,
+                        "total_trades": r.total_trades,
+                        "winning_trades": r.winning_trades,
+                        "losing_trades": r.losing_trades,
+                        "win_rate": r.win_rate,
+                        "profit_factor": r.profit_factor,
+                        "max_drawdown": r.max_drawdown,
+                        "sharpe_ratio": r.sharpe_ratio,
+                    }
+                    for r in rows
+                ]
+        except SQLAlchemyError:
             return []
-        finally:
-            session.close()
 
     def get_backtest_analytics(self) -> dict[str, Any]:
-        """Get analytics across all backtest runs.
+        """Aggregate analytics across all stored backtest runs.
 
-        Returns:
-            Dictionary with backtest analytics
+        Returns a dict with keys: ``total_runs``, ``profitable_runs``,
+        ``avg_return_pct``, ``success_rate``, and optionally ``best_run``.
         """
-        session = self.Session()
         try:
-            total_runs = session.query(func.count(BacktestRunDB.id)).scalar()
-
-            profitable_runs = (
-                session.query(func.count(BacktestRunDB.id))
-                .filter(BacktestRunDB.return_pct > 0)
-                .scalar()
-            )
-
-            avg_return = session.query(func.avg(BacktestRunDB.return_pct)).scalar()
-
-            best_run = session.query(BacktestRunDB).order_by(desc(BacktestRunDB.return_pct)).first()
-
-            analytics = {
-                "total_runs": total_runs or 0,
-                "profitable_runs": profitable_runs or 0,
-                "avg_return_pct": float(avg_return) if avg_return else 0.0,
-                "success_rate": (profitable_runs / total_runs * 100) if total_runs else 0.0,
-            }
-
-            if best_run:
-                analytics["best_run"] = {
-                    "id": best_run.id,
-                    "strategy": self.encryption.decrypt(best_run.strategy)
-                    if best_run.strategy
-                    else None,
-                    "return_pct": best_run.return_pct,
-                    "total_trades": best_run.total_trades,
-                    "win_rate": best_run.win_rate,
+            with self._session() as sess:
+                total_runs = sess.query(func.count(BacktestRunDB.id)).scalar()
+                profitable_runs = (
+                    sess.query(func.count(BacktestRunDB.id))
+                    .filter(BacktestRunDB.return_pct > 0)
+                    .scalar()
+                )
+                avg_return = sess.query(func.avg(BacktestRunDB.return_pct)).scalar()
+                best_run = (
+                    sess.query(BacktestRunDB).order_by(desc(BacktestRunDB.return_pct)).first()
+                )
+                analytics: dict[str, Any] = {
+                    "total_runs": total_runs or 0,
+                    "profitable_runs": profitable_runs or 0,
+                    "avg_return_pct": float(avg_return) if avg_return else 0.0,
+                    "success_rate": ((profitable_runs / total_runs * 100) if total_runs else 0.0),
                 }
-
-            return analytics
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to get backtest analytics: {e}")
+                if best_run:
+                    analytics["best_run"] = {
+                        "id": best_run.id,
+                        "strategy": best_run.strategy,
+                        "return_pct": best_run.return_pct,
+                        "total_trades": best_run.total_trades,
+                        "win_rate": best_run.win_rate,
+                    }
+                return analytics
+        except SQLAlchemyError:
             return {}
-        finally:
-            session.close()
+
+    # ---------------------------------------------------------------------------
+    # Log entries
+    # ---------------------------------------------------------------------------
 
     def save_log_entry(
-        self, level: str, message: str, module: str | None = None, session_id: int | None = None
+        self,
+        level: str,
+        message: str,
+        module: str | None = None,
+        session_id: int | None = None,
     ) -> None:
-        """Save a log entry to database (optional, for critical events).
+        """Persist a critical log event to the database.
+
+        The message body may contain sensitive runtime context (balances,
+        symbol names, order details) and is therefore **encrypted**.  The
+        ``module`` field is a plain source-code path (e.g. ``"src.bot"``) and
+        is stored as plaintext.
 
         Args:
-            level: Log level (INFO, WARNING, ERROR, CRITICAL)
-            message: Log message
-            module: Module name
-            session_id: Associated session ID
+            level: Severity — ``INFO`` | ``WARNING`` | ``ERROR`` | ``CRITICAL``.
+            message: Human-readable event description (encrypted at rest).
+            module: Source module path, optional.
+            session_id: Foreign key to the active trading session, optional.
         """
-        session = self.Session()
         try:
-            # Encrypt module and message fields (may contain sensitive info)
-            encrypted_module = self.encryption.encrypt(module) if module else None
-            encrypted_message = self.encryption.encrypt(message)
-
-            log_entry = LogEntryDB(
-                timestamp=datetime.now(UTC),
-                level=level,
-                module=encrypted_module,
-                message=encrypted_message,
-                session_id=session_id,
-            )
-
-            session.add(log_entry)
-            session.commit()
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Failed to save log entry: {e}")
-        finally:
-            session.close()
+            with self._session() as sess:
+                sess.add(
+                    LogEntryDB(
+                        timestamp=datetime.now(UTC),
+                        level=level,
+                        module=module,
+                        message=self.encryption.encrypt(message),
+                        session_id=session_id,
+                    )
+                )
+        except SQLAlchemyError:
+            pass
 
     def load_log_entries(
-        self, level: str | None = None, since: datetime | None = None, limit: int = 1000
+        self,
+        level: str | None = None,
+        since: datetime | None = None,
+        limit: int = 1000,
     ) -> list[dict[str, Any]]:
-        """Load log entries from database.
+        """Load log entries in chronological (ascending) order.
+
+        Messages are decrypted before being returned.
 
         Args:
-            level: Filter by log level (optional)
-            since: Load logs since this datetime
-            limit: Maximum number of entries to load
+            level: Optional exact-match filter on severity level.
+            since: Inclusive UTC lower bound on timestamp.
+            limit: Maximum rows to return.
 
         Returns:
-            List of log entry dictionaries
+            List of log entry dicts with decrypted message values.
         """
-        session = self.Session()
         try:
-            query = session.query(LogEntryDB).order_by(desc(LogEntryDB.timestamp))
-
-            if level:
-                query = query.filter(LogEntryDB.level == level)
-
-            if since:
-                query = query.filter(LogEntryDB.timestamp >= since)
-
-            entries = query.limit(limit).all()
-
-            results = [
-                {
-                    "id": e.id,
-                    "timestamp": e.timestamp.isoformat(),
-                    "level": e.level,
-                    "module": self.encryption.decrypt(e.module) if e.module else None,
-                    "message": self.encryption.decrypt(e.message) if e.message else "",
-                    "session_id": e.session_id,
-                }
-                for e in entries
-            ]
-
-            return results
-
-        except SQLAlchemyError as e:
-            logger.error(f"Failed to load log entries: {e}")
+            with self._session() as sess:
+                query = sess.query(LogEntryDB).order_by(LogEntryDB.timestamp)
+                if level:
+                    query = query.filter(LogEntryDB.level == level)
+                if since:
+                    query = query.filter(LogEntryDB.timestamp >= since)
+                rows = query.limit(limit).all()
+                return [
+                    {
+                        "id": r.id,
+                        "timestamp": r.timestamp.isoformat(),
+                        "level": r.level,
+                        "module": r.module,
+                        "message": self.encryption.decrypt(r.message) if r.message else "",
+                        "session_id": r.session_id,
+                    }
+                    for r in rows
+                ]
+        except SQLAlchemyError:
             return []
-        finally:
-            session.close()

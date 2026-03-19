@@ -69,8 +69,13 @@ help:
 	@echo ""
 	@echo "Database:"
 	@echo "  make db                - Show database overview"
+	@echo "  make db-stats          - Show database statistics"
+	@echo "  make db-analytics      - Trading analytics (DAYS=30)"
+	@echo "  make db-backtests      - List recent backtest runs (LIMIT=10)"
 	@echo "  make db-export         - Export data to JSON"
 	@echo "  make db-export-csv     - Export data to CSV"
+	@echo "  make db-encrypt-setup  - Generate and store encryption key in 1Password"
+	@echo "  make db-encrypt-status - Check if database encryption is active"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
@@ -497,4 +502,4 @@ db-encrypt-setup:
 	@uv run python -c "from src.utils.db_encryption import setup_database_encryption; setup_database_encryption()"
 
 db-encrypt-status:
-	@uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled())"
+	@uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled)"

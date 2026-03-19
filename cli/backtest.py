@@ -130,10 +130,8 @@ async def run_backtest(args):
                 symbols=symbols,
                 days=args.days,
                 interval=args.interval,
-                initial_capital=float(initial_capital),
+                initial_capital=initial_capital,
                 results=results_dict,
-                equity_curve_file=str(output_file),
-                trades_file=str(output_file),
             )
             logger.info(f"Backtest run saved to database: ID={run_id}")
 
