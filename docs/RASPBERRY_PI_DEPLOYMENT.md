@@ -48,7 +48,7 @@ echo 'export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...' >> ~/.bashrc
 source ~/.bashrc
 
 # Verify it works
-op account list
+op whoami
 make opstatus
 ```
 
@@ -92,32 +92,13 @@ sudo systemctl status revolut-trader
 
 ______________________________________________________________________
 
-## Fallback — Interactive sign-in (personal accounts without service accounts)
-
-If a service account is not available, sign in manually before each run:
-
-```bash
-eval $(op signin) && make run-paper
-```
-
-The session stays active for 30 minutes. For longer runs, renew it in a new terminal:
-
-```bash
-eval $(op signin)
-```
-
-______________________________________________________________________
-
 ## Troubleshooting
 
 **`1Password is required but not available`**
-The CLI is not authenticated. Set `OP_SERVICE_ACCOUNT_TOKEN` or run `eval $(op signin)`.
+The CLI is not authenticated. Set `OP_SERVICE_ACCOUNT_TOKEN` and run `op whoami` to verify.
 
 **`op: command not found`**
 Install the ARM64 CLI package (see Prerequisites above).
 
 **Architecture mismatch**
 Run `uname -m` — it must return `aarch64`. If it returns `armv7l`, reinstall with a 64-bit OS.
-
-**Session expires mid-run**
-Switch to a service account (no expiry) or restart the bot after `eval $(op signin)`.

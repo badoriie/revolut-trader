@@ -70,7 +70,7 @@ class TradingBot:
             logger.error(
                 "✗ 1Password is required but not available!\n"
                 "  Install 1Password CLI: brew install --cask 1password-cli\n"
-                "  Sign in: eval $(op signin)"
+                "  Authenticate:         export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx..."
             )
             # Will fail when trying to initialize API client
 

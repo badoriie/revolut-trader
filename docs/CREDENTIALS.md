@@ -2,15 +2,11 @@
 
 ## 1Password Required
 
-This trading bot uses **1Password exclusively** for credential storage. There is no `.env` file support.
+This trading bot uses **1Password exclusively** for credential storage.
+There is no `.env` file support. All credentials are fetched at runtime via the
+1Password CLI authenticated with a service account token.
 
-### Why 1Password Only?
-
-- **Security**: Encrypted credential storage
-- **Auditability**: Track who accesses credentials
-- **No local storage**: Credentials never written to disk
-- **Team sharing**: Secure credential sharing across team members
-- **Compliance**: Meet security requirements for financial applications
+______________________________________________________________________
 
 ## Quick Start
 
@@ -20,203 +16,121 @@ This trading bot uses **1Password exclusively** for credential storage. There is
 # macOS
 brew install --cask 1password-cli
 
-# Verify installation
+# Linux / Raspberry Pi (ARM64)
+curl -sS https://downloads.1password.com/linux/debian/arm64/stable/1password-cli-arm64-latest.deb -o op.deb
+sudo dpkg -i op.deb && rm op.deb
+
 op --version
 ```
 
-### 2. Sign In
+### 2. Set Service Account Token
 
 ```bash
-eval $(op signin)
+export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...
 
 # Verify
-op account list
+op whoami
 ```
+
+Add to `~/.zshrc` (macOS) or `~/.bashrc` (Linux/Pi) for persistence.
 
 ### 3. Setup Credentials
 
 ```bash
-# Run setup wizard (creates vault and item)
-make ops
-
-# Follow prompts to enter your credentials:
-# - REVOLUT_API_KEY
-# - REVOLUT_PRIVATE_KEY (PEM content)
-# - TELEGRAM_BOT_TOKEN
-# - TELEGRAM_CHAT_ID
-# - TRADING_MODE
+make ops   # creates vault + item, prompts for your Revolut API key
 ```
 
 ### 4. Verify
 
 ```bash
-# Check status
-make opstatus
-
-# Show credentials (masked)
-make opshow
+make opstatus   # check authentication and vault status
+make opshow     # show stored values (masked)
 ```
 
 ### 5. Run Bot
 
 ```bash
-# Bot automatically retrieves credentials from 1Password
 make run-paper
 ```
 
+______________________________________________________________________
+
 ## Commands
 
-| Command         | Description                           |
-| --------------- | ------------------------------------- |
-| `make ops`      | Setup 1Password and store credentials |
-| `make opshow`   | Show stored credentials (masked)      |
-| `make opstatus` | Check 1Password connection status     |
-| `make opdelete` | Delete credentials from 1Password     |
+| Command         | Description                                |
+| --------------- | ------------------------------------------ |
+| `make ops`      | Store API key and Telegram credentials     |
+| `make opshow`   | Show stored credentials (masked)           |
+| `make opstatus` | Check 1Password status                     |
+| `make opdelete` | Delete credentials (requires confirmation) |
 
-## How It Works
+______________________________________________________________________
 
-1. **No .env File**: The bot reads credentials directly from 1Password at runtime
-1. **Private Key**: Retrieved from 1Password field `REVOLUT_PRIVATE_KEY` (never touches disk)
-1. **API Key**: Retrieved from field `REVOLUT_API_KEY`
-1. **Telegram**: Retrieved from `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+## Stored Fields
 
-## Configuration
+| Field                     | Item                         | Required       |
+| ------------------------- | ---------------------------- | -------------- |
+| `REVOLUT_API_KEY`         | `revolut-trader-credentials` | Yes            |
+| `REVOLUT_PRIVATE_KEY`     | `revolut-trader-credentials` | Yes            |
+| `TELEGRAM_BOT_TOKEN`      | `revolut-trader-credentials` | No             |
+| `TELEGRAM_CHAT_ID`        | `revolut-trader-credentials` | No             |
+| `DATABASE_ENCRYPTION_KEY` | `revolut-trader-credentials` | Auto-generated |
 
-### Default Vault and Item
-
-- **Vault**: `revolut-trader`
-- **Item**: `revolut-trader-credentials`
-
-### Custom Names
-
-Set environment variables before running commands:
-
-```bash
-export OP_VAULT_NAME="my-custom-vault"
-export OP_ITEM_NAME="my-credentials"
-
-make ops
-```
+______________________________________________________________________
 
 ## Troubleshooting
 
-### 1Password CLI Not Found
+**`1Password not authenticated`**
 
 ```bash
-# Install it
-brew install --cask 1password-cli
+export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...
+op whoami   # should print your service account name
 ```
 
-### Not Signed In
+**`op: command not found`**
+Install the CLI (see step 1 above).
+
+**Credentials not found**
 
 ```bash
-# Sign in
-eval $(op signin)
-
-# Check
-op account list
+make opstatus   # diagnose
+make ops        # re-run setup
 ```
 
-### Credentials Not Found
+**Bot fails with "1Password required"**
 
-```bash
-# Run setup again
-make ops
+1. Verify token is set: `echo $OP_SERVICE_ACCOUNT_TOKEN`
+1. Verify CLI works: `op whoami`
+1. Verify credentials exist: `make opstatus`
 
-# Or check status
-make opstatus
-```
-
-### Bot Can't Start
-
-If bot fails with "1Password required" error:
-
-1. Check 1Password CLI is installed: `op --version`
-1. Check you're signed in: `op account list`
-1. Check credentials exist: `make opstatus`
-1. Re-run setup if needed: `make ops`
+______________________________________________________________________
 
 ## Security Best Practices
 
 ### ✅ DO
 
 - Use 1Password for ALL credentials
-- Store private key in 1Password
-- Keep 1Password CLI updated
-- Use secure vault passwords
-- Enable 2FA on 1Password account
+- Keep `OP_SERVICE_ACCOUNT_TOKEN` in your shell profile (not in code)
+- Rotate the service account token periodically
+- Grant the service account only the minimum required vault permissions
 
 ### ❌ DON'T
 
 - Create `.env` files (not supported)
-- Store credentials in code
+- Store credentials in code or config files
 - Commit secrets to git
-- Share credentials via email/Slack
-- Keep local copies of private keys
+- Share the service account token in plaintext messages
 
-## Team Collaboration
+______________________________________________________________________
 
-### Sharing Credentials
-
-1. Create shared vault in 1Password
-1. Store credentials in shared vault
-1. Team members can access via their 1Password accounts
+## Rotating Credentials
 
 ```bash
-# Team lead stores credentials
-export OP_VAULT_NAME="team-revolut-bot"
-make ops
-
-# Team members can access automatically
-# (if they have permission to the vault)
-make run-paper
-```
-
-## Migration from .env
-
-If you previously used `.env` files:
-
-### Option 1: Manual Entry
-
-```bash
-# Run setup and enter values manually
-make ops
-```
-
-### Option 2: Import from Existing .env
-
-```bash
-# If you still have .env file, values can be copied manually
-# DO NOT commit .env file to git
-# Delete .env file after importing to 1Password
-```
-
-## FAQ
-
-**Q: Can I use .env files?**
-A: No. 1Password is required for security.
-
-**Q: What if 1Password is down?**
-A: The bot cannot start without 1Password. This is intentional for security.
-
-**Q: Can I run locally without 1Password?**
-A: No. Install 1Password CLI even for local development.
-
-**Q: How do I rotate credentials?**
-A: Update values in 1Password, bot will use new values on next run.
-
-```bash
-# Update specific field
+# Update API key
 op item edit revolut-trader-credentials \
   --vault revolut-trader \
-  REVOLUT_API_KEY[concealed]=new-api-key-here
+  REVOLUT_API_KEY[concealed]="new-api-key"
+
+# Verify update
+make opshow
 ```
-
-**Q: Can CI/CD access credentials?**
-A: Yes, use 1Password Service Accounts for automated access.
-
-## Support
-
-- Setup issues: Run `make opstatus` to diagnose
-- 1Password CLI docs: https://developer.1password.com/docs/cli/
-- Service Accounts: https://developer.1password.com/docs/service-accounts/

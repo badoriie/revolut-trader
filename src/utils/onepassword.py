@@ -1,25 +1,26 @@
 """1Password integration - the single source for all credentials and configuration.
 
-All credentials and configuration are fetched exclusively from 1Password.
-No defaults, no environment variable fallbacks, no alternative code paths.
+All credentials and configuration are fetched exclusively from 1Password via a
+service account (``OP_SERVICE_ACCOUNT_TOKEN`` environment variable).
 
-Session token caching
----------------------
-``_VaultCache`` calls ``op signin --raw`` once to obtain a 30-minute session
-token and passes it via ``--session`` to every subsequent ``op`` command.
-This means the biometric prompt (Touch ID / Face ID) appears **at most once
-per 29-minute window** regardless of how many credentials are fetched.
+Authentication
+--------------
+Set ``OP_SERVICE_ACCOUNT_TOKEN`` before running the bot or any CLI command::
+
+    export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...
+
+The ``op`` CLI picks up the token automatically — no interactive sign-in,
+no biometric prompts, no session expiry to manage.
 
 Public API:
     get(key)          - required field; raises RuntimeError if missing
     get_optional(key) - optional field; returns None if missing
-    is_available()    - True if 1Password CLI is installed and signed in
+    is_available()    - True if 1Password CLI is installed and authenticated
     set_credential(item, field, value) - store a value (used for setup only)
     invalidate_cache()  - force refresh on next access
 """
 
 import json
-import os
 import subprocess
 import time
 from threading import Lock
@@ -30,35 +31,19 @@ VAULT = "revolut-trader"
 CREDENTIALS_ITEM = "revolut-trader-credentials"
 CONFIG_ITEM = "revolut-trader-config"
 
-# Session token is valid for 30 minutes in 1Password.
-# We refresh at 29 minutes to avoid using an expired token.
-_SESSION_TTL = 1740  # seconds (29 minutes)
-
-# Vault cache TTL matches the session token lifetime so a single sign-in
-# covers the entire cache window.
 _CACHE_TTL = 1740  # seconds (29 minutes)
 
 
-def _fetch_item_fields(item_name: str, session_token: str | None = None) -> dict[str, str]:
+def _fetch_item_fields(item_name: str) -> dict[str, str]:
     """Fetch all fields from a 1Password item as a flat ``{label: value}`` dict.
 
     Args:
         item_name: Name of the item in the vault.
-        session_token: Optional session token to avoid biometric re-prompt.
 
     Returns:
         Dict of field labels to values; empty dict on any failure.
     """
-    output = _run_op(
-        "item",
-        "get",
-        item_name,
-        "--vault",
-        VAULT,
-        "--format",
-        "json",
-        session_token=session_token,
-    )
+    output = _run_op("item", "get", item_name, "--vault", VAULT, "--format", "json")
     if not output:
         logger.warning(f"1Password item '{item_name}' not found or empty")
         return {}
@@ -74,24 +59,20 @@ def _fetch_item_fields(item_name: str, session_token: str | None = None) -> dict
         return {}
 
 
-def _run_op(*args: str, timeout: int = 10, session_token: str | None = None) -> str | None:
+def _run_op(*args: str, timeout: int = 10) -> str | None:
     """Execute an ``op`` CLI command.
 
-    Passes ``--session <token>`` when a session token is available so that
-    no additional biometric prompts are required.
+    Authentication is handled automatically via the ``OP_SERVICE_ACCOUNT_TOKEN``
+    environment variable — no ``--session`` flag is required.
 
     Args:
         *args: Arguments forwarded to the ``op`` CLI.
         timeout: Subprocess timeout in seconds.
-        session_token: Optional 1Password session token from ``op signin --raw``.
 
     Returns:
         stdout on success, ``None`` on any failure.
     """
-    cmd = ["op"]
-    if session_token:
-        cmd += ["--session", session_token]
-    cmd += list(args)
+    cmd = ["op", *args]
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
@@ -105,19 +86,11 @@ def _run_op(*args: str, timeout: int = 10, session_token: str | None = None) -> 
 class _VaultCache:
     """Single in-memory cache for all 1Password values (credentials + config).
 
-    Sign-in strategy
-    ~~~~~~~~~~~~~~~~
-    On the first access (or after the session token expires), calls
-    ``op signin --raw`` to obtain a fresh 30-minute session token.  All
-    subsequent ``op item get / edit`` calls receive this token via
-    ``--session``, so the biometric prompt is shown **at most once per
-    29-minute window**.
+    Batch-fetches both vault items (credentials + config) on first access and
+    merges them into one flat dict.  Cache TTL is 29 minutes.
 
-    Vault data strategy
-    ~~~~~~~~~~~~~~~~~~~
-    Batch-fetches both items (credentials + config) in a single refresh cycle
-    and merges them into one flat dict.  Cache TTL matches the session token
-    lifetime (29 minutes).
+    Authentication is handled entirely by the ``OP_SERVICE_ACCOUNT_TOKEN``
+    environment variable — no session token management is needed.
     """
 
     def __init__(self) -> None:
@@ -125,91 +98,24 @@ class _VaultCache:
         self._cache_time: float | None = None
         self._lock = Lock()
         self._signed_in: bool | None = None
-        self._session_token: str | None = None
-        self._session_time: float | None = None
-
-    # ------------------------------------------------------------------
-    # Session token management
-    # ------------------------------------------------------------------
-
-    def _session_is_fresh(self) -> bool:
-        """Return True if the cached session token is still valid."""
-        return (
-            self._session_token is not None
-            and self._session_time is not None
-            and (time.time() - self._session_time) < _SESSION_TTL
-        )
-
-    def _ensure_session(self) -> str | None:
-        """Return a valid session token, or None when app integration is active.
-
-        With 1Password 8 desktop app integration (macOS), the app authenticates
-        every ``op`` command silently — no session token is required and calling
-        ``op signin --raw`` would trigger an unnecessary account-chooser dialog.
-
-        Strategy:
-          1. Return the cached token if it is still fresh.
-          2. If ``op account list`` succeeds without a token, the desktop app is
-             handling auth → return ``None`` (commands work without a token).
-          3. Otherwise fall back to ``op signin --raw`` for non-GUI environments
-             (CI/CD, remote servers) where explicit sign-in is required.
-
-        Returns:
-            Session token string, or ``None`` if app integration is active or
-            sign-in is unavailable.
-        """
-        if self._session_is_fresh():
-            return self._session_token
-
-        # Service account: OP_SERVICE_ACCOUNT_TOKEN in env handles auth automatically.
-        if os.environ.get("OP_SERVICE_ACCOUNT_TOKEN"):
-            logger.debug("1Password service account active — no session token needed")
-            return None
-
-        # Desktop app integration (macOS): op whoami succeeds without signin.
-        if _run_op("whoami", timeout=5) is not None:
-            logger.debug("1Password app integration active — no session token needed")
-            return None
-
-        # Non-GUI fallback (CI/CD, servers without app): obtain a token via op signin.
-        token = _run_op("signin", "--raw", timeout=60)
-        if token and token.strip():
-            self._session_token = token.strip()
-            self._session_time = time.time()
-            logger.debug("1Password session token obtained (valid for 29 minutes)")
-            return self._session_token
-
-        return None
-
-    # ------------------------------------------------------------------
-    # Availability check
-    # ------------------------------------------------------------------
 
     def is_available(self) -> bool:
-        """Check if the 1Password CLI is installed and the user is signed in.
+        """Check if the 1Password CLI is installed and authenticated.
 
-        Supports both regular accounts (desktop app / session token) and
-        service accounts (``OP_SERVICE_ACCOUNT_TOKEN`` env var).  Uses
-        ``op whoami`` which works in all authentication modes.
-
-        Result is cached for the lifetime of the process — the CLI either
-        exists or it doesn't.
+        Uses ``op whoami`` which validates the service account token.
+        Result is cached for the lifetime of the process.
         """
         if self._signed_in is None:
             if _run_op("--version", timeout=5) is None:
                 self._signed_in = False
             else:
-                # op whoami works for regular accounts and service accounts
                 self._signed_in = _run_op("whoami", timeout=5) is not None
                 if not self._signed_in:
                     logger.warning(
-                        "1Password CLI installed but not signed in. Run: eval $(op signin)"
+                        "1Password CLI installed but not authenticated. "
+                        "Set OP_SERVICE_ACCOUNT_TOKEN and try again."
                     )
         return self._signed_in
-
-    # ------------------------------------------------------------------
-    # Cache management
-    # ------------------------------------------------------------------
 
     def _is_stale(self) -> bool:
         return (
@@ -219,19 +125,17 @@ class _VaultCache:
         )
 
     def _refresh(self) -> None:
-        """Sign in (if needed) then batch-fetch all fields from both items."""
+        """Batch-fetch all fields from both vault items."""
         if not self.is_available():
             raise RuntimeError(
                 "1Password is required but not available.\n"
                 "1. Install: brew install --cask 1password-cli\n"
-                "2. Sign in: eval $(op signin)\n"
-                "3. Setup credentials: make ops"
+                "2. Set:     export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...\n"
+                "3. Setup:   make ops"
             )
 
-        token = self._ensure_session()
-
-        credentials = _fetch_item_fields(CREDENTIALS_ITEM, token)
-        config = _fetch_item_fields(CONFIG_ITEM, token)
+        credentials = _fetch_item_fields(CREDENTIALS_ITEM)
+        config = _fetch_item_fields(CONFIG_ITEM)
         merged = {**credentials, **config}
 
         if not merged:
@@ -243,10 +147,6 @@ class _VaultCache:
         self._cache = merged
         self._cache_time = time.time()
         logger.info(f"1Password cache refreshed: {len(merged)} fields loaded")
-
-    # ------------------------------------------------------------------
-    # Public accessors
-    # ------------------------------------------------------------------
 
     def get(self, key: str) -> str:
         """Get a required value; raises ``RuntimeError`` if missing."""
@@ -273,28 +173,20 @@ class _VaultCache:
             return None
 
     def set_credential(self, item_name: str, field_name: str, value: str) -> bool:
-        """Store a concealed value in a 1Password item using the cached session token."""
-        token = self._ensure_session()
+        """Store a concealed value in a 1Password item."""
         result = _run_op(
-            "item",
-            "edit",
-            item_name,
-            "--vault",
-            VAULT,
-            f"{field_name}[concealed]={value}",
-            session_token=token,
+            "item", "edit", item_name, "--vault", VAULT, f"{field_name}[concealed]={value}"
         )
         if result is not None:
             with self._lock:
-                self._cache[field_name] = value  # Update cache in-place
-                # No need to invalidate — we just wrote the value we know
+                self._cache[field_name] = value
             logger.info(f"Stored '{field_name}' in 1Password item '{item_name}'")
             return True
         logger.warning(f"Failed to store '{field_name}' in 1Password item '{item_name}'")
         return False
 
     def invalidate(self) -> None:
-        """Force cache refresh on next access (does not invalidate session token)."""
+        """Force cache refresh on next access."""
         with self._lock:
             self._cache_time = None
         logger.debug("1Password cache invalidated")
@@ -335,7 +227,7 @@ def get_optional(key: str) -> str | None:
 
 
 def is_available() -> bool:
-    """Check if 1Password CLI is installed and the user is signed in."""
+    """Check if 1Password CLI is installed and authenticated via service account."""
     return _vault.is_available()
 
 
@@ -354,9 +246,5 @@ def set_credential(item_name: str, field_name: str, value: str) -> bool:
 
 
 def invalidate_cache() -> None:
-    """Force vault cache refresh on next access.
-
-    Does not invalidate the session token — the biometric prompt will not
-    reappear unless the token has also expired.
-    """
+    """Force vault cache refresh on next access."""
     _vault.invalidate()
