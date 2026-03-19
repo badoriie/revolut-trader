@@ -1,5 +1,4 @@
 from enum import Enum
-from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -100,7 +99,6 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO")
-    log_file: Path = Field(default=Path("./logs/trading.log"))
 
     # Paper Trading (populated in model_post_init from 1Password INITIAL_CAPITAL)
     paper_initial_capital: float = Field(default=10000.0, ge=1.0)

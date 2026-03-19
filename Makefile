@@ -19,7 +19,7 @@ help:
 	@echo "  make setup             - First-time project setup"
 	@echo "  make install           - Install/update dependencies"
 	@echo "  make clean             - Remove cache files and artifacts"
-	@echo "  make deep-clean        - Remove ALL generated files (data, logs, venv)"
+	@echo "  make deep-clean        - Remove ALL generated files (data, venv)"
 	@echo ""
 	@echo "Credentials & Configuration (1Password vault: $(OP_VAULT)):"
 	@echo "  make ops               - Set API credentials interactively"
@@ -154,8 +154,8 @@ setup:
 	fi
 	@echo ""
 	@echo "Creating directories..."
-	@mkdir -p logs data
-	@echo "  logs/ data/ created"
+	@mkdir -p data
+	@echo "  data/ created"
 	@echo ""
 	@echo "Installing dependencies..."
 	@uv sync --extra dev
@@ -188,7 +188,7 @@ clean:
 	@echo "Clean complete"
 
 deep-clean:
-	@echo "WARNING: This will delete ALL generated files including database, logs, backups, and venv."
+	@echo "WARNING: This will delete ALL generated files including database, backups, and venv."
 	@read -p "Type 'YES' to confirm: " confirm && [ "$$confirm" = "YES" ] || (echo "Cancelled" && exit 1)
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
@@ -198,7 +198,7 @@ deep-clean:
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf data logs results backups .venv .uv 2>/dev/null || true
+	@rm -rf data results backups .venv .uv 2>/dev/null || true
 	@echo "Deep clean complete. Run 'make install' to reinstall dependencies."
 
 # ============================================================================
@@ -324,13 +324,11 @@ run-live:
 	@uv run python cli/run.py --mode live --strategy market_making --risk conservative
 
 backtest:
-	@mkdir -p results
 	@STRATEGY=$${STRATEGY:-market_making}; \
 	DAYS=$${DAYS:-30}; \
-	OUTPUT=./results/backtest_$$(date +%Y%m%d_%H%M%S).json; \
 	echo "Strategy: $$STRATEGY | Days: $$DAYS"; \
-	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS --output $$OUTPUT \
-		&& echo "Backtest complete: $$OUTPUT" \
+	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS \
+		&& echo "Backtest complete — results saved to database (make db-backtests)" \
 		|| echo "Backtest failed - check logs above"
 
 # ============================================================================
@@ -435,18 +433,10 @@ check: lint format typecheck test
 # ============================================================================
 
 logs:
-	@if [ -d "logs" ] && [ "$$(ls -A logs 2>/dev/null)" ]; then \
-		tail -n 50 logs/$$(ls -t logs | head -1); \
-	else \
-		echo "No logs found. Run the bot first."; \
-	fi
+	@echo "Logs are stored in the encrypted database. Use: make db-stats"
 
 logs-follow:
-	@if [ -d "logs" ] && [ "$$(ls -A logs 2>/dev/null)" ]; then \
-		tail -f logs/$$(ls -t logs | head -1); \
-	else \
-		echo "No logs found. Run the bot first."; \
-	fi
+	@echo "Logs are stored in the encrypted database. Use: make db-stats"
 
 # ============================================================================
 # Backup & Restore
@@ -457,7 +447,6 @@ backup:
 	@BACKUP_NAME=backup_$$(date +%Y%m%d_%H%M%S); \
 	mkdir -p backups/$$BACKUP_NAME; \
 	[ -d "data" ] && cp -r data backups/$$BACKUP_NAME/ || true; \
-	[ -d "logs" ] && cp -r logs backups/$$BACKUP_NAME/ || true; \
 	echo "Backup created: backups/$$BACKUP_NAME"
 
 restore:
