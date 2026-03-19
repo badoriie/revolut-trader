@@ -1,6 +1,8 @@
 """Unit tests for DatabaseEncryption.
 
-Tests both the disabled (no key) and enabled (with Fernet key) paths.
+Encryption is always active — there is no "disabled" state.
+If 1Password is unavailable or the stored key is invalid, a RuntimeError
+is raised rather than silently falling back to plaintext.
 """
 
 from unittest.mock import MagicMock, patch
@@ -14,43 +16,44 @@ from src.utils.db_encryption import (
     setup_database_encryption,
 )
 
+# ---------------------------------------------------------------------------
+# Auto-key-generation (no key in 1Password yet)
+# ---------------------------------------------------------------------------
 
-class TestDatabaseEncryptionDisabled:
-    """When no encryption key is available, all data is passed through unchanged."""
+
+class TestDatabaseEncryptionAutoGenerate:
+    """When no key exists in 1Password, one is generated and stored automatically."""
 
     @pytest.fixture
     def enc(self):
-        # conftest patches get_optional to return None → encryption disabled
+        # conftest mocks get_optional → None, is_available → True,
+        # set_credential → True, so auto-generation succeeds.
         return DatabaseEncryption()
 
-    def test_is_not_enabled(self, enc):
-        assert enc.is_enabled is False
+    def test_is_enabled_after_auto_generate(self, enc):
+        assert enc.is_enabled is True
 
-    def test_encrypt_returns_plaintext(self, enc):
-        assert enc.encrypt("hello") == "hello"
+    def test_encrypt_produces_different_output(self, enc):
+        assert enc.encrypt("hello") != "hello"
+
+    def test_decrypt_restores_plaintext(self, enc):
+        plaintext = "auto-key-test"
+        assert enc.decrypt(enc.encrypt(plaintext)) == plaintext
 
     def test_encrypt_empty_string_passthrough(self, enc):
         assert enc.encrypt("") == ""
 
-    def test_decrypt_returns_plaintext(self, enc):
-        assert enc.decrypt("some_ciphertext") == "some_ciphertext"
-
     def test_decrypt_empty_string_passthrough(self, enc):
         assert enc.decrypt("") == ""
 
-    def test_encrypt_dict_returns_original(self, enc):
-        data = {"secret": "value", "public": "open"}
-        result = enc.encrypt_dict(data, ["secret"])
-        assert result == data
 
-    def test_decrypt_dict_returns_original(self, enc):
-        data = {"secret": "cipher", "public": "open"}
-        result = enc.decrypt_dict(data, ["secret"])
-        assert result == data
+# ---------------------------------------------------------------------------
+# Enabled (existing valid key in 1Password)
+# ---------------------------------------------------------------------------
 
 
 class TestDatabaseEncryptionEnabled:
-    """When a valid Fernet key is available, data is encrypted/decrypted correctly."""
+    """When a valid Fernet key is present in 1Password, encryption works correctly."""
 
     @pytest.fixture
     def valid_key(self):
@@ -134,11 +137,29 @@ class TestDatabaseEncryptionEnabled:
         result = enc.decrypt("data")
         assert result == "data"
 
-    def test_initialization_failure_disables_encryption(self):
-        """If Fernet init fails with a bad key, encryption is disabled."""
+
+# ---------------------------------------------------------------------------
+# Error cases
+# ---------------------------------------------------------------------------
+
+
+class TestDatabaseEncryptionErrors:
+    def test_raises_when_op_unavailable(self):
+        import src.utils.db_encryption as enc_module
+
+        with patch.object(enc_module.op, "is_available", return_value=False):
+            with pytest.raises(RuntimeError, match="1Password CLI is required"):
+                DatabaseEncryption()
+
+    def test_raises_when_stored_key_is_invalid(self):
         with patch("src.utils.onepassword.get_optional", return_value="not-a-valid-fernet-key"):
-            enc = DatabaseEncryption()
-        assert enc.is_enabled is False
+            with pytest.raises(RuntimeError, match="DATABASE_ENCRYPTION_KEY.*invalid"):
+                DatabaseEncryption()
+
+
+# ---------------------------------------------------------------------------
+# Key generation
+# ---------------------------------------------------------------------------
 
 
 class TestGenerateEncryptionKey:
@@ -148,12 +169,15 @@ class TestGenerateEncryptionKey:
 
     def test_generated_key_is_valid_fernet_key(self):
         key = generate_encryption_key()
-        Fernet(key.encode())  # Raises if invalid
+        Fernet(key.encode())  # raises if invalid
 
     def test_each_call_produces_unique_key(self):
-        key1 = generate_encryption_key()
-        key2 = generate_encryption_key()
-        assert key1 != key2
+        assert generate_encryption_key() != generate_encryption_key()
+
+
+# ---------------------------------------------------------------------------
+# setup_database_encryption()
+# ---------------------------------------------------------------------------
 
 
 class TestSetupDatabaseEncryption:
@@ -172,7 +196,7 @@ class TestSetupDatabaseEncryption:
                 with patch.object(enc_module.op, "set_credential", return_value=True):
                     key = setup_database_encryption()
         assert len(key) > 0
-        Fernet(key.encode())  # Valid Fernet key
+        Fernet(key.encode())  # valid Fernet key
 
     def test_returns_existing_key_when_user_declines_regeneration(self):
         import src.utils.db_encryption as enc_module
@@ -194,4 +218,4 @@ class TestSetupDatabaseEncryption:
                     with patch.object(enc_module.op, "set_credential", return_value=True):
                         result = setup_database_encryption()
         assert result != existing
-        Fernet(result.encode())  # Still a valid key
+        Fernet(result.encode())  # still a valid key

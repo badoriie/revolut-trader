@@ -26,8 +26,12 @@ def _mock_get_optional(key: str) -> str | None:
 
 _patcher_get = patch("src.utils.onepassword.get", side_effect=_mock_get)
 _patcher_get_optional = patch("src.utils.onepassword.get_optional", side_effect=_mock_get_optional)
+_patcher_is_available = patch("src.utils.onepassword.is_available", return_value=True)
+_patcher_set_credential = patch("src.utils.onepassword.set_credential", return_value=True)
 _patcher_get.start()
 _patcher_get_optional.start()
+_patcher_is_available.start()
+_patcher_set_credential.start()
 
 # Import AFTER patching to prevent Settings() init failure.
 from src.config import RiskLevel  # noqa: E402

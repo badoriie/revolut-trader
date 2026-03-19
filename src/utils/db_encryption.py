@@ -21,20 +21,34 @@ class DatabaseEncryption:
         self._initialize_encryption()
 
     def _initialize_encryption(self) -> None:
-        """Initialize encryption cipher with key from 1Password."""
+        """Initialize encryption cipher with key from 1Password.
+
+        If no key exists yet, one is generated and stored automatically so
+        that encryption is always active.  Raises ``RuntimeError`` if
+        1Password is unavailable, because running without encryption is not
+        allowed.
+        """
+        if not op.is_available():
+            raise RuntimeError(
+                "1Password CLI is required for database encryption. "
+                "Install it with: brew install --cask 1password-cli"
+            )
+
+        encryption_key = op.get_optional("DATABASE_ENCRYPTION_KEY")
+        if not encryption_key:
+            logger.info("No DATABASE_ENCRYPTION_KEY found — generating one now...")
+            encryption_key = generate_encryption_key()
+            op.set_credential(CREDENTIALS_ITEM, "DATABASE_ENCRYPTION_KEY", encryption_key)
+            logger.info("✓ New encryption key generated and stored in 1Password")
+
         try:
-            encryption_key = op.get_optional("DATABASE_ENCRYPTION_KEY")
-            if not encryption_key:
-                logger.warning("No DATABASE_ENCRYPTION_KEY in 1Password — encryption disabled")
-                return
-
             self._cipher = Fernet(encryption_key.encode())
-            logger.info("✓ Database encryption initialized (1Password key)")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize database encryption: {e}")
-            logger.warning("Database encryption is disabled (plaintext storage)")
-            self._cipher = None
+        except Exception as exc:
+            raise RuntimeError(
+                "DATABASE_ENCRYPTION_KEY in 1Password is invalid. "
+                "Run 'make db-encrypt-setup' to regenerate it."
+            ) from exc
+        logger.info("✓ Database encryption initialised (1Password key)")
 
     @property
     def is_enabled(self) -> bool:
