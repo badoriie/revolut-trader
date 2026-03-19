@@ -300,9 +300,11 @@ class TestRunTradingLoop:
 
         call_count = 0
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
             nonlocal call_count
             call_count += 1
+            for c in coros:
+                c.close()
             raise KeyboardInterrupt
 
         with patch("src.bot.asyncio.gather", side_effect=fake_gather):
@@ -324,9 +326,11 @@ class TestRunTradingLoop:
 
         call_count = 0
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
             nonlocal call_count
             call_count += 1
+            for c in coros:
+                c.close()
             if call_count == 1:
                 raise httpx.TimeoutException("timeout")
             bot.is_running = False
@@ -354,7 +358,9 @@ class TestRunTradingLoop:
         response = MagicMock()
         response.status_code = 401
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
             raise httpx.HTTPStatusError("401", request=MagicMock(), response=response)
 
         with patch("src.bot.asyncio.gather", side_effect=fake_gather):
@@ -378,9 +384,11 @@ class TestRunTradingLoop:
         response.status_code = 429
         call_count = 0
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
             nonlocal call_count
             call_count += 1
+            for c in coros:
+                c.close()
             if call_count == 1:
                 raise httpx.HTTPStatusError("429", request=MagicMock(), response=response)
             bot.is_running = False
@@ -409,9 +417,11 @@ class TestRunTradingLoop:
         response.status_code = 503
         call_count = 0
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
             nonlocal call_count
             call_count += 1
+            for c in coros:
+                c.close()
             if call_count == 1:
                 raise httpx.HTTPStatusError("503", request=MagicMock(), response=response)
             bot.is_running = False
@@ -438,9 +448,11 @@ class TestRunTradingLoop:
 
         call_count = 0
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
             nonlocal call_count
             call_count += 1
+            for c in coros:
+                c.close()
             if call_count == 1:
                 raise ValueError("bad data")
             bot.is_running = False
@@ -465,7 +477,9 @@ class TestRunTradingLoop:
         bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
         bot.strategy = MomentumStrategy()
 
-        async def fake_gather(*args, **kwargs):
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
             raise RuntimeError("critical failure")
 
         with patch("src.bot.asyncio.gather", side_effect=fake_gather):

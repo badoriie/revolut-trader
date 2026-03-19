@@ -1,5 +1,6 @@
 """Shared pytest fixtures and configuration for all tests."""
 
+import subprocess as _subprocess
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import patch
@@ -24,14 +25,35 @@ def _mock_get_optional(key: str) -> str | None:
     return _MOCK_VAULT.get(key)
 
 
+_real_subprocess_run = _subprocess.run
+
+
+def _block_op_subprocess(*args, **kwargs):
+    """Return a failed result for any real `op` CLI call during tests.
+
+    The 1Password CLI must never be invoked during tests — it triggers GUI
+    account choosers on macOS with 1Password 8 app integration.
+
+    TestRunOp tests use ``with patch("subprocess.run") as mock_run:`` which
+    stacks on top of this global patch and takes precedence inside the block,
+    so those tests continue to work correctly against the real ``_run_op``.
+    """
+    cmd = args[0] if args else kwargs.get("args", [])
+    if isinstance(cmd, list) and cmd and cmd[0] == "op":
+        return _subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="")
+    return _real_subprocess_run(*args, **kwargs)
+
+
 _patcher_get = patch("src.utils.onepassword.get", side_effect=_mock_get)
 _patcher_get_optional = patch("src.utils.onepassword.get_optional", side_effect=_mock_get_optional)
 _patcher_is_available = patch("src.utils.onepassword.is_available", return_value=True)
 _patcher_set_credential = patch("src.utils.onepassword.set_credential", return_value=True)
+_patcher_subprocess = patch("subprocess.run", side_effect=_block_op_subprocess)
 _patcher_get.start()
 _patcher_get_optional.start()
 _patcher_is_available.start()
 _patcher_set_credential.start()
+_patcher_subprocess.start()
 
 # Import AFTER patching to prevent Settings() init failure.
 from src.config import RiskLevel  # noqa: E402

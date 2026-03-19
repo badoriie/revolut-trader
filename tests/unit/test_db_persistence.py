@@ -44,7 +44,9 @@ def db_persistence(tmp_path, monkeypatch):
     monkeypatch.setattr("src.utils.db_persistence.create_db_engine", lambda: test_engine)
     from src.utils.db_persistence import DatabasePersistence
 
-    return DatabasePersistence()
+    db = DatabasePersistence()
+    yield db
+    db.engine.dispose()
 
 
 class TestSaveLoadPortfolioSnapshots:
