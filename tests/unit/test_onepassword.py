@@ -125,7 +125,7 @@ class TestVaultCacheIsAvailable:
         from src.utils.onepassword import _VaultCache
 
         cache = _VaultCache()
-        with patch("src.utils.onepassword._run_op", side_effect=["1.28.0", "accounts"]):
+        with patch("src.utils.onepassword._run_op", side_effect=["1.28.0", "user@example.com"]):
             assert cache.is_available() is True
 
     def test_returns_false_when_not_signed_in(self):
@@ -134,7 +134,7 @@ class TestVaultCacheIsAvailable:
         cache = _VaultCache()
         with patch(
             "src.utils.onepassword._run_op",
-            side_effect=["1.28.0", None],  # version ok, but no accounts
+            side_effect=["1.28.0", None],  # version ok, but whoami failed
         ):
             assert cache.is_available() is False
 
@@ -234,6 +234,42 @@ class TestVaultCacheGetOptional:
         cache = _VaultCache()
         with patch.object(cache, "is_available", return_value=False):
             assert cache.get_optional("key") is None
+
+
+class TestEnsureSession:
+    def test_returns_none_when_service_account_token_set(self):
+        import os
+
+        from src.utils.onepassword import _VaultCache
+
+        cache = _VaultCache()
+        with patch.dict(os.environ, {"OP_SERVICE_ACCOUNT_TOKEN": "ops_fake"}):
+            assert cache._ensure_session() is None
+
+    def test_returns_none_when_whoami_succeeds(self):
+        from src.utils.onepassword import _VaultCache
+
+        cache = _VaultCache()
+        with patch("src.utils.onepassword._run_op", return_value="user@example.com"):
+            assert cache._ensure_session() is None
+
+    def test_falls_back_to_signin_when_whoami_fails(self):
+        from src.utils.onepassword import _VaultCache
+
+        cache = _VaultCache()
+        # whoami fails, signin --raw returns a token
+        with patch("src.utils.onepassword._run_op", side_effect=[None, "raw-token"]):
+            result = cache._ensure_session()
+        assert result == "raw-token"
+        assert cache._session_token == "raw-token"
+
+    def test_returns_cached_token_when_fresh(self):
+        from src.utils.onepassword import _VaultCache
+
+        cache = _VaultCache()
+        cache._session_token = "cached-token"
+        cache._session_time = time.time()
+        assert cache._ensure_session() == "cached-token"
 
 
 class TestVaultCacheSetCredential:
