@@ -2,12 +2,11 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.data.models import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
+from src.models.domain import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
 
 
 def make_snapshot() -> PortfolioSnapshot:
@@ -177,7 +176,7 @@ class TestLoadTradeHistory:
     def test_loads_from_json_when_from_backup(self, hybrid):
         h, _, json_mock = hybrid
         json_mock.load_trade_history.return_value = [{"symbol": "ETH-EUR"}]
-        results = h.load_trade_history(from_backup=True)
+        h.load_trade_history(from_backup=True)
         json_mock.load_trade_history.assert_called_once()
 
     def test_passes_filters_to_db(self, hybrid):
@@ -212,8 +211,14 @@ class TestExportToCsv:
     def test_export_creates_csv_files(self, hybrid, tmp_path):
         h, db, _ = hybrid
         db.load_trade_history.return_value = [
-            {"symbol": "BTC-EUR", "side": "BUY", "quantity": "0.1",
-             "price": "50000", "status": "FILLED", "created_at": "2024-01-01T00:00:00"}
+            {
+                "symbol": "BTC-EUR",
+                "side": "BUY",
+                "quantity": "0.1",
+                "price": "50000",
+                "status": "FILLED",
+                "created_at": "2024-01-01T00:00:00",
+            }
         ]
         db.load_portfolio_snapshots.return_value = [
             {"timestamp": "2024-01-01T00:00:00", "total_value": "10000"}

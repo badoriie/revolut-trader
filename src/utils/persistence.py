@@ -8,7 +8,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.data.models import Order, PortfolioSnapshot
+from src.models.domain import Order, PortfolioSnapshot
 
 
 class DataPersistence:

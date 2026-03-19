@@ -23,7 +23,7 @@ from pydantic import ValidationError
 
 import src.utils.onepassword as op
 from src.config import REVOLUT_API_BASE_URL, settings
-from src.data.models import CandleResponse, OrderBookResponse
+from src.models.domain import CandleResponse, OrderBookResponse
 from src.utils.rate_limiter import RateLimiter
 
 

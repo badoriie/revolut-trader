@@ -23,7 +23,7 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.config import RiskLevel, StrategyType
-from src.data.models import (
+from src.models.domain import (
     CandleData,
     MarketData,
     Order,

@@ -3,7 +3,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.data.models import MarketData, OrderSide, Position, Signal
+from src.models.domain import MarketData, OrderSide, Position, Signal
 from src.strategies.base_strategy import BaseStrategy
 from src.utils.indicators import EMA, RSI
 

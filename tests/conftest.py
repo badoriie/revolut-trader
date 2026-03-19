@@ -31,7 +31,7 @@ _patcher_get_optional.start()
 
 # Import AFTER patching to prevent Settings() init failure.
 from src.config import RiskLevel  # noqa: E402
-from src.data.models import MarketData, OrderSide, Position  # noqa: E402
+from src.models.domain import MarketData, OrderSide, Position  # noqa: E402
 from src.risk_management.risk_manager import RiskManager  # noqa: E402
 
 # ============================================================================

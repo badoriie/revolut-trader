@@ -8,7 +8,7 @@ import pytest
 
 from src.backtest.engine import TAKER_FEE_PCT, BacktestEngine, BacktestResults
 from src.config import RiskLevel, StrategyType
-from src.data.models import CandleData, OrderSide
+from src.models.domain import CandleData, OrderSide
 
 
 def make_candle(

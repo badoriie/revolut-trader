@@ -4,18 +4,14 @@ Covers the uncovered property accessors in BalanceData and CandleData,
 plus Position helper methods.
 """
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
-import pytest
-
-from src.data.models import (
+from src.models.domain import (
     BalanceData,
     CandleData,
     OrderSide,
     Position,
 )
-
 
 # ---------------------------------------------------------------------------
 # BalanceData
@@ -52,14 +48,14 @@ class TestCandleData:
     """Tests for CandleData property accessors."""
 
     def _make_candle(self, **overrides) -> CandleData:
-        defaults = dict(
-            start=1_700_000_000,
-            open="50000",
-            high="51000",
-            low="49000",
-            close="50500",
-            volume="1.5",
-        )
+        defaults = {
+            "start": 1_700_000_000,
+            "open": "50000",
+            "high": "51000",
+            "low": "49000",
+            "close": "50500",
+            "volume": "1.5",
+        }
         defaults.update(overrides)
         return CandleData(**defaults)
 

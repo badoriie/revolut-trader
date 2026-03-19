@@ -9,12 +9,11 @@ from decimal import Decimal
 
 import pytest
 
-from src.data.models import MarketData, OrderSide, Position, Signal
+from src.models.domain import MarketData, OrderSide, Position, Signal
 from src.strategies.market_making import MarketMakingStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -124,9 +123,7 @@ class TestMomentumStrategy:
     @pytest.mark.asyncio
     async def test_buy_signal_on_strongly_rising_prices(self):
         """Oscillating uptrend keeps RSI moderate while fast EMA rises above slow EMA → BUY."""
-        strategy = MomentumStrategy(
-            fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0
-        )
+        strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0)
         portfolio_value = Decimal("10000")
         # Oscillating uptrend: losses interspersed prevent RSI from hitting 100
         prices = [50000, 51000, 49500, 51500, 50500, 52000, 51000, 53000]
@@ -146,9 +143,7 @@ class TestMomentumStrategy:
     @pytest.mark.asyncio
     async def test_sell_signal_on_strongly_falling_prices(self):
         """Oscillating downtrend keeps RSI moderate while fast EMA falls below slow EMA → SELL."""
-        strategy = MomentumStrategy(
-            fast_period=3, slow_period=5, rsi_period=3, rsi_oversold=10.0
-        )
+        strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_oversold=10.0)
         portfolio_value = Decimal("10000")
         # Oscillating downtrend: gains interspersed prevent RSI from hitting 0
         prices = [50000, 49000, 50500, 48500, 49500, 48000, 49000, 47000]
@@ -165,9 +160,7 @@ class TestMomentumStrategy:
     @pytest.mark.asyncio
     async def test_rsi_overbought_exit_closes_long(self):
         """RSI overbought should close an existing long position."""
-        strategy = MomentumStrategy(
-            fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=55.0
-        )
+        strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=55.0)
         portfolio_value = Decimal("10000")
         long_position = make_position(side=OrderSide.BUY)
         result = None
@@ -182,9 +175,7 @@ class TestMomentumStrategy:
     @pytest.mark.asyncio
     async def test_rsi_oversold_exit_closes_short(self):
         """RSI oversold should close an existing short position."""
-        strategy = MomentumStrategy(
-            fast_period=3, slow_period=5, rsi_period=3, rsi_oversold=45.0
-        )
+        strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_oversold=45.0)
         portfolio_value = Decimal("10000")
         short_position = make_position(side=OrderSide.SELL)
         result = None
@@ -198,9 +189,7 @@ class TestMomentumStrategy:
     @pytest.mark.asyncio
     async def test_signal_metadata_contains_indicators(self):
         """Signal metadata should include EMA and RSI values."""
-        strategy = MomentumStrategy(
-            fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0
-        )
+        strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0)
         portfolio_value = Decimal("10000")
         result = None
         for i in range(15):
@@ -249,9 +238,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_buy_signal_when_price_below_lower_band(self):
         """Price crash below lower Bollinger Band → BUY."""
-        strategy = MeanReversionStrategy(
-            lookback_period=10, num_std_dev=1.0, min_deviation=0.005
-        )
+        strategy = MeanReversionStrategy(lookback_period=10, num_std_dev=1.0, min_deviation=0.005)
         portfolio_value = Decimal("10000")
         # Establish stable mean at 50 000
         for _ in range(10):
@@ -268,9 +255,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_sell_signal_when_price_above_upper_band(self):
         """Price spike above upper Bollinger Band → SELL."""
-        strategy = MeanReversionStrategy(
-            lookback_period=10, num_std_dev=1.0, min_deviation=0.005
-        )
+        strategy = MeanReversionStrategy(lookback_period=10, num_std_dev=1.0, min_deviation=0.005)
         portfolio_value = Decimal("10000")
         for _ in range(10):
             md = make_market_data(last=Decimal("50000"))
@@ -283,9 +268,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_exit_long_when_price_returns_to_mean(self):
         """Existing long position is closed when price returns to mean."""
-        strategy = MeanReversionStrategy(
-            lookback_period=5, num_std_dev=2.0, min_deviation=0.01
-        )
+        strategy = MeanReversionStrategy(lookback_period=5, num_std_dev=2.0, min_deviation=0.01)
         portfolio_value = Decimal("10000")
         long_position = make_position(side=OrderSide.BUY, entry_price=Decimal("48000"))
         # Fill history with stable prices
@@ -301,9 +284,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_exit_short_when_price_returns_to_mean(self):
         """Existing short position is closed when price returns to mean."""
-        strategy = MeanReversionStrategy(
-            lookback_period=5, num_std_dev=2.0, min_deviation=0.01
-        )
+        strategy = MeanReversionStrategy(lookback_period=5, num_std_dev=2.0, min_deviation=0.01)
         portfolio_value = Decimal("10000")
         short_position = make_position(side=OrderSide.SELL, entry_price=Decimal("52000"))
         for _ in range(5):
@@ -318,9 +299,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_no_signal_when_price_within_bands(self):
         """Price within bands, no position → None."""
-        strategy = MeanReversionStrategy(
-            lookback_period=5, num_std_dev=3.0, min_deviation=0.5
-        )
+        strategy = MeanReversionStrategy(lookback_period=5, num_std_dev=3.0, min_deviation=0.5)
         portfolio_value = Decimal("10000")
         for _ in range(5):
             md = make_market_data(last=Decimal("50000"))
@@ -332,9 +311,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_signal_metadata_contains_band_values(self):
         """Signal metadata should contain Bollinger Band statistics."""
-        strategy = MeanReversionStrategy(
-            lookback_period=10, num_std_dev=1.0, min_deviation=0.005
-        )
+        strategy = MeanReversionStrategy(lookback_period=10, num_std_dev=1.0, min_deviation=0.005)
         portfolio_value = Decimal("10000")
         for _ in range(10):
             md = make_market_data(last=Decimal("50000"))
@@ -350,9 +327,7 @@ class TestMeanReversionStrategy:
     @pytest.mark.asyncio
     async def test_does_not_buy_when_long_already_and_below_band(self):
         """Should not open another long when already long and below lower band."""
-        strategy = MeanReversionStrategy(
-            lookback_period=10, num_std_dev=1.0, min_deviation=0.005
-        )
+        strategy = MeanReversionStrategy(lookback_period=10, num_std_dev=1.0, min_deviation=0.005)
         portfolio_value = Decimal("10000")
         long_position = make_position(side=OrderSide.BUY)
         for _ in range(10):
@@ -511,9 +486,7 @@ class TestMultiStrategy:
         """Wide spread + low min_consensus → consensus BUY signal propagated."""
         strategy = MultiStrategy(min_consensus=0.1)
         # Very wide spread so MarketMaking fires immediately
-        md = make_market_data(
-            bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000")
-        )
+        md = make_market_data(bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000"))
         result = await strategy.analyze("BTC-EUR", md, [], Decimal("10000"))
         assert result is not None
         assert result.signal_type == "BUY"
@@ -525,9 +498,7 @@ class TestMultiStrategy:
     async def test_returns_none_when_consensus_below_threshold(self):
         """Score below min_consensus → None."""
         strategy = MultiStrategy(min_consensus=0.99)
-        md = make_market_data(
-            bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000")
-        )
+        md = make_market_data(bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000"))
         result = await strategy.analyze("BTC-EUR", md, [], Decimal("10000"))
         assert result is None
 
@@ -549,9 +520,7 @@ class TestMultiStrategy:
         # Large long position → MarketMaking signals SELL
         position = make_position(side=OrderSide.BUY, quantity=Decimal("100.0"))
         # Wide spread so market making fires
-        md = make_market_data(
-            bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000")
-        )
+        md = make_market_data(bid=Decimal("45000"), ask=Decimal("55000"), last=Decimal("50000"))
         result = await strategy.analyze("BTC-EUR", md, [position], Decimal("10000"))
         assert result is not None
         assert result.signal_type == "SELL"
@@ -564,13 +533,21 @@ class TestMultiStrategy:
 
         strategy = MultiStrategy(min_consensus=0.0)
         buy_sig = Signal(
-            symbol="BTC-EUR", strategy="s1", signal_type="BUY",
-            strength=1.0, price=Decimal("50000"), reason="r",
+            symbol="BTC-EUR",
+            strategy="s1",
+            signal_type="BUY",
+            strength=1.0,
+            price=Decimal("50000"),
+            reason="r",
             timestamp=datetime.now(UTC),
         )
         sell_sig = Signal(
-            symbol="BTC-EUR", strategy="s2", signal_type="SELL",
-            strength=1.0, price=Decimal("50000"), reason="r",
+            symbol="BTC-EUR",
+            strategy="s2",
+            signal_type="SELL",
+            strength=1.0,
+            price=Decimal("50000"),
+            reason="r",
             timestamp=datetime.now(UTC),
         )
         strategy.strategies["market_making"].analyze = AsyncMock(return_value=buy_sig)

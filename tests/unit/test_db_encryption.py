@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from cryptography.fernet import Fernet
 
-from src.utils.db_encryption import DatabaseEncryption, generate_encryption_key, setup_database_encryption
+from src.utils.db_encryption import (
+    DatabaseEncryption,
+    generate_encryption_key,
+    setup_database_encryption,
+)
 
 
 class TestDatabaseEncryptionDisabled:

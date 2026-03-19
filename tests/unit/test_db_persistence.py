@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine
 
-from src.data.models import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
+from src.models.domain import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
 
 
 def make_snapshot(total_value: float = 10000.0) -> PortfolioSnapshot:
@@ -150,8 +150,11 @@ class TestSessionManagement:
 
     def test_end_session_updates_record(self, db_persistence):
         sid = db_persistence.create_session(
-            strategy="m", risk_level="c", trading_mode="p",
-            trading_pairs=["BTC-EUR"], initial_balance=Decimal("10000"),
+            strategy="m",
+            risk_level="c",
+            trading_mode="p",
+            trading_pairs=["BTC-EUR"],
+            initial_balance=Decimal("10000"),
         )
         db_persistence.end_session(
             session_id=sid,
@@ -162,8 +165,10 @@ class TestSessionManagement:
 
     def test_end_nonexistent_session_is_noop(self, db_persistence):
         db_persistence.end_session(
-            session_id=9999, final_balance=Decimal("100"),
-            total_pnl=Decimal("0"), total_trades=0,
+            session_id=9999,
+            final_balance=Decimal("100"),
+            total_pnl=Decimal("0"),
+            total_trades=0,
         )
 
 
@@ -212,13 +217,18 @@ class TestBacktestRuns:
 
     def test_get_backtest_analytics_with_data(self, db_persistence):
         results = {
-            "final_capital": 11000.0, "total_pnl": 1000.0, "return_pct": 10.0,
-            "total_trades": 5, "winning_trades": 3, "losing_trades": 2,
-            "win_rate": 60.0, "profit_factor": 2.0, "max_drawdown": 200.0, "sharpe_ratio": 1.5,
+            "final_capital": 11000.0,
+            "total_pnl": 1000.0,
+            "return_pct": 10.0,
+            "total_trades": 5,
+            "winning_trades": 3,
+            "losing_trades": 2,
+            "win_rate": 60.0,
+            "profit_factor": 2.0,
+            "max_drawdown": 200.0,
+            "sharpe_ratio": 1.5,
         }
-        db_persistence.save_backtest_run(
-            "m", "c", ["BTC-EUR"], 30, "60m", 10000.0, results
-        )
+        db_persistence.save_backtest_run("m", "c", ["BTC-EUR"], 30, "60m", 10000.0, results)
         analytics = db_persistence.get_backtest_analytics()
         assert analytics.get("total_runs", 0) == 1
 

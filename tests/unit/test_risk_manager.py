@@ -15,7 +15,7 @@ expected values. Test edge cases and boundary conditions.
 from decimal import Decimal
 
 from src.config import RiskLevel
-from src.data.models import OrderSide
+from src.models.domain import OrderSide
 from src.risk_management.risk_manager import RiskManager
 
 
