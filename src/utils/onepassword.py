@@ -19,6 +19,7 @@ Public API:
 """
 
 import json
+import os
 import subprocess
 import time
 from threading import Lock
@@ -140,18 +141,37 @@ class _VaultCache:
         )
 
     def _ensure_session(self) -> str | None:
-        """Return a valid session token, signing in if necessary.
+        """Return a valid session token, or None when app integration is active.
 
-        ``op signin --raw`` is called at most once per ``_SESSION_TTL`` window.
-        With 1Password app CLI integration the biometric prompt appears in the
-        app (Touch ID / Face ID) rather than blocking the terminal.
+        With 1Password 8 desktop app integration (macOS), the app authenticates
+        every ``op`` command silently — no session token is required and calling
+        ``op signin --raw`` would trigger an unnecessary account-chooser dialog.
+
+        Strategy:
+          1. Return the cached token if it is still fresh.
+          2. If ``op account list`` succeeds without a token, the desktop app is
+             handling auth → return ``None`` (commands work without a token).
+          3. Otherwise fall back to ``op signin --raw`` for non-GUI environments
+             (CI/CD, remote servers) where explicit sign-in is required.
 
         Returns:
-            Session token string, or ``None`` if sign-in is unavailable.
+            Session token string, or ``None`` if app integration is active or
+            sign-in is unavailable.
         """
         if self._session_is_fresh():
             return self._session_token
 
+        # Service account: OP_SERVICE_ACCOUNT_TOKEN in env handles auth automatically.
+        if os.environ.get("OP_SERVICE_ACCOUNT_TOKEN"):
+            logger.debug("1Password service account active — no session token needed")
+            return None
+
+        # Desktop app integration (macOS): op whoami succeeds without signin.
+        if _run_op("whoami", timeout=5) is not None:
+            logger.debug("1Password app integration active — no session token needed")
+            return None
+
+        # Non-GUI fallback (CI/CD, servers without app): obtain a token via op signin.
         token = _run_op("signin", "--raw", timeout=60)
         if token and token.strip():
             self._session_token = token.strip()
@@ -168,6 +188,10 @@ class _VaultCache:
     def is_available(self) -> bool:
         """Check if the 1Password CLI is installed and the user is signed in.
 
+        Supports both regular accounts (desktop app / session token) and
+        service accounts (``OP_SERVICE_ACCOUNT_TOKEN`` env var).  Uses
+        ``op whoami`` which works in all authentication modes.
+
         Result is cached for the lifetime of the process — the CLI either
         exists or it doesn't.
         """
@@ -175,8 +199,8 @@ class _VaultCache:
             if _run_op("--version", timeout=5) is None:
                 self._signed_in = False
             else:
-                # Use account list (no biometric required) to confirm sign-in
-                self._signed_in = _run_op("account", "list", timeout=5) is not None
+                # op whoami works for regular accounts and service accounts
+                self._signed_in = _run_op("whoami", timeout=5) is not None
                 if not self._signed_in:
                     logger.warning(
                         "1Password CLI installed but not signed in. Run: eval $(op signin)"
