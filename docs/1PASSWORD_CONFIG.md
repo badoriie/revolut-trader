@@ -146,16 +146,16 @@ ______________________________________________________________________
 
 ## Examples
 
-### Example 1: Conservative Paper Trading (Default)
+### Example 1: Conservative Paper Trading (Default Setup)
 
-**No 1Password config needed - uses code defaults:**
+**After `make setup`, 1Password is pre-populated with these defaults:**
 
 ```python
-trading_mode = "paper"
-risk_level = "conservative"
-base_currency = "EUR"
-trading_pairs = ["BTC-EUR", "ETH-EUR"]
-initial_capital = 10000.0
+trading_mode = "paper"  # From 1Password ✓
+risk_level = "conservative"  # From 1Password ✓
+base_currency = "EUR"  # From 1Password ✓
+trading_pairs = ["BTC-EUR", "ETH-EUR"]  # From 1Password ✓
+initial_capital = 10000.0  # From 1Password ✓
 ```
 
 ### Example 2: Live Trading Setup
@@ -194,7 +194,7 @@ make opconfig-set KEY=INITIAL_CAPITAL VALUE=25000
 risk_level = "aggressive"  # From 1Password ✓
 default_strategy = "momentum"  # From 1Password ✓
 initial_capital = 25000.0  # From 1Password ✓
-# All other settings use defaults
+# Other settings remain whatever is stored in 1Password (unchanged)
 ```
 
 ______________________________________________________________________
@@ -212,7 +212,7 @@ The bot logs will show:
 
 ```
 2025-12-29 | INFO | Config loaded: trading_mode=live (from 1Password)
-2025-12-29 | INFO | Config loaded: base_currency=EUR (default)
+2025-12-29 | INFO | Config loaded: base_currency=EUR (from 1Password)
 ```
 
 ### View 1Password config values
@@ -241,8 +241,8 @@ ______________________________________________________________________
 
 - **Don't use concealed fields** for config (use text fields)
 - **Don't set TRADING_MODE=live** without testing first
-- **Don't use invalid values** (they'll be ignored and defaults used)
-- **Don't forget to sign in** to 1Password: `eval $(op signin)`
+- **Don't use invalid values** (the bot will raise a `ValueError` and refuse to start)
+- **Don't forget to set** `OP_SERVICE_ACCOUNT_TOKEN` before running the bot
 
 ______________________________________________________________________
 
@@ -259,9 +259,9 @@ BASE_CURRENCY: Any string (e.g., "EUR", "USD", "GBP")
 TRADING_PAIRS: Comma-separated symbols (e.g., "BTC-EUR,ETH-EUR")
 INITIAL_CAPITAL: Any positive number
 
-# Invalid values are ignored and defaults are used
-TRADING_MODE: "invalid" → Falls back to "paper" ✓
-RISK_LEVEL: "extreme" → Falls back to "conservative" ✓
+# Invalid values cause the bot to fail immediately with a clear error
+TRADING_MODE: "invalid" → ValueError: invalid value for 'trading_mode'
+RISK_LEVEL: "extreme"  → ValueError: invalid value for 'risk_level'
 ```
 
 ______________________________________________________________________
@@ -270,10 +270,10 @@ ______________________________________________________________________
 
 ### Automatic Safeguards
 
-1. **Validation** - Invalid values ignored, defaults used
-1. **Graceful degradation** - If 1Password unavailable, uses defaults
-1. **No errors** - Config loading never crashes the bot
-1. **Logging** - All config sources logged for transparency
+1. **Validation** - Invalid values raise a `ValueError` immediately with a clear message
+1. **Fail fast** - If 1Password is unavailable or a field is missing, the bot refuses to start
+1. **Actionable errors** - Every failure tells you exactly what command to run to fix it
+1. **Logging** - All config values logged on startup for transparency
 
 ### Paper Mode Protection
 
@@ -294,12 +294,12 @@ ______________________________________________________________________
 
 **Solutions:**
 
-1. **Check 1Password sign-in:**
+1. **Check 1Password authentication:**
 
    ```bash
-   op account list
-   # If not signed in:
-   eval $(op signin)
+   op whoami
+   # If not authenticated:
+   export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...
    ```
 
 1. **Verify field names are correct:**
@@ -382,11 +382,11 @@ ______________________________________________________________________
 - Capital amounts
 - Live trading pairs
 
-**Keep in code (defaults):**
+**Do NOT keep in code:**
 
-- Development settings
-- Test configurations
-- Documentation examples
+- No hardcoded defaults for trading settings
+- No `.env` fallbacks
+- Tests use `tests/mocks/mock_onepassword.py` — never real 1Password calls
 
 ______________________________________________________________________
 
@@ -424,11 +424,11 @@ ______________________________________________________________________
 
 ✅ **Auto-initialized** - `make setup` creates config item with safe defaults
 ✅ **Required, not optional** - No accidental use of hardcoded values
+✅ **Fail fast** - Missing or invalid config raises a clear error immediately
 ✅ **Explicit configuration** - All settings visible in 1Password
 ✅ **Separate from credentials** - Clean organization
 ✅ **Secure and centralized** - One source of truth
 ✅ **Environment-specific** - Different configs per machine
-✅ **Safe** - Invalid values ignored, no crashes
-✅ **Transparent** - All sources logged
+✅ **Transparent** - All values logged on startup
 
 **Setup once, modify as needed! 🚀**

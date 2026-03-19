@@ -94,8 +94,8 @@ setup:
 	@echo "  uv: ok"
 	@command -v op >/dev/null 2>&1 || { echo "Error: 1Password CLI not installed. Run: brew install --cask 1password-cli"; exit 1; }
 	@echo "  op: ok"
-	@op account list >/dev/null 2>&1 || { echo "Error: Not signed in to 1Password. Run: eval \$$(op signin)"; exit 1; }
-	@echo "  1Password: signed in"
+	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
+	@echo "  1Password: authenticated"
 	@echo ""
 	@echo "Setting up 1Password vault: $(OP_VAULT)"
 	@op vault get $(OP_VAULT) >/dev/null 2>&1 \
@@ -206,7 +206,7 @@ deep-clean:
 # ============================================================================
 
 ops:
-	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
 	@echo ""
 	@read -p "Revolut API Key: " api_key; \
@@ -218,7 +218,7 @@ ops:
 	@echo "Done. Run 'make opshow' to verify."
 
 opshow:
-	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@echo "=== Credentials ($(OP_CREDS)) ==="
 	@for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
 		value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
@@ -240,9 +240,9 @@ opstatus:
 	@command -v op >/dev/null 2>&1 \
 		&& echo "  CLI installed: $$(op --version)" \
 		|| { echo "  CLI: not installed (brew install --cask 1password-cli)"; exit 0; }
-	@op account list >/dev/null 2>&1 \
-		&& echo "  Signed in:  yes" \
-		|| { echo "  Signed in:  no  (run: eval \$$(op signin))"; exit 0; }
+	@op whoami >/dev/null 2>&1 \
+		&& echo "  Authenticated: yes (service account)" \
+		|| { echo "  Authenticated: no  (set OP_SERVICE_ACCOUNT_TOKEN)"; exit 0; }
 	@op vault get $(OP_VAULT) >/dev/null 2>&1 \
 		&& echo "  Vault:      $(OP_VAULT) (exists)" \
 		|| echo "  Vault:      $(OP_VAULT) (missing — run: make setup)"
@@ -254,14 +254,14 @@ opstatus:
 		|| echo "  Config item:$(OP_CONFIG) (missing — run: make setup)"
 
 opdelete:
-	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@echo "This will delete the credentials item from 1Password."
 	@echo "Vault: $(OP_VAULT)  Item: $(OP_CREDS)"
 	@read -p "Type 'yes' to confirm: " confirm && [ "$$confirm" = "yes" ] || (echo "Cancelled" && exit 1)
 	@op item delete $(OP_CREDS) --vault $(OP_VAULT) && echo "Deleted $(OP_CREDS)"
 
 opconfig-init:
-	@op account list >/dev/null 2>&1 || { echo "Not signed in. Run: eval \$$(op signin)"; exit 1; }
+	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@if op item get $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null 2>&1; then \
 		echo "Config item already exists: $(OP_CONFIG)"; \
 		read -p "Reset to defaults? (y/N): " confirm; \

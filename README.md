@@ -446,7 +446,7 @@ Receive real-time notifications for:
 
 - **1Password Required**: All credentials stored exclusively in 1Password
 - **Zero Disk Footprint**: Private keys never written to disk
-- **Sign In First**: Always run `eval $(op signin)` before using the bot
+- **Service Account**: Set `OP_SERVICE_ACCOUNT_TOKEN` before using the bot
 - **Strong Password**: Use a strong 1Password master password
 - **2FA**: Enable 2FA on your Revolut account
 - **Never Bypass**: Don't create .env files or store keys locally
