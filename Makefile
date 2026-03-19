@@ -155,6 +155,10 @@ setup:
 	@echo "Installing dependencies..."
 	@uv sync --extra dev
 	@echo ""
+	@echo "Installing pre-commit hooks..."
+	@uv run pre-commit install
+	@echo "  Pre-commit hooks installed"
+	@echo ""
 	@echo "=== Setup complete! ==="
 	@echo ""
 	@echo "Next steps:"
