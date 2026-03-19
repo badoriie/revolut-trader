@@ -40,7 +40,7 @@ class TradingBot:
         self.risk_manager: RiskManager | None = None
         self.executor: OrderExecutor | None = None
         self.strategy: BaseStrategy | None = None
-        self.persistence = HybridPersistence()  # Hybrid persistence (SQLite + JSON backup)
+        self.persistence = HybridPersistence()
 
         # Currency display
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
