@@ -1,6 +1,17 @@
-"""Hybrid persistence: SQLite (primary) + JSON backup."""
+"""Persistence facade for the trading bot.
 
-from datetime import UTC, datetime, timedelta
+All data is stored exclusively in the encrypted SQLite database.
+The JSON backup layer has been removed — plaintext JSON files on disk are
+less secure than the application-level encrypted database fields, and
+SQLite with WAL mode is sufficiently reliable for production use.
+
+On-demand exports (CSV / JSON) are available via ``export_to_csv()``.
+"""
+
+from __future__ import annotations
+
+import csv
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -9,20 +20,23 @@ from loguru import logger
 
 from src.models.domain import Order, PortfolioSnapshot
 from src.utils.db_persistence import DatabasePersistence
-from src.utils.persistence import DataPersistence
 
 
 class HybridPersistence:
-    """Hybrid persistence using database (primary) and JSON (backup)."""
+    """Persistence facade backed exclusively by the encrypted SQLite database.
 
-    def __init__(self, backup_enabled: bool = True):
+    Keeps the same public interface as the old hybrid layer so that
+    ``TradingBot`` requires no changes.
+    """
+
+    def __init__(self) -> None:
         self.db = DatabasePersistence()
-        self.json = DataPersistence() if backup_enabled else None
-        self.backup_enabled = backup_enabled
-        self.last_backup = datetime.now(UTC)
         self.current_session_id: int | None = None
+        logger.info("Persistence initialised (encrypted SQLite)")
 
-        logger.info(f"Hybrid persistence initialized (DB + JSON backup: {backup_enabled})")
+    # ---------------------------------------------------------------------------
+    # Session lifecycle
+    # ---------------------------------------------------------------------------
 
     def start_session(
         self,
@@ -32,14 +46,14 @@ class HybridPersistence:
         trading_pairs: list[str],
         initial_balance: Decimal,
     ) -> None:
-        """Start a new trading session.
+        """Create a new trading session record in the database.
 
         Args:
-            strategy: Trading strategy name
-            risk_level: Risk level setting
-            trading_mode: Trading mode (paper/live)
-            trading_pairs: List of trading pairs
-            initial_balance: Starting balance
+            strategy: Strategy name (e.g. ``"momentum"``).
+            risk_level: Risk level label (e.g. ``"moderate"``).
+            trading_mode: Execution mode (``"paper"`` or ``"live"``).
+            trading_pairs: Instruments being traded (encrypted at rest).
+            initial_balance: Starting account balance.
         """
         self.current_session_id = self.db.create_session(
             strategy=strategy,
@@ -48,24 +62,29 @@ class HybridPersistence:
             trading_pairs=trading_pairs,
             initial_balance=initial_balance,
         )
-        logger.info(f"Started trading session: {self.current_session_id}")
+        logger.info(f"Trading session started: {self.current_session_id}")
 
     def end_session(self, final_balance: Decimal, total_pnl: Decimal, total_trades: int) -> None:
-        """End the current trading session.
+        """Close the current trading session and record final metrics.
 
         Args:
-            final_balance: Final account balance
-            total_pnl: Total profit/loss
-            total_trades: Total number of trades executed
+            final_balance: Account balance at shutdown.
+            total_pnl: Net profit/loss for the session.
+            total_trades: Total orders executed.
         """
-        if self.current_session_id:
-            self.db.end_session(
-                session_id=self.current_session_id,
-                final_balance=final_balance,
-                total_pnl=total_pnl,
-                total_trades=total_trades,
-            )
-            logger.info(f"Ended trading session: {self.current_session_id}")
+        if self.current_session_id is None:
+            return
+        self.db.end_session(
+            session_id=self.current_session_id,
+            final_balance=final_balance,
+            total_pnl=total_pnl,
+            total_trades=total_trades,
+        )
+        logger.info(f"Trading session ended: {self.current_session_id}")
+
+    # ---------------------------------------------------------------------------
+    # Portfolio snapshots
+    # ---------------------------------------------------------------------------
 
     def save_portfolio_snapshot(
         self,
@@ -74,212 +93,124 @@ class HybridPersistence:
         risk_level: str,
         trading_mode: str,
     ) -> None:
-        """Save a single portfolio snapshot.
-
-        Primary: Save to database
-        Backup: Trigger daily JSON backup if needed
+        """Persist a single portfolio snapshot to the database.
 
         Args:
-            snapshot: Portfolio snapshot to save
-            strategy: Trading strategy name
-            risk_level: Risk level setting
-            trading_mode: Trading mode
+            snapshot: Snapshot to persist.
+            strategy: Active strategy name.
+            risk_level: Active risk level.
+            trading_mode: Active trading mode.
         """
-        # Primary: Save to database
         self.db.save_portfolio_snapshot(snapshot, strategy, risk_level, trading_mode)
-
-        # Backup: Daily JSON export at midnight
-        if self.backup_enabled and self._should_backup():
-            self._perform_daily_backup(strategy, risk_level, trading_mode)
 
     def save_portfolio_snapshots_bulk(
         self, snapshots: list[PortfolioSnapshot], metadata: dict[str, Any]
     ) -> None:
-        """Save multiple snapshots efficiently.
+        """Persist multiple snapshots in a single database transaction.
 
         Args:
-            snapshots: List of portfolio snapshots
-            metadata: Session metadata
+            snapshots: Snapshots to persist.
+            metadata: Dict with optional keys ``strategy``, ``risk_level``,
+                      ``trading_mode``.
         """
         if not snapshots:
             return
-
-        # Primary: Bulk save to database
         self.db.save_portfolio_snapshots_bulk(snapshots, metadata)
 
-        # Backup: Also save to JSON for portability
-        if self.backup_enabled and self.json:
-            self.json.save_portfolio_snapshots(snapshots)
-
     def load_portfolio_snapshots(
-        self, since: datetime | None = None, limit: int = 1000, from_backup: bool = False
+        self, since: datetime | None = None, limit: int = 1000
     ) -> list[dict[str, Any]]:
-        """Load portfolio snapshots.
+        """Load portfolio snapshots from the database in chronological order.
 
         Args:
-            since: Load snapshots since this datetime
-            limit: Maximum number to load
-            from_backup: Load from JSON backup instead of database
+            since: Inclusive UTC lower bound on timestamp.
+            limit: Maximum rows to return.
 
         Returns:
-            List of snapshot dictionaries
+            List of snapshot dicts.
         """
-        if from_backup and self.json:
-            logger.info("Loading snapshots from JSON backup")
-            return [
-                {
-                    "timestamp": s.timestamp.isoformat(),
-                    "total_value": str(s.total_value),
-                    "cash_balance": str(s.cash_balance),
-                    "positions_value": str(s.positions_value),
-                    "unrealized_pnl": str(s.unrealized_pnl),
-                    "realized_pnl": str(s.realized_pnl),
-                    "total_pnl": str(s.total_pnl),
-                    "daily_pnl": str(s.daily_pnl),
-                    "num_positions": s.num_positions,
-                }
-                for s in self.json.load_portfolio_snapshots()
-            ]
-
-        # Primary: Load from database
         return self.db.load_portfolio_snapshots(since, limit)
 
-    def save_trade(self, order: Order) -> None:
-        """Save a completed trade.
+    # ---------------------------------------------------------------------------
+    # Trades
+    # ---------------------------------------------------------------------------
 
-        Primary: Save to database
-        Backup: Also append to JSON trade history
+    def save_trade(self, order: Order) -> None:
+        """Persist a completed order as a trade record.
 
         Args:
-            order: Completed order to save
+            order: Filled or cancelled order to persist.
         """
-        # Primary: Save to database
         self.db.save_trade(order)
-
-        # Backup: Also save to JSON
-        if self.backup_enabled and self.json:
-            self.json.save_trade(order)
 
     def load_trade_history(
         self,
         since: datetime | None = None,
         symbol: str | None = None,
         limit: int = 1000,
-        from_backup: bool = False,
     ) -> list[dict[str, Any]]:
-        """Load trade history.
+        """Load trade history from the database in chronological order.
 
         Args:
-            since: Load trades since this datetime
-            symbol: Filter by symbol
-            limit: Maximum number to load
-            from_backup: Load from JSON backup instead of database
+            since: Inclusive UTC lower bound on ``created_at``.
+            symbol: Optional exact-match symbol filter.
+            limit: Maximum rows to return.
 
         Returns:
-            List of trade dictionaries
+            List of trade dicts.
         """
-        if from_backup and self.json:
-            logger.info("Loading trades from JSON backup")
-            return self.json.load_trade_history()
-
-        # Primary: Load from database
         return self.db.load_trade_history(since, symbol, limit)
 
+    # ---------------------------------------------------------------------------
+    # Analytics
+    # ---------------------------------------------------------------------------
+
     def get_analytics(self, days: int = 30) -> dict[str, Any]:
-        """Get trading analytics from database.
+        """Compute rolling trading analytics over the last *days* calendar days.
 
         Args:
-            days: Number of days to analyze
+            days: Look-back window in calendar days.
 
         Returns:
-            Dictionary with analytics data
+            Analytics dict from the database layer.
         """
         return self.db.get_analytics(days)
 
-    def _should_backup(self) -> bool:
-        """Check if daily backup should be performed.
-
-        Returns:
-            True if a day has passed since last backup
-        """
-        now = datetime.now(UTC)
-        time_since_backup = now - self.last_backup
-        return time_since_backup > timedelta(days=1)
-
-    def _perform_daily_backup(self, strategy: str, risk_level: str, trading_mode: str) -> None:
-        """Perform daily JSON backup of database data.
-
-        Args:
-            strategy: Current strategy
-            risk_level: Current risk level
-            trading_mode: Current trading mode
-        """
-        try:
-            if not self.json:
-                return
-
-            # Backup last 7 days of snapshots
-            since = datetime.now(UTC) - timedelta(days=7)
-            snapshots_data = self.db.load_portfolio_snapshots(since=since, limit=10000)
-
-            # Convert back to PortfolioSnapshot objects for JSON persistence
-            snapshots = [
-                PortfolioSnapshot(
-                    timestamp=datetime.fromisoformat(s["timestamp"]),
-                    total_value=Decimal(s["total_value"]),
-                    cash_balance=Decimal(s["cash_balance"]),
-                    positions_value=Decimal(s["positions_value"]),
-                    unrealized_pnl=Decimal(s["unrealized_pnl"]),
-                    realized_pnl=Decimal(s["realized_pnl"]),
-                    total_pnl=Decimal(s["total_pnl"]),
-                    daily_pnl=Decimal(s["daily_pnl"]),
-                    num_positions=s["num_positions"],
-                )
-                for s in snapshots_data
-            ]
-
-            self.json.save_portfolio_snapshots(snapshots)
-
-            self.last_backup = datetime.now(UTC)
-            logger.info(f"Daily backup completed: {len(snapshots)} snapshots saved to JSON")
-
-        except Exception as e:
-            logger.error(f"Failed to perform daily backup: {e}")
+    # ---------------------------------------------------------------------------
+    # Export
+    # ---------------------------------------------------------------------------
 
     def export_to_csv(self, output_dir: Path = Path("data/exports")) -> None:
-        """Export trading data to CSV files for analysis.
+        """Export all trades and portfolio snapshots to dated CSV files.
+
+        The export reads directly from the database, so no separate backup
+        file is needed.  Files are written to *output_dir* and named with
+        today's date (``trades_YYYYMMDD.csv``, ``snapshots_YYYYMMDD.csv``).
 
         Args:
-            output_dir: Directory to save CSV exports
+            output_dir: Directory to write CSV files into (created if absent).
         """
         output_dir.mkdir(parents=True, exist_ok=True)
+        today = datetime.now(UTC).strftime("%Y%m%d")
 
         try:
-            import csv
-
-            # Export trades
-            trades = self.db.load_trade_history(limit=100000)
-            trades_file = output_dir / f"trades_{datetime.now(UTC).strftime('%Y%m%d')}.csv"
-
+            trades = self.db.load_trade_history(limit=100_000)
+            trades_file = output_dir / f"trades_{today}.csv"
             with open(trades_file, "w", newline="") as f:
                 if trades:
                     writer = csv.DictWriter(f, fieldnames=trades[0].keys())
                     writer.writeheader()
                     writer.writerows(trades)
+            logger.info(f"Exported {len(trades)} trades → {trades_file}")
 
-            logger.info(f"Exported {len(trades)} trades to {trades_file}")
-
-            # Export snapshots
-            snapshots = self.db.load_portfolio_snapshots(limit=100000)
-            snapshots_file = output_dir / f"snapshots_{datetime.now(UTC).strftime('%Y%m%d')}.csv"
-
+            snapshots = self.db.load_portfolio_snapshots(limit=100_000)
+            snapshots_file = output_dir / f"snapshots_{today}.csv"
             with open(snapshots_file, "w", newline="") as f:
                 if snapshots:
                     writer = csv.DictWriter(f, fieldnames=snapshots[0].keys())
                     writer.writeheader()
                     writer.writerows(snapshots)
-
-            logger.info(f"Exported {len(snapshots)} snapshots to {snapshots_file}")
+            logger.info(f"Exported {len(snapshots)} snapshots → {snapshots_file}")
 
         except Exception as e:
-            logger.error(f"Failed to export to CSV: {e}")
+            logger.error(f"CSV export failed: {e}")
