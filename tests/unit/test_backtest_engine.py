@@ -6,9 +6,40 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.backtest.engine import BacktestEngine, BacktestResults
+from src.backtest.engine import TAKER_FEE_PCT, BacktestEngine, BacktestResults
 from src.config import RiskLevel, StrategyType
-from src.data.models import OrderSide
+from src.data.models import CandleData, OrderSide
+
+
+def make_candle(
+    start: int = 1_700_000_000_000,
+    close: str = "50000",
+    high: str = "51000",
+    low: str = "49000",
+    open_: str = "50000",
+    volume: str = "10",
+) -> CandleData:
+    """Helper: build a CandleData with sensible defaults."""
+    return CandleData(start=start, open=open_, high=high, low=low, close=close, volume=volume)
+
+
+def make_candle_dict(
+    start: int = 1_700_000_000_000,
+    close: str = "50000",
+    high: str = "51000",
+    low: str = "49000",
+    open_: str = "50000",
+    volume: str = "10",
+) -> dict:
+    """Helper: build a raw candle dict (as returned by get_candles)."""
+    return {
+        "start": start,
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": volume,
+    }
 
 
 @pytest.fixture
@@ -133,33 +164,31 @@ class TestBacktestEngineStrategyCreation:
 
 class TestCandleToMarketData:
     def test_converts_close_to_last(self, engine):
-        candle = {
-            "start": 1_700_000_000_000,
-            "open": "50000",
-            "high": "51000",
-            "low": "49000",
-            "close": "50000",
-            "volume": "100",
-        }
+        candle = make_candle(close="50000", high="51000", low="49000")
         md = engine._candle_to_market_data(candle, "BTC-EUR")
         assert md.symbol == "BTC-EUR"
         assert md.last == Decimal("50000")
 
     def test_bid_below_last_ask_above(self, engine):
-        candle = {"start": 0, "close": "50000", "volume": "10"}
+        candle = make_candle(close="50000")
         md = engine._candle_to_market_data(candle, "BTC-EUR")
         assert md.bid < md.last < md.ask
 
     def test_volume_set(self, engine):
-        candle = {"start": 0, "close": "50000", "volume": "42"}
+        candle = make_candle(close="50000", volume="42")
         md = engine._candle_to_market_data(candle, "BTC-EUR")
         assert md.volume_24h == Decimal("42")
 
-    def test_missing_high_low_defaults_to_close(self, engine):
-        candle = {"start": 0, "close": "50000", "volume": "10"}
+    def test_high_low_mapped_correctly(self, engine):
+        candle = make_candle(close="50000", high="51000", low="49000")
         md = engine._candle_to_market_data(candle, "BTC-EUR")
-        assert md.high_24h == Decimal("50000")
-        assert md.low_24h == Decimal("50000")
+        assert md.high_24h == Decimal("51000")
+        assert md.low_24h == Decimal("49000")
+
+    def test_timestamp_is_utc_aware(self, engine):
+        candle = make_candle(start=1_700_000_000_000)
+        md = engine._candle_to_market_data(candle, "BTC-EUR")
+        assert md.timestamp.tzinfo is not None
 
 
 # ---------------------------------------------------------------------------
@@ -169,12 +198,15 @@ class TestCandleToMarketData:
 
 class TestExecuteBacktestOrder:
     def test_buy_succeeds_with_sufficient_funds(self, engine):
-        ok = engine._execute_backtest_order(
-            "BTC-EUR", OrderSide.BUY, Decimal("0.1"), Decimal("50000"), datetime.now(UTC)
-        )
+        qty = Decimal("0.1")
+        price = Decimal("50000")
+        ok = engine._execute_backtest_order("BTC-EUR", OrderSide.BUY, qty, price, datetime.now(UTC))
         assert ok is True
         assert "BTC-EUR" in engine.positions
-        assert engine.cash_balance == Decimal("10000") - Decimal("0.1") * Decimal("50000")
+        order_value = qty * price
+        fee = order_value * TAKER_FEE_PCT
+        expected = Decimal("10000") - order_value - fee
+        assert engine.cash_balance == expected
 
     def test_buy_fails_with_insufficient_funds(self, engine):
         engine.cash_balance = Decimal("100")
@@ -273,14 +305,10 @@ class TestBacktestEngineRun:
     @pytest.mark.asyncio
     async def test_run_with_candle_data_builds_equity_curve(self, engine, mock_api):
         candles = [
-            {
-                "start": 1_700_000_000_000 + i * 60_000,
-                "open": "50000",
-                "high": "51000",
-                "low": "49000",
-                "close": str(50000 + i * 50),
-                "volume": "10",
-            }
+            make_candle_dict(
+                start=1_700_000_000_000 + i * 60_000,
+                close=str(50000 + i * 50),
+            )
             for i in range(30)
         ]
         mock_api.get_candles = AsyncMock(return_value=candles)
@@ -289,14 +317,7 @@ class TestBacktestEngineRun:
 
     @pytest.mark.asyncio
     async def test_run_sets_final_capital(self, engine, mock_api):
-        candles = [
-            {
-                "start": 1_700_000_000_000 + i * 60_000,
-                "close": "50000",
-                "volume": "10",
-            }
-            for i in range(5)
-        ]
+        candles = [make_candle_dict(start=1_700_000_000_000 + i * 60_000) for i in range(5)]
         mock_api.get_candles = AsyncMock(return_value=candles)
         results = await engine.run(["BTC-EUR"], days=1, interval=60)
         assert results.final_capital == engine.cash_balance
@@ -304,8 +325,7 @@ class TestBacktestEngineRun:
     @pytest.mark.asyncio
     async def test_run_closes_open_positions_at_end(self, engine, mock_api):
         """All positions should be closed when backtest ends."""
-        # One buy candle then stop — engine closes leftover positions
-        candles = [{"start": 1_700_000_000_000, "close": "50000", "volume": "10"}]
+        candles = [make_candle_dict(start=1_700_000_000_000)]
         mock_api.get_candles = AsyncMock(return_value=candles)
         await engine.run(["BTC-EUR"], days=1, interval=60)
         assert engine.positions == {}

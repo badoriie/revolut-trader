@@ -1,5 +1,20 @@
-"""Backtesting engine for strategy validation using historical data."""
+"""Backtesting engine for strategy validation using historical OHLCV data.
 
+Simulates realistic execution against Revolut X candle data:
+- Paginated candle fetching (API hard limit: 1 000 candles per request)
+- Bid/ask slippage — buys fill at ask, sells fill at bid
+- Taker fee deduction on every fill (~0.09 % per Revolut X fee schedule)
+- Stop-loss / take-profit levels derived from the active RiskManager
+- SL/TP checked on every bar so open positions exit at the correct candle
+- O(1) candle lookup via pre-indexed dicts (was O(n) per bar)
+- O(1) drawdown tracking via running peak (was O(n) per bar)
+- Annualised Sharpe ratio computed from the equity curve
+"""
+
+from __future__ import annotations
+
+import math
+import statistics
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -8,7 +23,15 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.config import RiskLevel, StrategyType
-from src.data.models import MarketData, OrderSide, Position
+from src.data.models import (
+    CandleData,
+    MarketData,
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+)
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.market_making import MarketMakingStrategy
@@ -16,32 +39,66 @@ from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Revolut X API — only these candle widths (minutes) are accepted
+VALID_INTERVALS: frozenset[int] = frozenset(
+    {1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320}
+)
+
+# API constraint: (until − since) / interval_ms ≤ 1 000 candles per request
+MAX_CANDLES_PER_REQUEST: int = 1000
+
+# Revolut X taker fee (see their published fee schedule)
+TAKER_FEE_PCT: Decimal = Decimal("0.0009")
+
+# Simulated bid/ask half-spread applied to every candle close price (0.3 %)
+# Keeps the spread above the 0.2 % minimum required by MarketMakingStrategy
+SPREAD_PCT: Decimal = Decimal("0.003")
+
+
+# ---------------------------------------------------------------------------
+# Results
+# ---------------------------------------------------------------------------
+
 
 class BacktestResults:
-    """Results from a backtest run."""
+    """Aggregated statistics from a completed backtest run."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.initial_capital: Decimal = Decimal("10000")
         self.final_capital: Decimal = Decimal("10000")
         self.total_trades: int = 0
         self.winning_trades: int = 0
         self.losing_trades: int = 0
         self.total_pnl: Decimal = Decimal("0")
+        self.total_fees: Decimal = Decimal("0")
         self.max_drawdown: Decimal = Decimal("0")
+        self.max_drawdown_pct: float = 0.0
         self.sharpe_ratio: float = 0.0
         self.trades: list[dict[str, Any]] = []
         self.equity_curve: list[tuple[datetime, Decimal]] = []
 
+    # ------------------------------------------------------------------
+    # Computed metrics
+    # ------------------------------------------------------------------
+
     @property
     def win_rate(self) -> float:
-        """Calculate win rate percentage."""
+        """Win rate as a percentage of closed trades."""
         if self.total_trades == 0:
             return 0.0
         return (self.winning_trades / self.total_trades) * 100
 
     @property
     def profit_factor(self) -> float:
-        """Calculate profit factor (gross profit / gross loss)."""
+        """Gross profit divided by gross loss.
+
+        Returns ``inf`` when there are no losing trades and at least one
+        winning trade; returns ``0.0`` when there are no trades at all.
+        """
         gross_profit = sum(t["pnl"] for t in self.trades if t["pnl"] > 0)
         gross_loss = abs(sum(t["pnl"] for t in self.trades if t["pnl"] < 0))
         if gross_loss == 0:
@@ -50,38 +107,100 @@ class BacktestResults:
 
     @property
     def return_pct(self) -> float:
-        """Calculate total return percentage."""
+        """Total return as a percentage of initial capital."""
         if self.initial_capital == 0:
             return 0.0
         return float((self.final_capital - self.initial_capital) / self.initial_capital * 100)
 
-    def print_summary(self):
-        """Print backtest summary."""
-        from src.config import settings
+    # ------------------------------------------------------------------
+    # Sharpe ratio
+    # ------------------------------------------------------------------
 
-        # Get currency symbol
-        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-        base_currency = settings.base_currency
-        symbol = currency_symbols.get(base_currency, base_currency)
+    def compute_sharpe_ratio(self, risk_free_rate: float = 0.0) -> None:
+        """Compute and store the annualised Sharpe ratio from the equity curve.
 
+        Uses per-bar returns and annualises by the estimated number of bars
+        per calendar year based on the equity curve spacing.  Requires at
+        least two data points; silently returns when there are fewer.
+
+        Args:
+            risk_free_rate: Per-bar risk-free rate (default 0.0).
+        """
+        if len(self.equity_curve) < 2:
+            return
+
+        values = [float(v) for _, v in self.equity_curve]
+        returns = [
+            (values[i] - values[i - 1]) / values[i - 1]
+            for i in range(1, len(values))
+            if values[i - 1] != 0
+        ]
+
+        if len(returns) < 2:
+            return
+
+        mean_r = statistics.mean(returns)
+        std_r = statistics.stdev(returns)
+
+        if std_r == 0:
+            return
+
+        # Annualise: √(bars per year) where bars_per_year = 525 960 / bar_minutes
+        delta = self.equity_curve[1][0] - self.equity_curve[0][0]
+        bar_minutes = max(delta.total_seconds() / 60, 1)
+        bars_per_year = 525_960 / bar_minutes  # minutes per calendar year
+
+        self.sharpe_ratio = (mean_r - risk_free_rate) / std_r * math.sqrt(bars_per_year)
+
+    # ------------------------------------------------------------------
+    # Display
+    # ------------------------------------------------------------------
+
+    def print_summary(self, currency_symbol: str = "€") -> None:
+        """Print a formatted summary table to stdout.
+
+        Args:
+            currency_symbol: Display symbol for the base currency (e.g. "€").
+        """
+        sym = currency_symbol
         print("\n" + "=" * 60)
         print("BACKTEST RESULTS")
         print("=" * 60)
-        print(f"Initial Capital:    {symbol}{self.initial_capital:,.2f}")
-        print(f"Final Capital:      {symbol}{self.final_capital:,.2f}")
-        print(f"Total P&L:          {symbol}{self.total_pnl:,.2f}")
+        print(f"Initial Capital:    {sym}{self.initial_capital:,.2f}")
+        print(f"Final Capital:      {sym}{self.final_capital:,.2f}")
+        print(f"Total P&L:          {sym}{self.total_pnl:,.2f}")
+        print(f"Total Fees:         {sym}{self.total_fees:,.2f}")
         print(f"Return:             {self.return_pct:.2f}%")
         print(f"Total Trades:       {self.total_trades}")
         print(f"Winning Trades:     {self.winning_trades}")
         print(f"Losing Trades:      {self.losing_trades}")
         print(f"Win Rate:           {self.win_rate:.2f}%")
         print(f"Profit Factor:      {self.profit_factor:.2f}")
-        print(f"Max Drawdown:       {symbol}{self.max_drawdown:,.2f}")
+        print(
+            f"Max Drawdown:       {sym}{self.max_drawdown:,.2f}" f" ({self.max_drawdown_pct:.2f}%)"
+        )
+        print(f"Sharpe Ratio:       {self.sharpe_ratio:.3f}")
         print("=" * 60 + "\n")
 
 
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
+
+
 class BacktestEngine:
-    """Engine for backtesting trading strategies on historical data."""
+    """Simulate a trading strategy against historical Revolut X candle data.
+
+    Key design decisions
+    --------------------
+    * Candles are fetched in paginated chunks (≤ 1 000 per request) then
+      indexed by start-timestamp for O(1) lookup during simulation.
+    * Each bar checks open positions for SL/TP triggers *before* asking the
+      strategy for a new signal, matching live-trading behaviour.
+    * Execution uses bid/ask spread and deducts a taker fee on every fill so
+      that the simulated P&L is representative of real trading costs.
+    * Drawdown is tracked with a running peak variable — O(1) per bar.
+    """
 
     def __init__(
         self,
@@ -89,25 +208,31 @@ class BacktestEngine:
         strategy_type: StrategyType,
         risk_level: RiskLevel,
         initial_capital: Decimal = Decimal("10000"),
-    ):
+    ) -> None:
         self.api_client = api_client
         self.strategy_type = strategy_type
         self.risk_level = risk_level
         self.initial_capital = initial_capital
 
-        # Initialize components
         self.risk_manager = RiskManager(risk_level=risk_level)
-        self.strategy = self._create_strategy(strategy_type)
+        self.strategy: BaseStrategy = self._create_strategy(strategy_type)
 
-        # Backtest state
-        self.cash_balance = initial_capital
+        # Simulation state
+        self.cash_balance: Decimal = initial_capital
         self.positions: dict[str, Position] = {}
         self.results = BacktestResults()
         self.results.initial_capital = initial_capital
 
+        # Running peak for O(1) drawdown tracking
+        self._equity_peak: Decimal = initial_capital
+
+    # ------------------------------------------------------------------
+    # Strategy factory
+    # ------------------------------------------------------------------
+
     def _create_strategy(self, strategy_type: StrategyType) -> BaseStrategy:
-        """Create strategy instance."""
-        strategies = {
+        """Instantiate the strategy corresponding to *strategy_type*."""
+        strategies: dict[StrategyType, BaseStrategy] = {
             StrategyType.MARKET_MAKING: MarketMakingStrategy(),
             StrategyType.MOMENTUM: MomentumStrategy(),
             StrategyType.MEAN_REVERSION: MeanReversionStrategy(),
@@ -115,57 +240,109 @@ class BacktestEngine:
         }
         return strategies.get(strategy_type, MarketMakingStrategy())
 
+    # ------------------------------------------------------------------
+    # Historical data fetching
+    # ------------------------------------------------------------------
+
     async def fetch_historical_data(
         self,
         symbol: str,
         days: int = 30,
         interval: int = 60,
-    ) -> list[dict[str, Any]]:
-        """Fetch historical candle data.
+    ) -> list[CandleData]:
+        """Fetch historical candles, paginating across the API's 1 000-candle limit.
+
+        The Revolut X API enforces ``(until − since) / interval ≤ 1 000`` per
+        request.  This method transparently splits the window into chunks of
+        exactly ``MAX_CANDLES_PER_REQUEST`` bars, merges the results, and
+        returns them deduplicated and sorted chronologically.
 
         Args:
-            symbol: Trading pair (e.g., "BTC-USD")
-            days: Number of days of history to fetch
-            interval: Candle interval in minutes
+            symbol:   Trading pair (e.g. ``"BTC-EUR"``).
+            days:     Look-back window in calendar days.
+            interval: Candle width in minutes.  Must be one of
+                      ``VALID_INTERVALS`` (1, 5, 15, 30, 60, 240, …).
 
         Returns:
-            List of candle data
-        """
-        # Calculate start timestamp
-        since = int((datetime.now(UTC) - timedelta(days=days)).timestamp() * 1000)
+            Chronologically sorted, deduplicated list of ``CandleData`` objects.
 
-        logger.info(f"Fetching {days} days of historical data for {symbol} ({interval}min candles)")
-        candles = await self.api_client.get_candles(
-            symbol=symbol,
-            interval=interval,
-            since=since,
-            limit=None,  # Get all available
+        Raises:
+            ValueError: If *interval* is not supported by the Revolut X API.
+        """
+        if interval not in VALID_INTERVALS:
+            raise ValueError(
+                f"Unsupported candle interval: {interval} minutes. "
+                f"Must be one of {sorted(VALID_INTERVALS)}."
+            )
+
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        start_ms = int((datetime.now(UTC) - timedelta(days=days)).timestamp() * 1000)
+        interval_ms = interval * 60 * 1000
+        chunk_ms = MAX_CANDLES_PER_REQUEST * interval_ms
+
+        approx_bars = days * 24 * 60 // interval
+        logger.info(
+            f"Fetching {days}d of {symbol} candles "
+            f"({interval}min, ~{approx_bars} bars expected)"
         )
 
-        logger.info(f"Retrieved {len(candles)} candles")
-        return candles
+        all_candles: list[CandleData] = []
+        chunk_start = start_ms
 
-    def _candle_to_market_data(self, candle: dict[str, Any], symbol: str) -> MarketData:
-        """Convert candle data to MarketData object."""
-        close_price = Decimal(str(candle.get("close", 0)))
-        high_price = Decimal(str(candle.get("high", close_price)))
-        low_price = Decimal(str(candle.get("low", close_price)))
-        volume = Decimal(str(candle.get("volume", 0)))
+        while chunk_start < now_ms:
+            chunk_end = min(chunk_start + chunk_ms, now_ms)
+            raw = await self.api_client.get_candles(
+                symbol=symbol,
+                interval=interval,
+                since=chunk_start,
+                until=chunk_end,
+                limit=MAX_CANDLES_PER_REQUEST,
+            )
+            if raw:
+                all_candles.extend(CandleData(**c) for c in raw)
+            chunk_start = chunk_end
 
-        # Estimate bid/ask from close price (use realistic spread of 0.3%)
-        # Market making requires minimum 0.2% spread, so use 0.3% for realistic simulation
-        spread = close_price * Decimal("0.003")
+        # Deduplicate and sort by start timestamp
+        seen: set[int] = set()
+        unique: list[CandleData] = []
+        for candle in sorted(all_candles, key=lambda c: c.start):
+            if candle.start not in seen:
+                seen.add(candle.start)
+                unique.append(candle)
+
+        logger.info(f"Retrieved {len(unique)} unique candles for {symbol}")
+        return unique
+
+    # ------------------------------------------------------------------
+    # Candle → MarketData conversion
+    # ------------------------------------------------------------------
+
+    def _candle_to_market_data(self, candle: CandleData, symbol: str) -> MarketData:
+        """Convert a ``CandleData`` to a ``MarketData`` snapshot.
+
+        The close price is used as the reference price.  A synthetic bid/ask
+        spread of ``SPREAD_PCT`` (0.3 %) is applied symmetrically around the
+        close — realistic for liquid BTC/ETH pairs on Revolut X.
+
+        The timestamp is UTC-aware, matching what the live bot produces.
+        """
+        close = candle.close_price
+        half_spread = close * SPREAD_PCT / 2
 
         return MarketData(
             symbol=symbol,
-            timestamp=datetime.fromtimestamp(int(candle.get("start", 0)) / 1000),
-            bid=close_price - spread / 2,
-            ask=close_price + spread / 2,
-            last=close_price,
-            volume_24h=volume,
-            high_24h=high_price,
-            low_24h=low_price,
+            timestamp=datetime.fromtimestamp(candle.start / 1000, tz=UTC),
+            bid=close - half_spread,
+            ask=close + half_spread,
+            last=close,
+            volume_24h=candle.volume_decimal,
+            high_24h=candle.high_price,
+            low_24h=candle.low_price,
         )
+
+    # ------------------------------------------------------------------
+    # Simulated order execution
+    # ------------------------------------------------------------------
 
     def _execute_backtest_order(
         self,
@@ -174,68 +351,116 @@ class BacktestEngine:
         quantity: Decimal,
         price: Decimal,
         timestamp: datetime,
+        market_data: MarketData | None = None,
     ) -> bool:
-        """Execute a simulated order in backtest.
+        """Simulate a fill with slippage and taker fee.
+
+        Execution price
+        ~~~~~~~~~~~~~~~
+        When *market_data* is available (the normal path), buys fill at the
+        ask and sells fill at the bid.  This models the cost of crossing the
+        spread on a taker order.  When *market_data* is ``None`` (e.g. the
+        end-of-backtest force-close), the supplied *price* is used directly.
+
+        Fee
+        ~~~
+        ``TAKER_FEE_PCT`` (0.09 %) is deducted from cash on every fill and
+        accumulated in ``results.total_fees``.
+
+        Stop-loss / take-profit
+        ~~~~~~~~~~~~~~~~~~~~~~~
+        SL/TP levels are set from ``RiskManager.risk_params`` so they match
+        the live trading configuration for the chosen risk level.
+
+        Args:
+            symbol:      Trading pair.
+            side:        ``BUY`` or ``SELL``.
+            quantity:    Order quantity in base currency units.
+            price:       Reference price (used when *market_data* is None).
+            timestamp:   Bar timestamp recorded in the trade log.
+            market_data: Current bar's bid/ask; enables slippage modelling.
 
         Returns:
-            True if order was executed successfully
+            ``True`` if the order was filled; ``False`` if it was rejected
+            (insufficient funds or no open position to sell).
         """
-        order_value = quantity * price
+        exec_price = (
+            (market_data.ask if side == OrderSide.BUY else market_data.bid)
+            if market_data is not None
+            else price
+        )
+        order_value = quantity * exec_price
+        fee = order_value * TAKER_FEE_PCT
 
         if side == OrderSide.BUY:
-            if self.cash_balance < order_value:
+            total_cost = order_value + fee
+            if self.cash_balance < total_cost:
                 logger.warning(
-                    f"Insufficient funds for BUY: need {order_value:.2f}, have {self.cash_balance:.2f}"
+                    f"Insufficient funds for BUY {symbol}: "
+                    f"need {total_cost:.2f}, have {self.cash_balance:.2f}"
                 )
                 return False
 
-            self.cash_balance -= order_value
+            self.cash_balance -= total_cost
+            self.results.total_fees += fee
 
-            # Create or update position
+            # Derive SL/TP from the active risk manager parameters
+            sl_pct = Decimal(str(self.risk_manager.risk_params["stop_loss_pct"])) / 100
+            tp_pct = Decimal(str(self.risk_manager.risk_params["take_profit_pct"])) / 100
+
             if symbol in self.positions:
+                # Scale into existing position — recalculate average entry
                 pos = self.positions[symbol]
-                total_cost = (pos.quantity * pos.entry_price) + (quantity * price)
-                total_quantity = pos.quantity + quantity
-                pos.entry_price = total_cost / total_quantity
-                pos.quantity = total_quantity
-                pos.current_price = price
+                total_cost_basis = pos.quantity * pos.entry_price + quantity * exec_price
+                new_qty = pos.quantity + quantity
+                pos.entry_price = total_cost_basis / new_qty
+                pos.quantity = new_qty
+                pos.current_price = exec_price
+                # Anchor SL/TP to the new average entry
+                pos.stop_loss = pos.entry_price * (1 - sl_pct)
+                pos.take_profit = pos.entry_price * (1 + tp_pct)
             else:
                 self.positions[symbol] = Position(
                     symbol=symbol,
                     side=side,
                     quantity=quantity,
-                    entry_price=price,
-                    current_price=price,
-                    stop_loss=price * Decimal("0.985"),
-                    take_profit=price * Decimal("1.025"),
+                    entry_price=exec_price,
+                    current_price=exec_price,
+                    stop_loss=exec_price * (1 - sl_pct),
+                    take_profit=exec_price * (1 + tp_pct),
                 )
 
         else:  # SELL
             if symbol not in self.positions:
-                logger.warning(f"Cannot SELL {symbol}: no position exists")
-                return False
-
-            if self.positions[symbol].quantity < quantity:
-                logger.warning(
-                    f"Insufficient position to SELL {symbol}: need {quantity}, have {self.positions[symbol].quantity}"
-                )
+                logger.warning(f"Cannot SELL {symbol}: no open position")
                 return False
 
             pos = self.positions[symbol]
-            self.cash_balance += order_value
+            if pos.quantity < quantity:
+                logger.warning(
+                    f"Insufficient position for SELL {symbol}: "
+                    f"have {pos.quantity}, need {quantity}"
+                )
+                return False
 
-            # Calculate P&L
-            pnl = (price - pos.entry_price) * quantity
+            net_proceeds = order_value - fee
+            self.cash_balance += net_proceeds
+            self.results.total_fees += fee
 
-            # Record trade
+            # P&L is realised gain minus the fee on this leg only
+            # (the buy-side fee was already deducted from cash_balance)
+            pnl = (exec_price - pos.entry_price) * quantity - fee
+
             self.results.trades.append(
                 {
-                    "timestamp": timestamp,
+                    "timestamp": timestamp.isoformat(),
                     "symbol": symbol,
                     "side": "SELL",
                     "quantity": float(quantity),
-                    "price": float(price),
+                    "price": float(exec_price),
+                    "entry_price": float(pos.entry_price),
                     "pnl": float(pnl),
+                    "fee": float(fee),
                 }
             )
 
@@ -247,12 +472,15 @@ class BacktestEngine:
             else:
                 self.results.losing_trades += 1
 
-            # Update or close position
             pos.quantity -= quantity
-            if pos.quantity <= 0:
+            if pos.quantity <= Decimal("0"):
                 del self.positions[symbol]
 
         return True
+
+    # ------------------------------------------------------------------
+    # Main simulation loop
+    # ------------------------------------------------------------------
 
     async def run(
         self,
@@ -260,85 +488,97 @@ class BacktestEngine:
         days: int = 30,
         interval: int = 60,
     ) -> BacktestResults:
-        """Run backtest on historical data.
+        """Run the backtest and return aggregated results.
+
+        For each bar, in order:
+        1. Update open position prices.
+        2. Check whether any position's SL/TP was breached (force-close if so).
+        3. Ask the strategy for a signal on the remaining positions.
+        4. Validate the proposed order with the risk manager.
+        5. Execute the order (with slippage + fee).
+        6. Record the equity snapshot and update the running drawdown peak.
+
+        After all bars, open positions are force-closed at their last known
+        price, the Sharpe ratio is computed, and the summary is printed.
 
         Args:
-            symbols: List of trading pairs to test
-            days: Number of days of history
-            interval: Candle interval in minutes
+            symbols:  Trading pairs to backtest (e.g. ``["BTC-EUR"]``).
+            days:     Historical look-back in calendar days.
+            interval: Candle width in minutes (must be in ``VALID_INTERVALS``).
 
         Returns:
-            BacktestResults object with performance metrics
+            Populated ``BacktestResults`` instance.
         """
         from src.config import settings
 
-        # Get currency symbol
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-        base_currency = settings.base_currency
-        symbol_char = currency_symbols.get(base_currency, base_currency)
+        currency_symbol = currency_symbols.get(settings.base_currency, settings.base_currency)
 
         logger.info("=" * 60)
         logger.info("STARTING BACKTEST")
         logger.info("=" * 60)
-        logger.info(f"Strategy: {self.strategy_type.value}")
-        logger.info(f"Risk Level: {self.risk_level.value}")
-        logger.info(f"Initial Capital: {symbol_char}{self.initial_capital:,.2f}")
-        logger.info(f"Symbols: {', '.join(symbols)}")
-        logger.info(f"Period: {days} days, {interval}min candles")
+        logger.info(f"Strategy:        {self.strategy_type.value}")
+        logger.info(f"Risk Level:      {self.risk_level.value}")
+        logger.info(f"Initial Capital: {currency_symbol}{self.initial_capital:,.2f}")
+        logger.info(f"Symbols:         {', '.join(symbols)}")
+        logger.info(f"Period:          {days}d × {interval}min candles")
         logger.info("=" * 60)
 
-        # Fetch historical data for all symbols
-        historical_data = {}
+        # Fetch all candles and index them: {symbol: {start_ms: CandleData}}
+        # O(1) lookup replaces the previous O(n) linear scan per bar.
+        indexed: dict[str, dict[int, CandleData]] = {}
         for symbol in symbols:
             candles = await self.fetch_historical_data(symbol, days, interval)
             if candles:
-                historical_data[symbol] = candles
+                indexed[symbol] = {c.start: c for c in candles}
 
-        if not historical_data:
-            logger.error("No historical data available")
+        if not indexed:
+            logger.error("No historical data fetched — aborting backtest")
             return self.results
 
-        # Find common timestamps across all symbols
-        all_timestamps: set[Any] = set()
-        for candles in historical_data.values():
-            all_timestamps.update(c.get("start") for c in candles)
+        # Union of all bar timestamps, sorted chronologically
+        all_timestamps = sorted(
+            {ts for symbol_candles in indexed.values() for ts in symbol_candles}
+        )
+        total = len(all_timestamps)
+        logger.info(f"Processing {total} bars across {len(indexed)} symbol(s)…")
 
-        sorted_timestamps = sorted(all_timestamps)
+        for idx, ts_ms in enumerate(all_timestamps):
+            if total > 0 and idx % 100 == 0:
+                logger.debug(f"Progress: {idx}/{total} ({idx / total * 100:.1f}%)")
 
-        logger.info(f"Processing {len(sorted_timestamps)} time periods...")
-
-        # Iterate through time
-        for idx, timestamp in enumerate(sorted_timestamps):
-            if idx % 100 == 0:
-                logger.info(
-                    f"Progress: {idx}/{len(sorted_timestamps)} ({idx / len(sorted_timestamps) * 100:.1f}%)"
-                )
-
-            # Process each symbol at this timestamp
             for symbol in symbols:
-                # Find candle for this timestamp
-                candle = next(
-                    (c for c in historical_data.get(symbol, []) if c.get("start") == timestamp),
-                    None,
-                )
-
-                if not candle:
+                candle = indexed.get(symbol, {}).get(ts_ms)
+                if candle is None:
                     continue
 
-                # Convert to MarketData
                 market_data = self._candle_to_market_data(candle, symbol)
 
-                # Update position prices
+                # 1. Update open position with latest price
                 if symbol in self.positions:
-                    self.positions[symbol].current_price = market_data.last
+                    pos = self.positions[symbol]
+                    pos.update_price(market_data.last)
 
-                # Get portfolio value
-                positions_value = sum(
-                    pos.quantity * pos.current_price for pos in self.positions.values()
-                )
+                    # 2. Check SL/TP before generating a new signal
+                    should_exit, exit_reason = pos.should_close()
+                    if should_exit:
+                        logger.debug(
+                            f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}"
+                        )
+                        self._execute_backtest_order(
+                            symbol=symbol,
+                            side=OrderSide.SELL,
+                            quantity=pos.quantity,
+                            price=market_data.last,
+                            timestamp=market_data.timestamp,
+                            market_data=market_data,
+                        )
+                        continue  # Skip strategy signal this bar
+
+                # 3. Compute portfolio value and ask the strategy for a signal
+                positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
                 portfolio_value = self.cash_balance + positions_value
 
-                # Get trading signal from strategy
                 signal = await self.strategy.analyze(
                     symbol=symbol,
                     market_data=market_data,
@@ -346,74 +586,73 @@ class BacktestEngine:
                     portfolio_value=portfolio_value,
                 )
 
-                if signal:
-                    # Determine order side
-                    side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
+                if signal is None:
+                    continue
 
-                    # Calculate position size
-                    quantity = self.risk_manager.calculate_position_size(
-                        portfolio_value=portfolio_value,
-                        price=signal.price,
-                        signal_strength=signal.strength,
-                    )
+                side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
+                quantity = self.risk_manager.calculate_position_size(
+                    portfolio_value=portfolio_value,
+                    price=signal.price,
+                    signal_strength=signal.strength,
+                )
 
-                    # Create temporary order for validation
-                    from src.data.models import Order, OrderStatus, OrderType
+                # 4. Validate with risk manager
+                temp_order = Order(
+                    symbol=symbol,
+                    side=side,
+                    order_type=OrderType.LIMIT,
+                    quantity=quantity,
+                    price=signal.price,
+                    status=OrderStatus.PENDING,
+                )
+                is_valid, reason = self.risk_manager.validate_order(
+                    temp_order, portfolio_value, list(self.positions.values())
+                )
+                if not is_valid:
+                    logger.debug(f"Order rejected ({symbol}): {reason}")
+                    continue
 
-                    temp_order = Order(
-                        symbol=symbol,
-                        side=side,
-                        order_type=OrderType.LIMIT,
-                        quantity=quantity,
-                        price=signal.price,
-                        status=OrderStatus.PENDING,
-                    )
+                # 5. Execute
+                self._execute_backtest_order(
+                    symbol=symbol,
+                    side=side,
+                    quantity=quantity,
+                    price=signal.price,
+                    timestamp=market_data.timestamp,
+                    market_data=market_data,
+                )
 
-                    # Check risk limits
-                    is_valid, reason = self.risk_manager.validate_order(
-                        temp_order, portfolio_value, list(self.positions.values())
-                    )
-                    if not is_valid:
-                        logger.debug(f"Order rejected: {reason}")
-                        continue
-
-                    # Execute order
-                    self._execute_backtest_order(
-                        symbol=symbol,
-                        side=side,
-                        quantity=quantity,
-                        price=signal.price,
-                        timestamp=market_data.timestamp,
-                    )
-
-            # Record equity
-            positions_value = sum(
-                pos.quantity * pos.current_price for pos in self.positions.values()
-            )
+            # 6. Equity snapshot + O(1) drawdown update
+            positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
             equity = self.cash_balance + positions_value
-            self.results.equity_curve.append((datetime.fromtimestamp(timestamp / 1000), equity))
+            bar_time = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+            self.results.equity_curve.append((bar_time, equity))
 
-            # Calculate drawdown
-            if self.results.equity_curve:
-                peak = max(e for _, e in self.results.equity_curve)
-                drawdown = peak - equity
-                if drawdown > self.results.max_drawdown:
-                    self.results.max_drawdown = drawdown
+            if equity > self._equity_peak:
+                self._equity_peak = equity
 
-        # Close all remaining positions at final prices
+            drawdown = self._equity_peak - equity
+            if drawdown > self.results.max_drawdown:
+                self.results.max_drawdown = drawdown
+                if self._equity_peak > 0:
+                    self.results.max_drawdown_pct = float(drawdown / self._equity_peak * 100)
+
+        # Force-close any positions still open at the end of the test period
         for symbol, pos in list(self.positions.items()):
+            close_side = OrderSide.SELL if pos.side == OrderSide.BUY else OrderSide.BUY
             self._execute_backtest_order(
                 symbol=symbol,
-                side=OrderSide.SELL if pos.side == OrderSide.BUY else OrderSide.BUY,
+                side=close_side,
                 quantity=pos.quantity,
                 price=pos.current_price,
                 timestamp=datetime.now(UTC),
+                market_data=None,  # No spread on end-of-test force-close
             )
 
-        # Calculate final capital
         self.results.final_capital = self.cash_balance
+        self.results.compute_sharpe_ratio()
 
         logger.info("Backtest complete!")
-        self.results.print_summary()
+        self.results.print_summary(currency_symbol=currency_symbol)
 
         return self.results
