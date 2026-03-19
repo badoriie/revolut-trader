@@ -31,8 +31,9 @@ _real_subprocess_run = _subprocess.run
 def _block_op_subprocess(*args, **kwargs):
     """Return a failed result for any real `op` CLI call during tests.
 
-    The 1Password CLI must never be invoked during tests — it triggers GUI
-    account choosers on macOS with 1Password 8 app integration.
+    The 1Password CLI must never be called during tests — tests use the mock
+    vault (``tests/mocks/mock_onepassword.py``) and must never require a real
+    ``OP_SERVICE_ACCOUNT_TOKEN`` to be present in the environment.
 
     TestRunOp tests use ``with patch("subprocess.run") as mock_run:`` which
     stacks on top of this global patch and takes precedence inside the block,

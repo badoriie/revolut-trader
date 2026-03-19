@@ -22,7 +22,6 @@ Public API:
 
 import json
 import subprocess
-import time
 from threading import Lock
 
 from loguru import logger
@@ -30,8 +29,6 @@ from loguru import logger
 VAULT = "revolut-trader"
 CREDENTIALS_ITEM = "revolut-trader-credentials"
 CONFIG_ITEM = "revolut-trader-config"
-
-_CACHE_TTL = 1740  # seconds (29 minutes)
 
 
 def _fetch_item_fields(item_name: str) -> dict[str, str]:
@@ -87,7 +84,8 @@ class _VaultCache:
     """Single in-memory cache for all 1Password values (credentials + config).
 
     Batch-fetches both vault items (credentials + config) on first access and
-    merges them into one flat dict.  Cache TTL is 29 minutes.
+    merges them into one flat dict.  Cache is held for the lifetime of the
+    process — call ``invalidate()`` to force a refresh.
 
     Authentication is handled entirely by the ``OP_SERVICE_ACCOUNT_TOKEN``
     environment variable — no session token management is needed.
@@ -95,7 +93,6 @@ class _VaultCache:
 
     def __init__(self) -> None:
         self._cache: dict[str, str] = {}
-        self._cache_time: float | None = None
         self._lock = Lock()
         self._signed_in: bool | None = None
 
@@ -118,11 +115,7 @@ class _VaultCache:
         return self._signed_in
 
     def _is_stale(self) -> bool:
-        return (
-            not self._cache
-            or self._cache_time is None
-            or (time.time() - self._cache_time) > _CACHE_TTL
-        )
+        return not self._cache
 
     def _refresh(self) -> None:
         """Batch-fetch all fields from both vault items."""
@@ -145,8 +138,7 @@ class _VaultCache:
             )
 
         self._cache = merged
-        self._cache_time = time.time()
-        logger.info(f"1Password cache refreshed: {len(merged)} fields loaded")
+        logger.info(f"1Password cache loaded: {len(merged)} fields")
 
     def get(self, key: str) -> str:
         """Get a required value; raises ``RuntimeError`` if missing."""
@@ -188,7 +180,7 @@ class _VaultCache:
     def invalidate(self) -> None:
         """Force cache refresh on next access."""
         with self._lock:
-            self._cache_time = None
+            self._cache.clear()
         logger.debug("1Password cache invalidated")
 
 

@@ -4,7 +4,6 @@ Tests _VaultCache, _run_op, and _fetch_item_fields directly
 without relying on the real 1Password CLI.
 """
 
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -157,29 +156,12 @@ class TestVaultCacheIsStale:
         cache = _VaultCache()
         assert cache._is_stale() is True
 
-    def test_stale_when_no_cache_time(self):
+    def test_not_stale_when_populated(self):
         from src.utils.onepassword import _VaultCache
 
         cache = _VaultCache()
         cache._cache = {"KEY": "val"}
-        cache._cache_time = None
-        assert cache._is_stale() is True
-
-    def test_not_stale_when_fresh(self):
-        from src.utils.onepassword import _VaultCache
-
-        cache = _VaultCache()
-        cache._cache = {"KEY": "val"}
-        cache._cache_time = time.time()
         assert cache._is_stale() is False
-
-    def test_stale_after_ttl_expires(self):
-        from src.utils.onepassword import _VaultCache
-
-        cache = _VaultCache()
-        cache._cache = {"KEY": "val"}
-        cache._cache_time = time.time() - 1800  # Beyond 1740s TTL
-        assert cache._is_stale() is True
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +175,6 @@ class TestVaultCacheGet:
 
         cache = _VaultCache()
         cache._cache = {key: value}
-        cache._cache_time = time.time()
         cache._signed_in = True
         return cache
 
@@ -226,7 +207,6 @@ class TestVaultCacheGetOptional:
 
         cache = _VaultCache()
         cache._cache = {"OPT_KEY": "opt_value"}
-        cache._cache_time = time.time()
         cache._signed_in = True
         assert cache.get_optional("OPT_KEY") == "opt_value"
 
@@ -234,8 +214,7 @@ class TestVaultCacheGetOptional:
         from src.utils.onepassword import _VaultCache
 
         cache = _VaultCache()
-        cache._cache = {}
-        cache._cache_time = time.time()
+        cache._cache = {"OTHER": "val"}
         cache._signed_in = True
         assert cache.get_optional("MISSING") is None
 
@@ -277,13 +256,13 @@ class TestVaultCacheSetCredential:
 
 
 class TestVaultCacheInvalidate:
-    def test_clears_cache_time(self):
+    def test_clears_cache(self):
         from src.utils.onepassword import _VaultCache
 
         cache = _VaultCache()
-        cache._cache_time = 99999.0
+        cache._cache = {"KEY": "val"}
         cache.invalidate()
-        assert cache._cache_time is None
+        assert cache._cache == {}
 
 
 # ---------------------------------------------------------------------------
