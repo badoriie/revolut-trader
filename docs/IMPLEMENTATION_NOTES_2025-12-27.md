@@ -384,7 +384,7 @@ ______________________________________________________________________
 
 For issues related to these changes:
 
-- Check `/logs/trading.log` for detailed error messages
+- Check database logs: `make db-stats` (logs are stored encrypted in the database)
 - Verify 1Password CLI version: `op --version`
 - Test API connectivity: `curl https://revx.revolut.com/api/1.0/balances`
 - Review this document for troubleshooting steps

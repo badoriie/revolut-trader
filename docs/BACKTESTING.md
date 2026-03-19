@@ -7,34 +7,27 @@ Test your trading strategies on historical data before risking real money.
 The backtesting system allows you to:
 
 - **Validate strategies** using real historical market data from Revolut X
-- **Measure performance** with comprehensive metrics (win rate, profit factor, Sharpe ratio, etc.)
+- **Measure performance** with comprehensive metrics (win rate, profit factor, Sharpe ratio, max drawdown, fees)
 - **Test different configurations** (risk levels, trading pairs, time periods)
-- **Export results** to JSON for further analysis
+- **Store results securely** in the encrypted SQLite database
+
+Results are persisted **exclusively to the encrypted database** — no plaintext JSON or log files are written.
+Use `make db-backtests` to view results and `make db-export-csv` to export when needed.
 
 ## Quick Start
 
-### Basic Backtest
-
 ```bash
-# Test market making strategy on BTC-USD for 30 days
-python backtest.py --strategy market_making --pairs BTC-USD --days 30
-```
+# Test market making strategy on BTC-EUR for 30 days
+make backtest STRATEGY=market_making DAYS=30
 
-### Advanced Examples
+# Test momentum strategy with moderate risk
+make backtest STRATEGY=momentum DAYS=60
 
-```bash
-# Test momentum strategy with moderate risk on multiple pairs
-python backtest.py --strategy momentum --risk moderate \
-  --pairs BTC-USD,ETH-USD,SOL-USD --days 60
+# View stored results
+make db-backtests
 
-# Use 1-hour candles for 90 days and save results
-python backtest.py --strategy mean_reversion \
-  --interval 60 --days 90 \
-  --output ./results/backtest_$(date +%Y%m%d).json
-
-# Test with custom initial capital
-python backtest.py --strategy multi_strategy \
-  --capital 50000 --days 180
+# Export to CSV for spreadsheet analysis
+make db-export-csv
 ```
 
 ## Command Line Options
@@ -49,8 +42,8 @@ python backtest.py --strategy multi_strategy \
                   Default: conservative
 
 --pairs, -p       Comma-separated trading pairs
-                  Example: BTC-USD,ETH-USD,SOL-USD
-                  Default: BTC-USD,ETH-USD
+                  Example: BTC-EUR,ETH-EUR,SOL-EUR
+                  Default: BTC-EUR,ETH-EUR
 
 --days, -d        Number of days of historical data
                   Default: 30
@@ -59,10 +52,8 @@ python backtest.py --strategy multi_strategy \
                   Choices: 5, 15, 30, 60, 240, 1440
                   Default: 60 (1 hour)
 
---capital, -c     Initial capital in USD
+--capital, -c     Initial capital in EUR
                   Default: 10000
-
---output, -o      Save results to JSON file (optional)
 
 --log-level, -l   Logging verbosity
                   Choices: DEBUG, INFO, WARNING, ERROR
@@ -77,7 +68,7 @@ The backtest provides comprehensive performance analysis:
 
 - **Initial Capital**: Starting balance
 - **Final Capital**: Ending balance after all trades
-- **Total P&L**: Net profit/loss in USD
+- **Total P&L**: Net profit/loss in EUR
 - **Return %**: Percentage return on initial capital
 
 ### Trade Statistics
@@ -90,8 +81,18 @@ The backtest provides comprehensive performance analysis:
 ### Risk Metrics
 
 - **Profit Factor**: Gross profit / Gross loss (higher is better)
-- **Max Drawdown**: Largest peak-to-trough decline
-- **Sharpe Ratio**: Risk-adjusted return
+- **Max Drawdown**: Largest peak-to-trough decline (running O(1) calculation)
+- **Sharpe Ratio**: Risk-adjusted return (annualised)
+- **Total Fees**: Taker fees paid (0.09% per fill)
+
+## Simulation Realism
+
+The engine models real trading costs:
+
+- **Taker fee**: 0.09% deducted per fill
+- **Slippage**: BUY fills at ask price, SELL fills at bid price (0.3% spread)
+- **Pagination**: Fetches up to 1,000 candles per API request, chunked across the date range
+- **Stop-loss / Take-profit**: Checked against candle high/low before signal processing
 
 ## Example Output
 
@@ -99,16 +100,19 @@ The backtest provides comprehensive performance analysis:
 ============================================================
 BACKTEST RESULTS
 ============================================================
-Initial Capital:    $10,000.00
-Final Capital:      $10,847.23
-Total P&L:          $847.23
+Strategy:           momentum
+Initial Capital:    €10,000.00
+Final Capital:      €10,847.23
+Total P&L:          €847.23
 Return:             8.47%
 Total Trades:       45
 Winning Trades:     28
 Losing Trades:      17
 Win Rate:           62.22%
 Profit Factor:      1.89
-Max Drawdown:       $342.15
+Max Drawdown:       €342.15
+Sharpe Ratio:       1.24
+Total Fees:         €38.50
 ============================================================
 ```
 
@@ -126,6 +130,12 @@ Max Drawdown:       $342.15
 - **1.5-2.0**: Good
 - **1.0-1.5**: Break-even to marginal
 - **< 1.0**: Losing strategy
+
+### Sharpe Ratio
+
+- **> 1.5**: Strong risk-adjusted return
+- **1.0-1.5**: Acceptable
+- **< 1.0**: Insufficient return for risk taken
 
 ### Max Drawdown
 
@@ -163,48 +173,19 @@ Max Drawdown:       $342.15
 - **Profit Factor**: 1.6-2.2
 - **Works Best**: In varying market conditions
 
-## Exporting Results
+## Viewing and Exporting Results
 
-Save results for further analysis:
+All results are stored in the encrypted database:
 
 ```bash
-python backtest.py --strategy momentum \
-  --output ./results/momentum_backtest.json
-```
+# View last 10 backtest runs
+make db-backtests
 
-The JSON file includes:
+# Export all data to dated CSV files in data/exports/
+make db-export-csv
 
-- Configuration settings
-- Performance metrics
-- Individual trade details
-- Timestamp
-
-### Example JSON Output
-
-```json
-{
-  "timestamp": "2025-12-27T18:45:00.000Z",
-  "config": {
-    "strategy": "momentum",
-    "risk_level": "moderate",
-    "symbols": ["BTC-USD", "ETH-USD"],
-    "days": 30,
-    "interval": 60,
-    "initial_capital": 10000.0
-  },
-  "results": {
-    "final_capital": 10847.23,
-    "total_pnl": 847.23,
-    "return_pct": 8.47,
-    "total_trades": 45,
-    "winning_trades": 28,
-    "losing_trades": 17,
-    "win_rate": 62.22,
-    "profit_factor": 1.89,
-    "max_drawdown": 342.15
-  },
-  "trades": [...]
-}
+# Analytics summary
+make db-analytics
 ```
 
 ## Best Practices
@@ -212,55 +193,49 @@ The JSON file includes:
 ### 1. Test Multiple Time Periods
 
 ```bash
-# Test different periods
-python backtest.py --days 30    # Recent performance
-python backtest.py --days 90    # Quarterly
-python backtest.py --days 180   # Semi-annual
-python backtest.py --days 365   # Annual
+make backtest STRATEGY=momentum DAYS=30    # Recent performance
+make backtest STRATEGY=momentum DAYS=90    # Quarterly
+make backtest STRATEGY=momentum DAYS=180   # Semi-annual
 ```
 
 ### 2. Compare Different Strategies
 
 ```bash
-# Run all strategies on same data
 for strategy in market_making momentum mean_reversion multi_strategy; do
-  python backtest.py --strategy $strategy --days 90 \
-    --output "./results/${strategy}_90d.json"
+  make backtest STRATEGY=$strategy DAYS=90
 done
+make db-backtests LIMIT=20
 ```
 
 ### 3. Test Different Risk Levels
 
 ```bash
-# Compare risk levels
-python backtest.py --risk conservative --output ./results/conservative.json
-python backtest.py --risk moderate --output ./results/moderate.json
-python backtest.py --risk aggressive --output ./results/aggressive.json
+make backtest STRATEGY=momentum DAYS=60
+# Then change risk via: make opconfig-set KEY=RISK_LEVEL VALUE=aggressive
+make backtest STRATEGY=momentum DAYS=60
 ```
 
 ### 4. Optimize Timeframes
 
 ```bash
 # Test different candle intervals
-python backtest.py --interval 15   # 15-minute candles
-python backtest.py --interval 60   # 1-hour candles
-python backtest.py --interval 240  # 4-hour candles
+uv run python cli/backtest.py --interval 15   # 15-minute candles
+uv run python cli/backtest.py --interval 60   # 1-hour candles
+uv run python cli/backtest.py --interval 240  # 4-hour candles
 ```
 
 ## Limitations & Considerations
 
 ### Data Limitations
 
-- **Maximum History**: Limited by Revolut X API (typically 100 candles per request)
-- **Candle Gaps**: Some periods may have missing data
-- **Slippage Not Modeled**: Assumes instant fills at exact prices
+- **Maximum per request**: 1,000 candles (engine paginates automatically across date ranges)
+- **Candle gaps**: Some periods may have missing data
+- **Market impact**: Assumes orders don't move the market
 
 ### Execution Differences
 
-- **No Market Impact**: Assumes orders don't move the market
-- **Perfect Fills**: All orders execute immediately
-- **No Latency**: Instant data and execution
-- **No Fees**: Trading fees not included (add manually if needed)
+- **No latency**: Instant data and execution
+- **Partial fills**: Not modelled — orders always fill fully
 
 ### Overfitting Risk
 
@@ -277,15 +252,15 @@ python backtest.py --interval 240  # 4-hour candles
 ERROR | No historical data available
 ```
 
-**Solution**: Check your API credentials and ensure the symbol is correct
+**Solution**: Check your API credentials and ensure the symbol is correct (`make api-test`).
 
-### API Endpoint Not Found
+### Invalid Interval
 
 ```
-ERROR | Failed to fetch candles: 404 Not Found
+ValueError: Invalid interval
 ```
 
-**Solution**: The candles endpoint may use a different path. Check the implementation notes.
+**Solution**: Use one of the supported intervals: 5, 15, 30, 60, 240, 1440.
 
 ### Insufficient Data
 
@@ -293,28 +268,16 @@ ERROR | Failed to fetch candles: 404 Not Found
 WARNING | Retrieved only 50 candles
 ```
 
-**Solution**: The API may have limited historical data. Try a shorter time period or different interval.
+**Solution**: The API may have limited historical data for that period. Try a shorter time window or a larger interval.
 
 ## Next Steps
 
 After backtesting:
 
-1. **Analyze Results**: Review metrics and trade details
-1. **Optimize Parameters**: Adjust strategy settings if needed
-1. **Paper Trade**: Test with live data in paper mode
-1. **Live Trade**: Only after consistent positive results
-
-```bash
-# After successful backtest, test in paper mode
-python run.py --mode paper --strategy momentum --risk moderate
-```
-
-## Additional Resources
-
-- [Strategy Documentation](../src/strategies/)
-- [Risk Management Guide](../src/risk_management/)
-- [API Client Documentation](../src/api/)
-- [Implementation Notes](./IMPLEMENTATION_NOTES_2025-12-27.md)
+1. **Review results**: `make db-backtests`
+1. **Export for analysis**: `make db-export-csv`
+1. **Paper trade**: Test with live data in paper mode — `make run-paper`
+1. **Live trade**: Only after consistent positive results — `make run-live`
 
 ______________________________________________________________________
 
