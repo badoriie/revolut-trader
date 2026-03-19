@@ -7,7 +7,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.data.models import Order, PortfolioSnapshot
+from src.models.domain import Order, PortfolioSnapshot
 from src.utils.db_persistence import DatabasePersistence
 from src.utils.persistence import DataPersistence
 

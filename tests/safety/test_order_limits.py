@@ -17,7 +17,7 @@ are rejected with clear error messages.
 from decimal import Decimal
 
 from src.config import RiskLevel
-from src.data.models import Order, OrderSide, OrderType
+from src.models.domain import Order, OrderSide, OrderType
 from src.risk_management.risk_manager import RiskManager
 
 

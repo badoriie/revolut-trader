@@ -20,9 +20,7 @@ def mock_persistence():
 
 @pytest.fixture
 def bot(monkeypatch, mock_persistence):
-    monkeypatch.setattr(
-        "src.bot.HybridPersistence", lambda *args, **kwargs: mock_persistence
-    )
+    monkeypatch.setattr("src.bot.HybridPersistence", lambda *args, **kwargs: mock_persistence)
     from src.bot import TradingBot
 
     return TradingBot(
@@ -131,7 +129,7 @@ class TestSaveData:
         mock_persistence.save_portfolio_snapshots_bulk.assert_not_called()
 
     def test_save_data_with_snapshots(self, bot, mock_persistence):
-        from src.data.models import PortfolioSnapshot
+        from src.models.domain import PortfolioSnapshot
 
         snapshot = PortfolioSnapshot(
             total_value=Decimal("10000"),
@@ -148,7 +146,7 @@ class TestSaveData:
         mock_persistence.save_portfolio_snapshots_bulk.assert_called_once()
 
     def test_save_data_handles_exception(self, bot, mock_persistence):
-        from src.data.models import PortfolioSnapshot
+        from src.models.domain import PortfolioSnapshot
 
         snapshot = PortfolioSnapshot(
             total_value=Decimal("10000"),
@@ -184,8 +182,8 @@ class TestUpdatePortfolio:
     @pytest.mark.asyncio
     async def test_portfolio_value_includes_positions(self, bot):
         from src.config import RiskLevel, TradingMode
-        from src.data.models import OrderSide, Position
         from src.execution.executor import OrderExecutor
+        from src.models.domain import OrderSide, Position
         from src.risk_management.risk_manager import RiskManager
 
         rm = RiskManager(RiskLevel.MODERATE)
@@ -217,7 +215,7 @@ class TestCheckRiskLimits:
     @pytest.mark.asyncio
     async def test_checks_daily_pnl(self, bot, mock_persistence):
         from src.config import RiskLevel
-        from src.data.models import PortfolioSnapshot
+        from src.models.domain import PortfolioSnapshot
         from src.risk_management.risk_manager import RiskManager
 
         bot.risk_manager = RiskManager(RiskLevel.MODERATE)
@@ -269,7 +267,7 @@ class TestStop:
 
     @pytest.mark.asyncio
     async def test_stop_ends_session_with_snapshot(self, bot, mock_persistence):
-        from src.data.models import PortfolioSnapshot
+        from src.models.domain import PortfolioSnapshot
 
         snapshot = PortfolioSnapshot(
             total_value=Decimal("10500"),

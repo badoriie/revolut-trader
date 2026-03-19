@@ -3,7 +3,7 @@ from decimal import Decimal
 from loguru import logger
 
 from src.config import RiskLevel, settings
-from src.data.models import Order, OrderSide, Position
+from src.models.domain import Order, OrderSide, Position
 
 
 class RiskManager:

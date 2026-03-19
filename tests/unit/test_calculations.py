@@ -14,7 +14,7 @@ calculations match expected values. Test both long and short positions.
 
 from decimal import Decimal
 
-from src.data.models import OrderSide, Position
+from src.models.domain import OrderSide, Position
 
 
 class TestUnrealizedPnLCalculation:

@@ -5,7 +5,7 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.config import TradingMode
-from src.data.models import Order, OrderSide, OrderStatus, OrderType, Position, Signal
+from src.models.domain import Order, OrderSide, OrderStatus, OrderType, Position, Signal
 from src.risk_management.risk_manager import RiskManager
 
 

@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # _run_op
 # ---------------------------------------------------------------------------
@@ -41,6 +40,7 @@ class TestRunOp:
 
     def test_timeout_returns_none(self):
         import subprocess
+
         from src.utils.onepassword import _run_op
 
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("op", 5)):

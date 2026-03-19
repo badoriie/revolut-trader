@@ -10,8 +10,7 @@ from loguru import logger
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.data.models import Order, PortfolioSnapshot
-from src.models.db_models import (
+from src.models.db import (
     DB_URL,
     BacktestRunDB,
     LogEntryDB,
@@ -22,6 +21,7 @@ from src.models.db_models import (
     get_session_factory,
     init_database,
 )
+from src.models.domain import Order, PortfolioSnapshot
 from src.utils.db_encryption import DatabaseEncryption
 
 

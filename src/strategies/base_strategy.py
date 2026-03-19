@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Any
 
-from src.data.models import MarketData, Position, Signal
+from src.models.domain import MarketData, Position, Signal
 
 
 class BaseStrategy(ABC):

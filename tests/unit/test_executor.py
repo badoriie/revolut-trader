@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.config import RiskLevel, TradingMode
-from src.data.models import Order, OrderSide, OrderStatus, OrderType, Position, Signal
 from src.execution.executor import OrderExecutor
+from src.models.domain import Order, OrderSide, OrderStatus, OrderType, Position, Signal
 from src.risk_management.risk_manager import RiskManager
 
 
@@ -122,7 +122,7 @@ class TestPaperOrderExecution:
     @pytest.mark.asyncio
     async def test_risk_manager_rejects_too_many_positions(self, mock_api, moderate_rm):
         executor = OrderExecutor(mock_api, moderate_rm, TradingMode.PAPER)
-        for i, sym in enumerate(["A-EUR", "B-EUR", "C-EUR", "D-EUR", "E-EUR"]):
+        for _i, sym in enumerate(["A-EUR", "B-EUR", "C-EUR", "D-EUR", "E-EUR"]):
             executor.positions[sym] = make_position(symbol=sym)
         signal = make_signal(symbol="NEW-EUR")
         order = await executor.execute_signal(signal, Decimal("10000"))

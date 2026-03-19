@@ -1,12 +1,12 @@
 """Unit tests for JSON-based DataPersistence."""
 
-from decimal import Decimal
 from datetime import UTC, datetime
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
 
-from src.data.models import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
+from src.models.domain import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
 from src.utils.persistence import DataPersistence
 
 

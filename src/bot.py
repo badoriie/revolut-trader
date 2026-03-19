@@ -8,8 +8,8 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.config import RiskLevel, StrategyType, TradingMode, settings
-from src.data.models import MarketData, PortfolioSnapshot
 from src.execution.executor import OrderExecutor
+from src.models.domain import MarketData, PortfolioSnapshot
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.market_making import MarketMakingStrategy
