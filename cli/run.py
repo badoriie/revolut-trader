@@ -6,7 +6,6 @@ Revolut Trader: Professional Algorithmic Trading Bot for Revolut Crypto
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from loguru import logger
 
@@ -14,22 +13,12 @@ from src.bot import TradingBot
 from src.config import RiskLevel, StrategyType, TradingMode
 
 
-def setup_logging(log_level: str, log_file: Path):
-    """Configure logging."""
+def setup_logging(log_level: str) -> None:
+    """Configure console-only logging (no plaintext log files)."""
     logger.remove()
     logger.add(
         sys.stderr,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        level=log_level,
-    )
-
-    # File logging
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger.add(
-        log_file,
-        rotation="500 MB",
-        retention="10 days",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
         level=log_level,
     )
 
@@ -146,7 +135,7 @@ Examples:
     args = parser.parse_args()
 
     # Setup logging
-    setup_logging(args.log_level, Path("./logs/trading.log"))
+    setup_logging(args.log_level)
 
     # Warn if using live mode
     if args.mode == "live":

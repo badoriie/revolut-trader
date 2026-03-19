@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""
-Backtesting CLI for Revolut Trader
-Run strategies on historical data to validate performance
+"""Backtesting CLI for Revolut Trader.
+
+Results are persisted exclusively to the encrypted SQLite database.
+Use ``make db-backtests`` to view results and ``make db-export-csv`` to export.
 """
 
 import argparse
 import asyncio
 import sys
 from decimal import Decimal
-from pathlib import Path
 
 from loguru import logger
 
@@ -18,8 +18,8 @@ from src.config import RiskLevel, StrategyType
 from src.utils.db_persistence import DatabasePersistence
 
 
-def setup_logging(log_level: str):
-    """Configure logging for backtest."""
+def setup_logging(log_level: str) -> None:
+    """Configure console-only logging (no plaintext log files)."""
     logger.remove()
     logger.add(
         sys.stderr,
@@ -27,32 +27,17 @@ def setup_logging(log_level: str):
         level=log_level,
     )
 
-    # File logging
-    log_file = Path("./logs/backtest.log")
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger.add(
-        log_file,
-        rotation="100 MB",
-        retention="30 days",
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
-        level=log_level,
-    )
 
-
-async def run_backtest(args):
+async def run_backtest(args) -> None:
     """Run backtest with specified configuration."""
-
-    # Parse arguments
     strategy_type = StrategyType(args.strategy)
     risk_level = RiskLevel(args.risk)
     symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
     initial_capital = Decimal(str(args.capital))
 
-    # Initialize API client
     api_client = RevolutAPIClient()
     await api_client.initialize()
 
-    # Create backtest engine
     engine = BacktestEngine(
         api_client=api_client,
         strategy_type=strategy_type,
@@ -61,102 +46,55 @@ async def run_backtest(args):
     )
 
     try:
-        # Run backtest
         results = await engine.run(
             symbols=symbols,
             days=args.days,
             interval=args.interval,
         )
 
-        # Optionally save results
-        if args.output:
-            import json
-            from datetime import UTC, datetime
+        results.print_summary()
 
-            output_file = Path(args.output)
+        # Persist to encrypted database
+        results_dict = {
+            "final_capital": float(results.final_capital),
+            "total_pnl": float(results.total_pnl),
+            "return_pct": results.return_pct,
+            "total_trades": results.total_trades,
+            "winning_trades": results.winning_trades,
+            "losing_trades": results.losing_trades,
+            "win_rate": results.win_rate,
+            "profit_factor": results.profit_factor,
+            "max_drawdown": float(results.max_drawdown),
+            "sharpe_ratio": results.compute_sharpe_ratio(),
+        }
 
-            # Convert trades with datetime objects to serializable format
-            serializable_trades = []
-            for trade in results.trades:
-                trade_copy = trade.copy()
-                if "timestamp" in trade_copy and isinstance(trade_copy["timestamp"], datetime):
-                    trade_copy["timestamp"] = trade_copy["timestamp"].isoformat()
-                serializable_trades.append(trade_copy)
-
-            # Convert equity curve to serializable format
-            equity_curve = [
-                {"timestamp": ts.isoformat(), "equity": float(equity)}
-                for ts, equity in results.equity_curve
-            ]
-
-            results_dict = {
-                "final_capital": float(results.final_capital),
-                "total_pnl": float(results.total_pnl),
-                "return_pct": results.return_pct,
-                "total_trades": results.total_trades,
-                "winning_trades": results.winning_trades,
-                "losing_trades": results.losing_trades,
-                "win_rate": results.win_rate,
-                "profit_factor": results.profit_factor,
-                "max_drawdown": float(results.max_drawdown),
-            }
-
-            output_data = {
-                "timestamp": datetime.now(UTC).isoformat(),
-                "config": {
-                    "strategy": strategy_type.value,
-                    "risk_level": risk_level.value,
-                    "symbols": symbols,
-                    "days": args.days,
-                    "interval": args.interval,
-                    "initial_capital": float(initial_capital),
-                },
-                "results": results_dict,
-                "trades": serializable_trades,
-                "equity_curve": equity_curve,
-            }
-
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w") as f:
-                json.dump(output_data, f, indent=2)
-
-            logger.info(f"Results saved to {output_file}")
-
-            # Also save to database for analytics
-            db = DatabasePersistence()
-            run_id = db.save_backtest_run(
-                strategy=strategy_type.value,
-                risk_level=risk_level.value,
-                symbols=symbols,
-                days=args.days,
-                interval=args.interval,
-                initial_capital=initial_capital,
-                results=results_dict,
-            )
-            logger.info(f"Backtest run saved to database: ID={run_id}")
+        db = DatabasePersistence()
+        run_id = db.save_backtest_run(
+            strategy=strategy_type.value,
+            risk_level=risk_level.value,
+            symbols=symbols,
+            days=args.days,
+            interval=args.interval,
+            initial_capital=initial_capital,
+            results=results_dict,
+        )
+        logger.info(f"Backtest saved to database (ID={run_id}). View with: make db-backtests")
 
     finally:
         await api_client.close()
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Backtest trading strategies on historical data",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Backtest market making strategy on BTC-EUR for 30 days
-  python backtest.py --strategy market_making --pairs BTC-EUR --days 30
-
-  # Test momentum strategy with moderate risk on multiple pairs
-  python backtest.py --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR,SOL-EUR --days 60
-
-  # Run with 1-hour candles and save results
-  python backtest.py --strategy mean_reversion --interval 60 --days 90 --output ./results/backtest.json
-
-  # Test with custom initial capital (EUR)
-  python backtest.py --strategy multi_strategy --capital 50000 --days 180
+  make backtest STRATEGY=momentum DAYS=30
+  make backtest STRATEGY=mean_reversion PAIRS=BTC-EUR,ETH-EUR DAYS=60
+  make db-backtests          # view stored results
+  make db-export-csv         # export to CSV
         """,
     )
 
@@ -168,7 +106,6 @@ Examples:
         default="market_making",
         help="Trading strategy to backtest (default: market_making)",
     )
-
     parser.add_argument(
         "--risk",
         "-r",
@@ -177,7 +114,6 @@ Examples:
         default="conservative",
         help="Risk management level (default: conservative)",
     )
-
     parser.add_argument(
         "--pairs",
         "-p",
@@ -185,7 +121,6 @@ Examples:
         default="BTC-EUR,ETH-EUR",
         help="Comma-separated trading pairs (default: BTC-EUR,ETH-EUR)",
     )
-
     parser.add_argument(
         "--days",
         "-d",
@@ -193,16 +128,14 @@ Examples:
         default=30,
         help="Number of days of historical data (default: 30)",
     )
-
     parser.add_argument(
         "--interval",
         "-i",
         type=int,
         default=60,
         choices=[5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60). Options: 5, 15, 30, 60, 240, 1440",
+        help="Candle interval in minutes (default: 60)",
     )
-
     parser.add_argument(
         "--capital",
         "-c",
@@ -210,14 +143,6 @@ Examples:
         default=10000.0,
         help="Initial capital in EUR (default: 10000)",
     )
-
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        help="Save results to JSON file (optional)",
-    )
-
     parser.add_argument(
         "--log-level",
         "-l",
@@ -228,17 +153,14 @@ Examples:
     )
 
     args = parser.parse_args()
-
-    # Setup logging
     setup_logging(args.log_level)
 
-    # Run backtest
     try:
         asyncio.run(run_backtest(args))
     except KeyboardInterrupt:
         logger.info("Backtest interrupted by user")
     except Exception as e:
-        logger.error(f"Backtest failed: {str(e)}", exc_info=True)
+        logger.error(f"Backtest failed: {e}", exc_info=True)
         sys.exit(1)
 
 
