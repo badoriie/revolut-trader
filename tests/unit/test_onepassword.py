@@ -177,7 +177,7 @@ class TestVaultCacheIsStale:
 
         cache = _VaultCache()
         cache._cache = {"KEY": "val"}
-        cache._cache_time = time.time() - 400  # Beyond 300s TTL
+        cache._cache_time = time.time() - 1800  # Beyond 1740s TTL
         assert cache._is_stale() is True
 
 
@@ -241,11 +241,10 @@ class TestVaultCacheSetCredential:
         from src.utils.onepassword import _VaultCache
 
         cache = _VaultCache()
-        cache._cache_time = 12345.0
         with patch("src.utils.onepassword._run_op", return_value="ok"):
             result = cache.set_credential("item", "field", "value")
         assert result is True
-        assert cache._cache_time is None  # Invalidated
+        assert cache._cache.get("field") == "value"  # Cache updated in-place
 
     def test_returns_false_on_failure(self):
         from src.utils.onepassword import _VaultCache
