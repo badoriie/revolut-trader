@@ -1,7 +1,7 @@
 """Unit tests for OrderExecutor."""
 
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -50,7 +50,7 @@ def make_position(
 def mock_api():
     api = MagicMock()
     api.create_order = AsyncMock(
-        return_value={"orderId": "live-123", "status": "OPEN", "filledQty": 0}
+        return_value={"venue_order_id": "live-123", "client_order_id": "c-123", "state": "open"}
     )
     return api
 
@@ -147,7 +147,7 @@ class TestLiveOrderExecution:
     @pytest.mark.asyncio
     async def test_live_filled_order_updates_open_orders(self, live_executor, mock_api):
         mock_api.create_order = AsyncMock(
-            return_value={"orderId": "live-456", "status": "OPEN", "filledQty": 0}
+            return_value={"venue_order_id": "live-456", "client_order_id": "c-456", "state": "open"}
         )
         await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert "live-456" in live_executor.open_orders
@@ -266,3 +266,172 @@ class TestPortfolioHelpers:
 
     def test_get_position_nonexistent(self, paper_executor):
         assert paper_executor.get_position("UNKNOWN") is None
+
+
+class TestSignalValidation:
+    @pytest.mark.asyncio
+    async def test_hold_signal_returns_none(self, paper_executor):
+        """HOLD signals must not produce any order."""
+        signal = make_signal(signal_type="HOLD")
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_hold_signal_creates_no_position(self, paper_executor):
+        signal = make_signal(signal_type="HOLD")
+        await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert paper_executor.positions == {}
+
+
+class TestCloseOrderOnStopTakeProfit:
+    @pytest.mark.asyncio
+    async def test_stop_loss_executes_close_order_not_just_deletes(self, paper_executor):
+        """When stop loss triggers, a real closing order must be placed, not just
+        the position deleted from the dict."""
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.stop_loss = Decimal("49000")
+        paper_executor.positions["BTC-EUR"] = pos
+
+        with patch.object(
+            paper_executor, "_execute_paper_order", wraps=paper_executor._execute_paper_order
+        ) as mock_execute:
+            await paper_executor.update_market_prices("BTC-EUR", Decimal("48000"))
+            mock_execute.assert_called_once()
+            close_order = mock_execute.call_args[0][0]
+            assert close_order.side == OrderSide.SELL
+            assert close_order.symbol == "BTC-EUR"
+
+    @pytest.mark.asyncio
+    async def test_take_profit_executes_close_order(self, paper_executor):
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.take_profit = Decimal("52000")
+        paper_executor.positions["BTC-EUR"] = pos
+
+        with patch.object(
+            paper_executor, "_execute_paper_order", wraps=paper_executor._execute_paper_order
+        ) as mock_execute:
+            await paper_executor.update_market_prices("BTC-EUR", Decimal("53000"))
+            mock_execute.assert_called_once()
+            close_order = mock_execute.call_args[0][0]
+            assert close_order.side == OrderSide.SELL
+
+    @pytest.mark.asyncio
+    async def test_stop_loss_close_order_uses_market_type(self, paper_executor):
+        """Close orders triggered by SL/TP must be market orders for immediate fill."""
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.stop_loss = Decimal("49000")
+        paper_executor.positions["BTC-EUR"] = pos
+
+        with patch.object(
+            paper_executor, "_execute_paper_order", wraps=paper_executor._execute_paper_order
+        ) as mock_execute:
+            await paper_executor.update_market_prices("BTC-EUR", Decimal("48000"))
+            close_order = mock_execute.call_args[0][0]
+            assert close_order.order_type == OrderType.MARKET
+
+
+class TestRealizedPnL:
+    @pytest.mark.asyncio
+    async def test_reduce_buy_position_positive_pnl(self, paper_executor):
+        """Selling part of a BUY position above entry price yields positive PnL."""
+        paper_executor.positions["BTC-EUR"] = make_position(
+            quantity=Decimal("1.0"), entry_price=Decimal("50000")
+        )
+        partial_sell = Order(
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("0.5"),
+            price=Decimal("52000"),
+            filled_quantity=Decimal("0.5"),
+            status=OrderStatus.FILLED,
+        )
+        await paper_executor._update_positions(partial_sell)
+        assert paper_executor.positions["BTC-EUR"].realized_pnl == Decimal("1000")
+
+    @pytest.mark.asyncio
+    async def test_reduce_sell_position_positive_pnl(self, paper_executor):
+        """Buying back part of a SELL (short) position below entry price yields positive PnL."""
+        paper_executor.positions["BTC-EUR"] = make_position(
+            side=OrderSide.SELL,
+            quantity=Decimal("1.0"),
+            entry_price=Decimal("50000"),
+        )
+        partial_buy = Order(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("0.5"),
+            price=Decimal("48000"),  # bought back cheaper → profit for short
+            filled_quantity=Decimal("0.5"),
+            status=OrderStatus.FILLED,
+        )
+        await paper_executor._update_positions(partial_buy)
+        assert paper_executor.positions["BTC-EUR"].realized_pnl == Decimal("1000")
+
+    @pytest.mark.asyncio
+    async def test_reduce_sell_position_negative_pnl_on_loss(self, paper_executor):
+        """Buying back a short above entry price yields negative PnL."""
+        paper_executor.positions["BTC-EUR"] = make_position(
+            side=OrderSide.SELL,
+            quantity=Decimal("1.0"),
+            entry_price=Decimal("50000"),
+        )
+        partial_buy = Order(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("0.5"),
+            price=Decimal("52000"),  # bought back more expensive → loss for short
+            filled_quantity=Decimal("0.5"),
+            status=OrderStatus.FILLED,
+        )
+        await paper_executor._update_positions(partial_buy)
+        assert paper_executor.positions["BTC-EUR"].realized_pnl == Decimal("-1000")
+
+
+class TestLiveOrderResponseMapping:
+    @pytest.mark.asyncio
+    async def test_live_order_reads_venue_order_id(self, live_executor, mock_api):
+        """Executor must read venue_order_id from API response, not orderId."""
+        mock_api.create_order = AsyncMock(
+            return_value={
+                "venue_order_id": "venue-789",
+                "client_order_id": "c-789",
+                "state": "open",
+            }
+        )
+        signal = make_signal(strength=0.5)
+        order = await live_executor.execute_signal(signal, Decimal("10000"))
+        assert order.order_id == "venue-789"
+
+    @pytest.mark.asyncio
+    async def test_live_order_maps_open_state(self, live_executor, mock_api):
+        """API 'open' state maps to OrderStatus.OPEN."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v1", "client_order_id": "c1", "state": "open"}
+        )
+        order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
+        assert order.status == OrderStatus.OPEN
+
+    @pytest.mark.asyncio
+    async def test_live_order_maps_filled_state(self, live_executor, mock_api):
+        """API 'filled' state maps to OrderStatus.FILLED."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v2", "client_order_id": "c2", "state": "filled"}
+        )
+        order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
+        assert order.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_live_order_unknown_state_defaults_to_pending(self, live_executor, mock_api):
+        """Unknown API state defaults to PENDING rather than crashing."""
+        mock_api.create_order = AsyncMock(
+            return_value={
+                "venue_order_id": "v3",
+                "client_order_id": "c3",
+                "state": "unknown_future_state",
+            }
+        )
+        order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
+        assert order.status == OrderStatus.PENDING
