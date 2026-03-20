@@ -16,7 +16,7 @@ from src.strategies.market_making import MarketMakingStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
-from src.utils.hybrid_persistence import HybridPersistence
+from src.utils.db_persistence import DatabasePersistence
 
 
 class TradingBot:
@@ -40,7 +40,7 @@ class TradingBot:
         self.risk_manager: RiskManager | None = None
         self.executor: OrderExecutor | None = None
         self.strategy: BaseStrategy | None = None
-        self.persistence = HybridPersistence()
+        self.persistence = DatabasePersistence()
 
         # Currency display
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
@@ -212,7 +212,7 @@ class TradingBot:
                         trading_mode=self.trading_mode.value,
                     )
 
-                # Save bulk data periodically (every 10 iterations for JSON backup)
+                # Bulk save snapshots periodically (every 10 iterations)
                 self.save_counter += 1
                 if self.save_counter >= 10:
                     self._save_data()
@@ -416,7 +416,7 @@ class TradingBot:
                     list(self.portfolio_snapshots), metadata
                 )
 
-            logger.debug("Saved portfolio data (database + JSON backup)")
+            logger.debug("Saved portfolio data to database")
 
         except Exception as e:
             logger.error(f"Failed to save data: {e}")

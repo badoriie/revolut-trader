@@ -16,10 +16,9 @@ cli/run.py  (entry point)
         │   ├── MarketMakingStrategy   — bid/ask spread
         │   ├── MeanReversionStrategy  — Bollinger Bands
         │   └── MultiStrategy          — weighted voting across all 3
-        ├── HybridPersistence  (src/utils/hybrid_persistence.py)
-        │   └── DatabasePersistence  (src/utils/db_persistence.py)
-        │       ├── SQLAlchemy ORM  (src/models/db.py)
-        │       └── DatabaseEncryption  (src/utils/db_encryption.py)
+        ├── DatabasePersistence  (src/utils/db_persistence.py)
+        │   ├── SQLAlchemy ORM  (src/models/db.py)
+        │   └── DatabaseEncryption  (src/utils/db_encryption.py)
         └── Config  (src/config.py)
             └── 1Password  (src/utils/onepassword.py)
 ```
