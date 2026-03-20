@@ -9,15 +9,24 @@ from src.models.domain import Order, OrderSide, OrderStatus, OrderType, Position
 from src.risk_management.risk_manager import RiskManager
 
 # Map Revolut API order states to internal OrderStatus values.
-# API uses lowercase strings; unknown values default to PENDING rather than crashing.
+# API state strings (lowercase) → internal enum:
+#   "new"            = working order (Revolut never sends "open")
+#   "pending_new"    = accepted, not yet working
+#   "partially_filled" = partially executed
+#   "filled"         = fully executed
+#   "cancelled"      = cancelled (also tolerate alternate spelling "canceled")
+#   "rejected"       = rejected
+#   "replaced"       = replaced by another order
+# Unknown values default to PENDING rather than crashing.
 _API_STATE_MAP: dict[str, OrderStatus] = {
-    "open": OrderStatus.OPEN,
-    "filled": OrderStatus.FILLED,
+    "new": OrderStatus.OPEN,
+    "pending_new": OrderStatus.PENDING,
     "partially_filled": OrderStatus.PARTIALLY_FILLED,
+    "filled": OrderStatus.FILLED,
     "cancelled": OrderStatus.CANCELLED,
     "canceled": OrderStatus.CANCELLED,  # tolerate alternate spelling
     "rejected": OrderStatus.REJECTED,
-    "replaced": OrderStatus.CANCELLED,
+    "replaced": OrderStatus.REPLACED,
 }
 
 
