@@ -64,14 +64,14 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper
 
 **Component hierarchy:**
 
-- `TradingBot` (orchestrator) owns: `RevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `TelegramNotifier`, `HybridPersistence`
+- `TradingBot` (orchestrator) owns: `RevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `TelegramNotifier`, `DatabasePersistence`
 - Each trading loop iteration: fetch market data → `strategy.analyze()` → `risk_manager.validate()` → `executor.execute()` → persist
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Four implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting across all three). Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 **Configuration** (`src/config.py`): Pydantic-based. All trading config (mode, strategy, risk level, pairs, capital) is fetched from 1Password at startup — there are no code-level defaults. Config fails fast with actionable error messages if 1Password fields are missing.
 
-**Persistence** (`src/utils/hybrid_persistence.py`): SQLite-only via `DatabasePersistence`. No JSON backup layer — all data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv` for on-demand exports.
+**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv` for on-demand exports.
 
 **Security**: All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY`). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
@@ -172,18 +172,17 @@ When changing code, update the relevant docs: `README.md` for features/config ch
 
 ## Key Files
 
-| File                                  | Purpose                                                       |
-| ------------------------------------- | ------------------------------------------------------------- |
-| `src/bot.py`                          | Main orchestrator — start here to understand flow             |
-| `src/config.py`                       | Pydantic config + 1Password loading                           |
-| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)     |
-| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode) |
-| `src/risk_management/risk_manager.py` | Risk validation and position sizing                           |
-| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                        |
-| `src/utils/onepassword.py`            | 1Password CLI wrapper                                         |
-| `src/utils/hybrid_persistence.py`     | Persistence facade (delegates to DatabasePersistence)         |
-| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations            |
-| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password            |
-| `src/backtest/engine.py`              | Backtest engine with pagination, slippage, fees, Sharpe ratio |
-| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                   |
-| `docs/DEVELOPMENT_GUIDELINES.md`      | Detailed development guidelines                               |
+| File                                  | Purpose                                                         |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `src/bot.py`                          | Main orchestrator — start here to understand flow               |
+| `src/config.py`                       | Pydantic config + 1Password loading                             |
+| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)       |
+| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)   |
+| `src/risk_management/risk_manager.py` | Risk validation and position sizing                             |
+| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                          |
+| `src/utils/onepassword.py`            | 1Password CLI wrapper                                           |
+| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export |
+| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password              |
+| `src/backtest/engine.py`              | Backtest engine with pagination, slippage, fees, Sharpe ratio   |
+| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                     |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | Detailed development guidelines                                 |

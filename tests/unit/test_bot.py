@@ -280,6 +280,7 @@ class TestStop:
             num_positions=0,
         )
         bot.portfolio_snapshots.append(snapshot)
+        bot.current_session_id = 42
         bot.api_client = None
         await bot.stop()
         mock_persistence.end_session.assert_called_once()

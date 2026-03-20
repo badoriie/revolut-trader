@@ -59,7 +59,6 @@ class DatabasePersistence:
         self._Session = get_session_factory(self.engine)
         init_database(self.engine)
         self.encryption = DatabaseEncryption()
-        self.current_session_id: int | None = None
         logger.info(f"Database persistence initialised: {DB_URL}")
         if self.encryption.is_enabled:
             logger.info("✓ Database field encryption enabled")
@@ -328,67 +327,31 @@ class DatabasePersistence:
         except SQLAlchemyError:
             return -1
 
-    def start_session(
-        self,
-        strategy: str,
-        risk_level: str,
-        trading_mode: str,
-        trading_pairs: list[str],
-        initial_balance: Decimal,
-    ) -> None:
-        """Create a new trading session and store its ID on the instance.
-
-        Convenience wrapper around ``create_session()`` that keeps session
-        state internally so callers don't need to track the session ID.
-
-        Args:
-            strategy: Strategy name (e.g. ``"momentum"``).
-            risk_level: Risk level label (e.g. ``"moderate"``).
-            trading_mode: Execution mode (``"paper"`` or ``"live"``).
-            trading_pairs: Instruments being traded (encrypted at rest).
-            initial_balance: Starting account balance.
-        """
-        self.current_session_id = self.create_session(
-            strategy=strategy,
-            risk_level=risk_level,
-            trading_mode=trading_mode,
-            trading_pairs=trading_pairs,
-            initial_balance=initial_balance,
-        )
-        logger.info(f"Trading session started: {self.current_session_id}")
-
     def end_session(
         self,
+        session_id: int,
         final_balance: Decimal,
         total_pnl: Decimal,
         total_trades: int,
-        session_id: int | None = None,
     ) -> None:
         """Close a trading session and record final metrics.
 
-        Uses ``current_session_id`` when ``session_id`` is not supplied.
-        Does nothing if no session is active.
-
         Args:
+            session_id: Primary key of the session to close.
             final_balance: Account balance at session end.
             total_pnl: Net profit/loss for the session.
             total_trades: Total number of orders executed.
-            session_id: Primary key of the session to close (defaults to
-                ``current_session_id``).
         """
-        sid = session_id if session_id is not None else self.current_session_id
-        if sid is None:
-            return
         try:
             with self._session() as sess:
-                record = sess.query(SessionDB).filter_by(id=sid).first()
+                record = sess.query(SessionDB).filter_by(id=session_id).first()
                 if record:
                     record.ended_at = datetime.now(UTC)
                     record.final_balance = final_balance
                     record.total_pnl = total_pnl
                     record.total_trades = total_trades
                     record.status = "STOPPED"
-            logger.info(f"Ended trading session: {sid}")
+            logger.info(f"Ended trading session: {session_id}")
         except SQLAlchemyError:
             pass
 
@@ -633,6 +596,10 @@ class DatabasePersistence:
                 )
         except SQLAlchemyError:
             pass
+
+    # ---------------------------------------------------------------------------
+    # CSV export
+    # ---------------------------------------------------------------------------
 
     def export_to_csv(self, output_dir: Path = Path("data/exports")) -> None:
         """Export all trades and portfolio snapshots to dated CSV files.

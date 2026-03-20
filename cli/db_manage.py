@@ -9,7 +9,6 @@ from pathlib import Path
 from loguru import logger
 
 from src.utils.db_persistence import DatabasePersistence
-from src.utils.hybrid_persistence import HybridPersistence
 
 
 def show_analytics(days: int = 30):
@@ -75,7 +74,7 @@ def export_data(output_dir: str = "data/exports"):
 def export_csv():
     """Export data to CSV files."""
     print("\nExporting to CSV...")
-    HybridPersistence().export_to_csv()
+    DatabasePersistence().export_to_csv()
     print("CSV export complete")
 
 
