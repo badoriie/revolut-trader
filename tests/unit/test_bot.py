@@ -20,7 +20,7 @@ def mock_persistence():
 
 @pytest.fixture
 def bot(monkeypatch, mock_persistence):
-    monkeypatch.setattr("src.bot.HybridPersistence", lambda *args, **kwargs: mock_persistence)
+    monkeypatch.setattr("src.bot.DatabasePersistence", lambda *args, **kwargs: mock_persistence)
     from src.bot import TradingBot
 
     return TradingBot(

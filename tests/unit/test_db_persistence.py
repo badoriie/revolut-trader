@@ -173,6 +173,29 @@ class TestSessionManagement:
             total_trades=0,
         )
 
+    def test_start_session_stores_current_session_id(self, db_persistence):
+        assert db_persistence.current_session_id is None
+        db_persistence.start_session("momentum", "moderate", "paper", ["BTC-EUR"], Decimal("10000"))
+        assert isinstance(db_persistence.current_session_id, int)
+        assert db_persistence.current_session_id > 0
+
+    def test_end_session_uses_current_session_id_when_not_provided(self, db_persistence):
+        db_persistence.start_session("m", "c", "p", ["BTC-EUR"], Decimal("10000"))
+        # Should not raise — uses current_session_id internally
+        db_persistence.end_session(
+            final_balance=Decimal("10500"),
+            total_pnl=Decimal("500"),
+            total_trades=3,
+        )
+
+    def test_end_session_without_active_session_is_noop(self, db_persistence):
+        assert db_persistence.current_session_id is None
+        db_persistence.end_session(
+            final_balance=Decimal("100"),
+            total_pnl=Decimal("0"),
+            total_trades=0,
+        )  # Should not raise
+
 
 class TestAnalytics:
     def test_get_analytics_empty_database(self, db_persistence):
@@ -256,3 +279,15 @@ class TestLogEntries:
         entries = db_persistence.load_log_entries()
         assert len(entries) == 1
         assert entries[0]["module"] is None
+
+
+class TestExportToCsv:
+    def test_export_creates_csv_files(self, db_persistence, tmp_path):
+        db_persistence.save_trade(make_order())
+        db_persistence.save_portfolio_snapshot(make_snapshot(), "momentum", "moderate", "paper")
+        db_persistence.export_to_csv(output_dir=tmp_path / "exports")
+        assert len(list((tmp_path / "exports").glob("*.csv"))) == 2
+
+    def test_export_handles_empty_data(self, db_persistence, tmp_path):
+        db_persistence.export_to_csv(output_dir=tmp_path / "exports")
+        # Should not raise even with no data
