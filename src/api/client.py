@@ -411,8 +411,8 @@ class RevolutAPIClient:
         symbol: str,
         side: str,
         order_type: str,
-        quantity: float,
-        price: float | None = None,
+        quantity: str | float,
+        price: str | float | None = None,
     ) -> dict[str, Any]:
         """Place a new limit or market order.
 
@@ -422,8 +422,10 @@ class RevolutAPIClient:
             symbol:     Trading pair (e.g. ``"BTC-USD"``).
             side:       ``"buy"`` or ``"sell"`` (case-insensitive).
             order_type: ``"limit"`` or ``"market"`` (case-insensitive).
-            quantity:   Base asset quantity.
-            price:      Limit price — required for limit orders.
+            quantity:   Base asset quantity. Pass ``str`` (from ``Decimal``) to
+                        preserve full precision; ``float`` is also accepted.
+            price:      Limit price — required for limit orders. Same precision
+                        note as ``quantity``.
 
         Returns:
             ``{"venue_order_id": str, "client_order_id": str, "state": str}``
