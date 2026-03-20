@@ -176,9 +176,7 @@ class BacktestResults:
         print(f"Losing Trades:      {self.losing_trades}")
         print(f"Win Rate:           {self.win_rate:.2f}%")
         print(f"Profit Factor:      {self.profit_factor:.2f}")
-        print(
-            f"Max Drawdown:       {sym}{self.max_drawdown:,.2f}" f" ({self.max_drawdown_pct:.2f}%)"
-        )
+        print(f"Max Drawdown:       {sym}{self.max_drawdown:,.2f} ({self.max_drawdown_pct:.2f}%)")
         print(f"Sharpe Ratio:       {self.sharpe_ratio:.3f}")
         print("=" * 60 + "\n")
 
@@ -282,8 +280,7 @@ class BacktestEngine:
 
         approx_bars = days * 24 * 60 // interval
         logger.info(
-            f"Fetching {days}d of {symbol} candles "
-            f"({interval}min, ~{approx_bars} bars expected)"
+            f"Fetching {days}d of {symbol} candles ({interval}min, ~{approx_bars} bars expected)"
         )
 
         all_candles: list[CandleData] = []
@@ -438,8 +435,7 @@ class BacktestEngine:
             pos = self.positions[symbol]
             if pos.quantity < quantity:
                 logger.warning(
-                    f"Insufficient position for SELL {symbol}: "
-                    f"have {pos.quantity}, need {quantity}"
+                    f"Insufficient position for SELL {symbol}: have {pos.quantity}, need {quantity}"
                 )
                 return False
 

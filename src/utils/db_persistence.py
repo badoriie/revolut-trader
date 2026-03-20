@@ -472,8 +472,7 @@ class DatabasePersistence:
                 sess.flush()
                 run_id: int = record.id  # type: ignore[assignment]
             logger.info(
-                f"Saved backtest run: {run_id} "
-                f"({strategy}, return={results['return_pct']:.2f}%)"
+                f"Saved backtest run: {run_id} ({strategy}, return={results['return_pct']:.2f}%)"
             )
             return run_id
         except SQLAlchemyError:

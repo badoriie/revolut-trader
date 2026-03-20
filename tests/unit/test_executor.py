@@ -57,7 +57,7 @@ def mock_api():
 
 @pytest.fixture
 def moderate_rm():
-    return RiskManager(RiskLevel.MODERATE, max_order_value_usd=Decimal("100000"))
+    return RiskManager(RiskLevel.MODERATE, max_order_value=100000)
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ class TestPaperOrderExecution:
 
     @pytest.mark.asyncio
     async def test_sanity_check_rejects_order_exceeding_limit(self, mock_api):
-        tiny_rm = RiskManager(RiskLevel.MODERATE, max_order_value_usd=Decimal("1"))
+        tiny_rm = RiskManager(RiskLevel.MODERATE, max_order_value=1)
         executor = OrderExecutor(mock_api, tiny_rm, TradingMode.PAPER)
         signal = make_signal(strength=1.0)
         order = await executor.execute_signal(signal, Decimal("1000000"))

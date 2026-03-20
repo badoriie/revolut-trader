@@ -74,7 +74,7 @@ class TestOrderValueLimits:
             price=Decimal("50000"),  # 50,000 EUR
         )
 
-        # Order value = 50,000 EUR > max_order_value_usd (10,000 EUR)
+        # Order value = 50,000 EUR > max_order_value (10,000 EUR)
         current_price = Decimal("50000")
 
         is_valid, reason = conservative_risk_manager.validate_order_sanity(
@@ -311,34 +311,40 @@ class TestConcentrationRisk:
     """Tests that verify concentration risk (too much in one symbol) is prevented."""
 
     def test_concentration_risk_prevents_overexposure(
-        self, conservative_risk_manager, medium_portfolio_value, btc_long_position
+        self, conservative_risk_manager, medium_portfolio_value
     ):
         """CRITICAL: Total exposure to one symbol must be limited.
 
         Context: Safety requirement SAF-09
         Critical because: Too much in one asset = correlated risk
 
-        Scenario: Already have BTC position worth 1.5% of portfolio
-        Try to add another 1.5% BTC position
-        Total would be 3% > concentration limit (2x max_position = 3%)
+        Scenario:
+        - Portfolio = 10,000 EUR, conservative max = 1.5%, concentration limit = 3% (300 EUR)
+        - Existing BTC position: 0.004 BTC @ 50,000 EUR = 200 EUR (2% of portfolio)
+        - New order: 0.003 BTC @ 50,000 EUR = 150 EUR (1.5% — within individual limit)
+        - Total BTC exposure: 350 EUR = 3.5% > 3% concentration limit → REJECTED
         """
-        # Conservative max position = 1.5%, so concentration limit = 3%
-        # Portfolio = 10,000 EUR, so 3% = 300 EUR
-        # BTC position = 0.1 BTC @ 50,000 EUR = 5,000 EUR (50% - way over limit!)
+        from src.models.domain import Position
 
-        # Try to add more BTC
+        existing_btc = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.004"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("50000"),
+        )
+
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
             side=OrderSide.BUY,
-            quantity=Decimal("0.01"),  # Another small amount
+            quantity=Decimal("0.003"),  # 150 EUR = 1.5% — passes individual check
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,
-            current_positions=[btc_long_position],
+            current_positions=[existing_btc],
         )
 
-        # This depends on implementation - if concentration check exists
-        # For now, this test documents the expected behavior
-        # May need to implement concentration check in risk_manager.py
+        assert not is_valid
+        assert "concentration" in reason.lower() or "exposure" in reason.lower()
 
     def test_can_open_different_symbol_with_existing_positions(
         self, conservative_risk_manager, medium_portfolio_value, btc_long_position
@@ -358,6 +364,46 @@ class TestConcentrationRisk:
 
         # Should be allowed (different symbols)
         assert is_valid
+
+
+class TestValidateOrderRunsSanityChecks:
+    """Tests that validate_order() enforces ALL safety limits, not just position rules.
+
+    Critical because: validate_order() is the single gate before execution. If it
+    only checks position-level rules but skips absolute safety limits, an order that
+    is a small fraction of a huge portfolio could still be catastrophically large
+    in absolute EUR terms.
+    """
+
+    def test_validate_order_rejects_order_exceeding_max_value(self):
+        """CRITICAL: validate_order() MUST reject orders over the absolute max.
+
+        Context: Safety requirement SAF-12
+        Scenario:
+        - Portfolio = 2,000,000 EUR (very large)
+        - Order = 0.5 BTC @ 50,000 EUR = 25,000 EUR (only 1.25% of portfolio — passes
+          position-size check but exceeds absolute 10,000 EUR safety limit)
+        - validate_order() MUST reject this — the safety limit exists for a reason.
+        """
+        rm = RiskManager(RiskLevel.CONSERVATIVE, max_order_value=10000)
+        large_portfolio = Decimal("2000000")
+
+        order = Order(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("0.5"),  # 0.5 * 50,000 = 25,000 EUR
+            price=Decimal("50000"),
+        )
+
+        is_valid, reason = rm.validate_order(
+            order=order,
+            portfolio_value=large_portfolio,
+            current_positions=[],
+        )
+
+        assert not is_valid
+        assert "exceeds safety limit" in reason
 
 
 class TestPositionSizeValidation:

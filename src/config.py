@@ -91,44 +91,11 @@ class Settings(BaseSettings):
                 "Invalid INITIAL_CAPITAL in 1Password: must be a positive number."
             ) from e
 
-    # Risk Management
-    max_position_size_pct: float = Field(default=2.0, ge=0.1, le=100.0)
-    max_daily_loss_pct: float = Field(default=5.0, ge=0.1, le=100.0)
-    stop_loss_pct: float = Field(default=2.0, ge=0.1, le=50.0)
-    take_profit_pct: float = Field(default=3.0, ge=0.1, le=100.0)
-
     # Logging
     log_level: str = Field(default="INFO")
 
     # Paper Trading (populated in model_post_init from 1Password INITIAL_CAPITAL)
     paper_initial_capital: float = Field(default=10000.0, ge=1.0)
-
-    def get_risk_parameters(self) -> dict:
-        """Get risk parameters based on risk level."""
-        risk_params = {
-            RiskLevel.CONSERVATIVE: {
-                "max_position_size_pct": 1.5,
-                "max_daily_loss_pct": 3.0,
-                "stop_loss_pct": 1.5,
-                "take_profit_pct": 2.5,
-                "max_open_positions": 3,
-            },
-            RiskLevel.MODERATE: {
-                "max_position_size_pct": 3.0,
-                "max_daily_loss_pct": 5.0,
-                "stop_loss_pct": 2.5,
-                "take_profit_pct": 4.0,
-                "max_open_positions": 5,
-            },
-            RiskLevel.AGGRESSIVE: {
-                "max_position_size_pct": 5.0,
-                "max_daily_loss_pct": 10.0,
-                "stop_loss_pct": 4.0,
-                "take_profit_pct": 7.0,
-                "max_open_positions": 8,
-            },
-        }
-        return risk_params.get(self.risk_level, risk_params[RiskLevel.CONSERVATIVE])
 
 
 settings = Settings()

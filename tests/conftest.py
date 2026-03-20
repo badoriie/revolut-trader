@@ -76,7 +76,7 @@ def conservative_risk_manager():
     - Take profit: 2.5%
     - Max open positions: 3
     """
-    return RiskManager(risk_level=RiskLevel.CONSERVATIVE, max_order_value_usd=10000)
+    return RiskManager(risk_level=RiskLevel.CONSERVATIVE, max_order_value=10000)
 
 
 @pytest.fixture
@@ -89,7 +89,7 @@ def moderate_risk_manager():
     - Take profit: 4%
     - Max open positions: 5
     """
-    return RiskManager(risk_level=RiskLevel.MODERATE, max_order_value_usd=10000)
+    return RiskManager(risk_level=RiskLevel.MODERATE, max_order_value=10000)
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ def aggressive_risk_manager():
     - Take profit: 7%
     - Max open positions: 8
     """
-    return RiskManager(risk_level=RiskLevel.AGGRESSIVE, max_order_value_usd=10000)
+    return RiskManager(risk_level=RiskLevel.AGGRESSIVE, max_order_value=10000)
 
 
 # ============================================================================
