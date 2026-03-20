@@ -14,8 +14,8 @@ class OrderSide(str, Enum):
 class OrderType(str, Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
-    STOP_LOSS = "STOP_LOSS"
-    TAKE_PROFIT = "TAKE_PROFIT"
+    CONDITIONAL = "CONDITIONAL"  # Revolut: trigger-based order (was STOP_LOSS)
+    TPSL = "TPSL"  # Revolut: take-profit / stop-loss order (was TAKE_PROFIT)
 
 
 class OrderStatus(str, Enum):
@@ -25,6 +25,7 @@ class OrderStatus(str, Enum):
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     CANCELLED = "CANCELLED"
     REJECTED = "REJECTED"
+    REPLACED = "REPLACED"  # Revolut: order replaced by another
 
 
 class Position(BaseModel):
@@ -76,18 +77,38 @@ class Position(BaseModel):
 
 
 class Order(BaseModel):
-    """Order model."""
+    """Order model.
 
-    order_id: str | None = None
+    Field mapping to Revolut X API:
+      order_id          → venue_order_id (system-assigned UUID)
+      client_order_id   → client_order_id (caller-assigned UUID sent at creation)
+      leaves_quantity   → leaves_quantity (unfilled remainder)
+      quote_quantity    → quote_quantity (size in quote currency)
+      average_fill_price → average_fill_price (qty-weighted avg execution price)
+      reject_reason     → reject_reason (only present when status=REJECTED)
+      time_in_force     → time_in_force ("gtc" | "ioc" | "fok")
+      execution_instructions → execution_instructions (["allow_taker"] | ["post_only"])
+      completed_at      → completed_date (unix ms; mapped to datetime here)
+    """
+
+    order_id: str | None = None  # venue_order_id
+    client_order_id: str | None = None
     symbol: str
     side: OrderSide
     order_type: OrderType
     quantity: Decimal
     price: Decimal | None = None
     filled_quantity: Decimal = Decimal("0")
+    leaves_quantity: Decimal | None = None
+    quote_quantity: Decimal | None = None
+    average_fill_price: Decimal | None = None
     status: OrderStatus = OrderStatus.PENDING
+    reject_reason: str | None = None
+    time_in_force: str | None = None
+    execution_instructions: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
     strategy: str | None = None
 
 
@@ -148,10 +169,31 @@ class PortfolioSnapshot(BaseModel):
 
 
 class OrderBookEntry(BaseModel):
-    """Single order book entry (bid or ask)."""
+    """Single order book level from the Revolut X API.
 
-    p: str  # Price
-    q: str  # Quantity
+    API shape (both public and authenticated order book):
+      aid  — asset ID (e.g. "BTC")
+      anm  — asset name (e.g. "Bitcoin")
+      s    — side: "SELL" for asks, "BUY" for bids
+      p    — price as string
+      pc   — price currency (e.g. "EUR")
+      q    — quantity as string
+      qc   — quantity currency (e.g. "BTC")
+      no   — number of orders at this level
+      ts   — trading system type (e.g. "CLOB")
+      pdt  — timestamp (unix ms)
+    """
+
+    p: str  # Price (required)
+    q: str  # Quantity (required)
+    aid: str | None = None  # Asset ID
+    anm: str | None = None  # Asset name
+    s: str | None = None  # Side: "SELL" or "BUY"
+    pc: str | None = None  # Price currency
+    qc: str | None = None  # Quantity currency
+    no: str | None = None  # Number of orders at this level
+    ts: str | None = None  # Trading system type
+    pdt: int | None = None  # Timestamp (unix ms)
 
     @property
     def price(self) -> Decimal:
@@ -176,31 +218,37 @@ class OrderBookResponse(BaseModel):
 
 
 class BalanceData(BaseModel):
-    """Balance data structure."""
+    """Balance data matching the Revolut X API response.
 
-    availableBalance: str
-    totalBalance: str | None = None
-    currency: str = "USD"
+    API shape: {"currency": "BTC", "available": "1.25", "reserved": "0.10", "staked": "0", "total": "1.35"}
+    """
+
+    currency: str
+    available: str
+    reserved: str = "0"
+    staked: str = "0"
+    total: str
 
     @property
-    def available(self) -> Decimal:
-        return Decimal(self.availableBalance)
+    def available_decimal(self) -> Decimal:
+        """Available balance as Decimal."""
+        return Decimal(self.available)
 
     @property
-    def total(self) -> Decimal:
-        if self.totalBalance:
-            return Decimal(self.totalBalance)
-        return self.available
+    def total_decimal(self) -> Decimal:
+        """Total balance (available + reserved + staked) as Decimal."""
+        return Decimal(self.total)
 
 
 class BalanceResponse(BaseModel):
-    """Revolut X API balance response."""
+    """Revolut X API balance response.
 
-    data: BalanceData | None = None
-    # Direct response format (no data wrapper)
-    availableBalance: str | None = None
-    totalBalance: str | None = None
-    currency: str | None = None
+    The API returns a JSON array directly (no wrapper object):
+      GET /balances → [BalanceData, ...]
+    The API client parses this manually; this model is a typed reference.
+    """
+
+    balances: list[BalanceData] = Field(default_factory=list)
 
 
 class CandleData(BaseModel):
@@ -245,17 +293,20 @@ class CandleResponse(BaseModel):
 
 
 class OrderCreationData(BaseModel):
-    """Order creation response data."""
+    """Single item in the order creation response array.
 
-    orderId: str
-    status: str
-    symbol: str
-    side: str
-    quantity: str
-    price: str | None = None
+    API shape: {"venue_order_id": "<uuid>", "client_order_id": "<uuid>", "state": "new"}
+    """
+
+    venue_order_id: str
+    client_order_id: str
+    state: str
 
 
 class OrderCreationResponse(BaseModel):
-    """Revolut X API order creation response."""
+    """Revolut X API order creation response.
 
-    data: OrderCreationData
+    API returns: {"data": [OrderCreationData]}  (always a single-element list)
+    """
+
+    data: list[OrderCreationData]

@@ -50,7 +50,7 @@ def make_position(
 def mock_api():
     api = MagicMock()
     api.create_order = AsyncMock(
-        return_value={"venue_order_id": "live-123", "client_order_id": "c-123", "state": "open"}
+        return_value={"venue_order_id": "live-123", "client_order_id": "c-123", "state": "new"}
     )
     return api
 
@@ -136,6 +136,8 @@ class TestLiveOrderExecution:
         order = await live_executor.execute_signal(signal, Decimal("10000"))
         assert mock_api.create_order.called
         assert order.order_id == "live-123"
+        # API "new" state (working order) must map to OrderStatus.OPEN
+        assert order.status == OrderStatus.OPEN
 
     @pytest.mark.asyncio
     async def test_live_order_api_failure_rejects_order(self, live_executor, mock_api):
@@ -147,7 +149,7 @@ class TestLiveOrderExecution:
     @pytest.mark.asyncio
     async def test_live_filled_order_updates_open_orders(self, live_executor, mock_api):
         mock_api.create_order = AsyncMock(
-            return_value={"venue_order_id": "live-456", "client_order_id": "c-456", "state": "open"}
+            return_value={"venue_order_id": "live-456", "client_order_id": "c-456", "state": "new"}
         )
         await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert "live-456" in live_executor.open_orders
@@ -406,13 +408,22 @@ class TestLiveOrderResponseMapping:
         assert order.order_id == "venue-789"
 
     @pytest.mark.asyncio
-    async def test_live_order_maps_open_state(self, live_executor, mock_api):
-        """API 'open' state maps to OrderStatus.OPEN."""
+    async def test_live_order_maps_new_state(self, live_executor, mock_api):
+        """API 'new' state (working order) maps to OrderStatus.OPEN."""
         mock_api.create_order = AsyncMock(
-            return_value={"venue_order_id": "v1", "client_order_id": "c1", "state": "open"}
+            return_value={"venue_order_id": "v1", "client_order_id": "c1", "state": "new"}
         )
         order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert order.status == OrderStatus.OPEN
+
+    @pytest.mark.asyncio
+    async def test_live_order_maps_pending_new_state(self, live_executor, mock_api):
+        """API 'pending_new' state maps to OrderStatus.PENDING."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v1", "client_order_id": "c1", "state": "pending_new"}
+        )
+        order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
+        assert order.status == OrderStatus.PENDING
 
     @pytest.mark.asyncio
     async def test_live_order_maps_filled_state(self, live_executor, mock_api):
@@ -422,6 +433,15 @@ class TestLiveOrderResponseMapping:
         )
         order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert order.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_live_order_maps_replaced_state(self, live_executor, mock_api):
+        """API 'replaced' state maps to OrderStatus.REPLACED."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v2", "client_order_id": "c2", "state": "replaced"}
+        )
+        order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
+        assert order.status == OrderStatus.REPLACED
 
     @pytest.mark.asyncio
     async def test_live_order_unknown_state_defaults_to_pending(self, live_executor, mock_api):

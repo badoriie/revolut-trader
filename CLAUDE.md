@@ -90,13 +90,47 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper
 
 These are enforced by pre-commit hooks and must be followed:
 
+### Revolut X API Docs — The Single Source of Truth
+
+`docs/revolut-x-api-docs.md` is the authoritative reference for **all** API behaviour.
+Every endpoint path, request body shape, response shape, field name, field type, and valid
+enum value must be taken from that document — never guessed, inferred from existing code, or
+assumed from another source.
+
+**The hierarchy is strict and non-negotiable:**
+
+```
+Revolut X API docs  →  tests  →  code
+```
+
+1. **API docs define reality.** If the docs say the order creation response is
+   `{"data": [{"venue_order_id": ..., "state": "new"}]}`, that is what the tests must assert
+   and what the code must produce. Do not let existing code shapes influence what you believe
+   the API returns.
+
+1. **Tests encode the API contract.** Every field name, every valid enum string, every
+   response envelope must appear in tests exactly as the docs describe them. A test that uses
+   `"state": "open"` when the API only allows `"new" | "pending_new" | "partially_filled" | "filled" | "cancelled" | "rejected" | "replaced"` is a wrong test — fix the test first.
+
+1. **Code must pass the tests.** Implementation details (domain models, mappers, client
+   methods) are written or corrected to make the API-aligned tests pass — never the reverse.
+
+**Practical checklist before touching any API-related code or test:**
+
+- Open `docs/revolut-x-api-docs.md` and locate the relevant endpoint section.
+- Verify the HTTP method, path, required/optional params, and exact response shape.
+- Confirm every enum value used in tests (`"new"`, `"buy"`, `"limit"`, …) appears verbatim
+  in the docs.
+- If existing code or tests contradict the docs, the docs win — update code and tests.
+
 ### TDD — Non-Negotiable
 
 Write tests **first**, then code. Every new feature or fix:
 
-1. Write the test → confirm it fails
-1. Write minimal code → confirm it passes
-1. Refactor if needed
+1. Consult `docs/revolut-x-api-docs.md` to establish the API contract.
+1. Write the test against the API contract → confirm it fails.
+1. Write minimal code → confirm it passes.
+1. Refactor if needed.
 
 Safety-critical tests go in `tests/safety/`, financial math in `tests/unit/test_calculations.py`, everything else in `tests/unit/`.
 
