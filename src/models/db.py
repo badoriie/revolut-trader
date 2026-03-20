@@ -16,6 +16,7 @@ Design notes
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     DateTime,
@@ -123,9 +124,9 @@ class SessionDB(Base):
     # Stored as a Fernet-encrypted JSON array (reveals exact trading pairs — sensitive)
     trading_pairs: Mapped[str] = mapped_column(Text, nullable=False)
     initial_balance: Mapped[float] = mapped_column(Numeric(20, 10), nullable=False)
-    final_balance: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    final_balance: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
     total_trades: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    total_pnl: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    total_pnl: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
     # ACTIVE | STOPPED | CRASHED
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
 

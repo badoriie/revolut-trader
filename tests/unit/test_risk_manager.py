@@ -377,6 +377,134 @@ class TestRiskParameters:
         assert moderate["max_open_positions"] < aggressive["max_open_positions"]
 
 
+class TestPositionShouldClose:
+    """Tests that verify Position.should_close() triggers correctly for both sides.
+
+    Critical because wrong stop/take-profit logic = no protection on short positions.
+    """
+
+    def test_buy_stop_loss_triggers_when_price_falls_to_stop(self):
+        """CRITICAL: BUY stop loss MUST trigger when price drops to stop level.
+
+        Context: Risk requirement RM-06
+        Scenario: Bought BTC at 50,000 EUR, stop loss at 49,000 EUR.
+        When price hits 49,000 EUR the position must close.
+        """
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("49000"),
+            stop_loss=Decimal("49000"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is True
+        assert reason == "stop_loss"
+
+    def test_buy_take_profit_triggers_when_price_rises_to_target(self):
+        """CRITICAL: BUY take profit MUST trigger when price reaches target.
+
+        Scenario: Bought BTC at 50,000 EUR, take profit at 51,500 EUR.
+        When price hits 51,500 EUR the position must close.
+        """
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("51500"),
+            take_profit=Decimal("51500"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is True
+        assert reason == "take_profit"
+
+    def test_sell_stop_loss_triggers_when_price_rises_to_stop(self):
+        """CRITICAL: SELL stop loss MUST trigger when price rises to stop level.
+
+        Context: Risk requirement RM-07
+        Critical because: For short positions the loss side is UP, not down.
+
+        Scenario: Sold BTC at 50,000 EUR (short), stop loss at 51,000 EUR.
+        When price rises to 51,000 EUR, the loss must be capped — close position.
+        """
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("51000"),
+            stop_loss=Decimal("51000"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is True
+        assert reason == "stop_loss"
+
+    def test_sell_take_profit_triggers_when_price_falls_to_target(self):
+        """CRITICAL: SELL take profit MUST trigger when price falls to target.
+
+        Context: Risk requirement RM-08
+        Critical because: For short positions profit is captured when price falls.
+
+        Scenario: Sold BTC at 50,000 EUR, take profit at 48,500 EUR.
+        When price falls to 48,500 EUR the profit must be locked in.
+        """
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("48500"),
+            take_profit=Decimal("48500"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is True
+        assert reason == "take_profit"
+
+    def test_sell_no_close_when_price_between_levels(self):
+        """SELL position should stay open when price is between stop and target."""
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("49500"),  # Between target (48500) and stop (51000)
+            stop_loss=Decimal("51000"),
+            take_profit=Decimal("48500"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is False
+        assert reason == ""
+
+    def test_buy_no_close_when_price_between_levels(self):
+        """BUY position should stay open when price is between stop and target."""
+        from src.models.domain import Position
+
+        position = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("50200"),  # Between stop (49000) and target (51500)
+            stop_loss=Decimal("49000"),
+            take_profit=Decimal("51500"),
+        )
+        should_close, reason = position.should_close()
+        assert should_close is False
+        assert reason == ""
+
+
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
@@ -427,3 +555,32 @@ class TestEdgeCases:
 
         # Should have exactly 2 decimal places (quantized)
         assert stop_loss == stop_loss.quantize(Decimal("0.01"))
+
+    def test_unknown_risk_level_raises_value_error(self):
+        """Unknown risk level MUST raise ValueError — no silent fallback.
+
+        Critical because: Silent fallback to conservative could mask misconfiguration
+        and leave a trader believing they have conservative limits when they don't.
+        """
+        import pytest
+
+        with pytest.raises(ValueError, match="Unknown risk level"):
+            RiskManager._get_risk_parameters_for_level("invalid_level")  # type: ignore[arg-type]
+
+    def test_zero_portfolio_value_rejected(self, conservative_risk_manager):
+        """CRITICAL: Zero portfolio value MUST be rejected immediately.
+
+        Context: Safety requirement SAF-11
+        Critical because: Division by zero in position percentage calculation
+        would crash the bot or produce nonsensical results.
+        """
+        is_valid, reason = conservative_risk_manager.can_open_position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.001"),
+            price=Decimal("50000"),
+            portfolio_value=Decimal("0"),
+            current_positions=[],
+        )
+        assert not is_valid
+        assert "portfolio" in reason.lower()

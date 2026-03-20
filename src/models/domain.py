@@ -53,12 +53,24 @@ class Position(BaseModel):
             self.unrealized_pnl = (self.entry_price - new_price) * self.quantity
 
     def should_close(self) -> tuple[bool, str]:
-        """Check if position should be closed based on stop loss or take profit."""
-        if self.stop_loss and self.current_price <= self.stop_loss:
-            return True, "stop_loss"
+        """Check if position should be closed based on stop loss or take profit.
 
-        if self.take_profit and self.current_price >= self.take_profit:
-            return True, "take_profit"
+        BUY (long): stop loss triggers when price falls to or below the stop level;
+                    take profit triggers when price rises to or above the target.
+        SELL (short): stop loss triggers when price rises to or above the stop level
+                      (the loss side is up for a short); take profit triggers when
+                      price falls to or below the target.
+        """
+        if self.side == OrderSide.BUY:
+            if self.stop_loss is not None and self.current_price <= self.stop_loss:
+                return True, "stop_loss"
+            if self.take_profit is not None and self.current_price >= self.take_profit:
+                return True, "take_profit"
+        else:  # SELL (short)
+            if self.stop_loss is not None and self.current_price >= self.stop_loss:
+                return True, "stop_loss"
+            if self.take_profit is not None and self.current_price <= self.take_profit:
+                return True, "take_profit"
 
         return False, ""
 

@@ -65,7 +65,7 @@ async def run_backtest(args) -> None:
             "win_rate": results.win_rate,
             "profit_factor": results.profit_factor,
             "max_drawdown": float(results.max_drawdown),
-            "sharpe_ratio": results.compute_sharpe_ratio(),
+            "sharpe_ratio": results.sharpe_ratio,
         }
 
         db = DatabasePersistence()

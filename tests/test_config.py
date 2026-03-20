@@ -1,6 +1,7 @@
 """Basic configuration tests."""
 
-from src.config import RiskLevel, StrategyType, TradingMode, settings
+from src.config import RiskLevel, StrategyType, TradingMode
+from src.risk_management.risk_manager import RiskManager
 
 
 def test_risk_levels():
@@ -25,8 +26,8 @@ def test_trading_modes():
 
 
 def test_risk_parameters():
-    """Test risk parameter generation."""
-    risk_params = settings.get_risk_parameters()
+    """Risk parameters are owned by RiskManager, not Settings."""
+    risk_params = RiskManager(RiskLevel.CONSERVATIVE).get_risk_parameters()
     assert "max_position_size_pct" in risk_params
     assert "max_daily_loss_pct" in risk_params
     assert "stop_loss_pct" in risk_params
