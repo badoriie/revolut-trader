@@ -41,6 +41,7 @@ class TradingBot:
         self.executor: OrderExecutor | None = None
         self.strategy: BaseStrategy | None = None
         self.persistence = DatabasePersistence()
+        self.current_session_id: int | None = None
 
         # Currency display
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
@@ -85,13 +86,14 @@ class TradingBot:
         self._load_historical_data()
 
         # Start database session tracking
-        self.persistence.start_session(
+        self.current_session_id = self.persistence.create_session(
             strategy=self.strategy_type.value,
             risk_level=self.risk_level.value,
             trading_mode=self.trading_mode.value,
             trading_pairs=self.trading_pairs,
             initial_balance=self.cash_balance,
         )
+        logger.info(f"Trading session started: {self.current_session_id}")
 
         # Initialize API client
         self.api_client = RevolutAPIClient()
@@ -155,13 +157,15 @@ class TradingBot:
 
         # End database session
         current_snapshot = self.portfolio_snapshots[-1] if self.portfolio_snapshots else None
-        if current_snapshot:
+        if current_snapshot and self.current_session_id is not None:
             total_trades = len(self.persistence.load_trade_history(limit=100000))
             self.persistence.end_session(
+                session_id=self.current_session_id,
                 final_balance=self.cash_balance,
                 total_pnl=current_snapshot.total_pnl,
                 total_trades=total_trades,
             )
+            logger.info(f"Trading session ended: {self.current_session_id}")
 
         if self.api_client:
             await self.api_client.close()
@@ -212,7 +216,7 @@ class TradingBot:
                         trading_mode=self.trading_mode.value,
                     )
 
-                # Bulk save snapshots periodically (every 10 iterations)
+                # Save bulk data periodically (every 10 iterations for JSON backup)
                 self.save_counter += 1
                 if self.save_counter >= 10:
                     self._save_data()
@@ -416,7 +420,7 @@ class TradingBot:
                     list(self.portfolio_snapshots), metadata
                 )
 
-            logger.debug("Saved portfolio data to database")
+            logger.debug("Saved portfolio data (database + JSON backup)")
 
         except Exception as e:
             logger.error(f"Failed to save data: {e}")
