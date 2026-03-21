@@ -176,6 +176,7 @@ class OrderExecutor:
         recalculated using a weighted average.  For the opposite side the position
         is either reduced or fully closed and realised PnL is recorded.
         """
+        assert order.price is not None, "Cannot update positions for an order without a price"
         async with self._position_lock:
             symbol = order.symbol
 
