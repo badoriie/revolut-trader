@@ -34,7 +34,9 @@ help:
 	@echo "Trading & Analysis:"
 	@echo "  make run-paper         - Run in paper mode (safe, simulated trading)"
 	@echo "  make run-live          - Run in live mode (REAL MONEY)"
-	@echo "  make backtest          - Run strategy backtesting (STRATEGY=... DAYS=...)"
+	@echo "  make backtest          - Backtest one strategy (STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=...)"
+	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
+	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
 	@echo "API Testing:"
 	@echo "  make api-ready                    - Check API permissions (view + trade)"
@@ -326,10 +328,43 @@ run-live:
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \
 	DAYS=$${DAYS:-30}; \
-	echo "Strategy: $$STRATEGY | Days: $$DAYS"; \
-	uv run python cli/backtest.py --strategy $$STRATEGY --days $$DAYS \
+	INTERVAL=$${INTERVAL:-60}; \
+	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
+	CAPITAL=$${CAPITAL:-10000}; \
+	RISK=$${RISK:-conservative}; \
+	echo "Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: $$INTERVAL min | Pairs: $$PAIRS"; \
+	uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
+		--interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL \
 		&& echo "Backtest complete — results saved to database (make db-backtests)" \
 		|| echo "Backtest failed - check logs above"
+
+backtest-compare:
+	@echo ""; \
+	echo "============================================================"; \
+	echo "  STRATEGY COMPARISON BACKTEST"; \
+	echo "============================================================"; \
+	DAYS=$${DAYS:-30}; \
+	INTERVAL=$${INTERVAL:-60}; \
+	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
+	CAPITAL=$${CAPITAL:-10000}; \
+	RISK=$${RISK:-conservative}; \
+	STRATEGIES=$${STRATEGIES:-}; \
+	CMD="uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL --risk $$RISK"; \
+	if [ -n "$$STRATEGIES" ]; then CMD="$$CMD --strategies $$STRATEGIES"; fi; \
+	eval $$CMD
+
+backtest-matrix:
+	@echo ""; \
+	echo "============================================================"; \
+	echo "  STRATEGY × RISK LEVEL MATRIX BACKTEST"; \
+	echo "============================================================"; \
+	DAYS=$${DAYS:-30}; \
+	INTERVAL=$${INTERVAL:-60}; \
+	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
+	CAPITAL=$${CAPITAL:-10000}; \
+	uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL \
+		--pairs $$PAIRS --capital $$CAPITAL \
+		--risk-levels conservative,moderate,aggressive
 
 # ============================================================================
 # API Testing
