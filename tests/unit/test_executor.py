@@ -400,7 +400,7 @@ class TestLiveOrderResponseMapping:
             return_value={
                 "venue_order_id": "venue-789",
                 "client_order_id": "c-789",
-                "state": "open",
+                "state": "new",
             }
         )
         signal = make_signal(strength=0.5)

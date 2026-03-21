@@ -133,9 +133,17 @@ class TradingBot:
         if self.trading_mode == TradingMode.LIVE:
             try:
                 balance_data = await self.api_client.get_balance()
-                # Extract appropriate currency balance
-                self.cash_balance = Decimal(str(balance_data.get("availableBalance", 10000)))
+                # Extract base currency available balance from the balances dict.
+                # get_balance() returns {"balances": {currency: {available, ...}}, ...}
+                base = settings.base_currency
+                base_balances = balance_data.get("balances", {}).get(base, {})
+                available = base_balances.get("available")
+                if available is None:
+                    raise RuntimeError(f"No {base} balance found. Ensure the account holds {base}.")
+                self.cash_balance = Decimal(str(available))
                 logger.info(f"Live account balance: {self.currency_symbol}{self.cash_balance:,.2f}")
+            except RuntimeError:
+                raise
             except Exception as e:
                 logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
                 logger.critical("Cannot start live trading without accurate balance information!")
@@ -216,7 +224,7 @@ class TradingBot:
                         trading_mode=self.trading_mode.value,
                     )
 
-                # Save bulk data periodically (every 10 iterations for JSON backup)
+                # Save bulk data periodically (every 10 iterations)
                 self.save_counter += 1
                 if self.save_counter >= 10:
                     self._save_data()
@@ -406,9 +414,9 @@ class TradingBot:
             logger.info("Starting with fresh state")
 
     def _save_data(self) -> None:
-        """Save current portfolio snapshots to JSON backup."""
+        """Save current portfolio snapshots to database."""
         try:
-            # Bulk save snapshots to JSON backup periodically
+            # Bulk save snapshots to database periodically
             if self.portfolio_snapshots:
                 metadata = {
                     "strategy": self.strategy_type.value,
@@ -420,7 +428,7 @@ class TradingBot:
                     list(self.portfolio_snapshots), metadata
                 )
 
-            logger.debug("Saved portfolio data (database + JSON backup)")
+            logger.debug("Saved portfolio data to database")
 
         except Exception as e:
             logger.error(f"Failed to save data: {e}")
