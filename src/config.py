@@ -14,6 +14,8 @@ class StrategyType(str, Enum):
     MOMENTUM = "momentum"
     MEAN_REVERSION = "mean_reversion"
     MULTI_STRATEGY = "multi_strategy"
+    BREAKOUT = "breakout"
+    RANGE_REVERSION = "range_reversion"
 
 
 class RiskLevel(str, Enum):
@@ -22,8 +24,11 @@ class RiskLevel(str, Enum):
     AGGRESSIVE = "aggressive"
 
 
-# Revolut API base URL — not a secret, just a constant.
+# Revolut API base URLs — primary and fallback (not secrets, just constants).
+# The client tries URLs in order; on connection failure it advances to the next.
 REVOLUT_API_BASE_URL = "https://revx.revolut.com/api/1.0"
+REVOLUT_API_BASE_URL_FALLBACK = "https://revx.revolut.codes/api/1.0"
+REVOLUT_API_BASE_URLS = [REVOLUT_API_BASE_URL, REVOLUT_API_BASE_URL_FALLBACK]
 
 
 class Settings(BaseSettings):
@@ -72,8 +77,9 @@ class Settings(BaseSettings):
             self.default_strategy = StrategyType(op.get("DEFAULT_STRATEGY").lower())
         except ValueError as e:
             raise ValueError(
-                "Invalid DEFAULT_STRATEGY in 1Password: must be 'market_making', 'momentum', "
-                "'mean_reversion', or 'multi_strategy'."
+                "Invalid DEFAULT_STRATEGY in 1Password: must be one of "
+                "'market_making', 'momentum', 'mean_reversion', 'multi_strategy', "
+                "'breakout', or 'range_reversion'."
             ) from e
 
         # BASE_CURRENCY

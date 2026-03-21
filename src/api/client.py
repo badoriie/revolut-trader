@@ -22,7 +22,7 @@ from loguru import logger
 from pydantic import ValidationError
 
 import src.utils.onepassword as op
-from src.config import REVOLUT_API_BASE_URL, settings
+from src.config import REVOLUT_API_BASE_URLS, settings
 from src.models.domain import CandleResponse, OrderBookResponse
 from src.utils.rate_limiter import RateLimiter
 
@@ -51,7 +51,8 @@ class RevolutAPIClient:
 
     def __init__(self, max_requests_per_minute: int = 60) -> None:
         self.api_key = op.get("REVOLUT_API_KEY")
-        self.base_url = REVOLUT_API_BASE_URL.rstrip("/")
+        self._base_urls = [url.rstrip("/") for url in REVOLUT_API_BASE_URLS]
+        self.base_url = self._base_urls[0]
         self.client = httpx.AsyncClient(timeout=30.0)
         self._private_key: Ed25519PrivateKey | None = None
         self.rate_limiter = RateLimiter(max_requests=max_requests_per_minute, time_window=60.0)
@@ -152,9 +153,6 @@ class RevolutAPIClient:
 
         path = f"/api/1.0{endpoint}"
         query = urlencode(sorted(params.items())) if params else ""
-        url = f"{self.base_url}{endpoint}"
-        if query:
-            url = f"{url}?{query}"
 
         body = ""
         if json_data is not None:
@@ -162,22 +160,35 @@ class RevolutAPIClient:
 
         headers = self._build_headers(method, path, query, body)
 
-        try:
-            response = await self.client.request(
-                method=method, url=url, headers=headers, json=json_data
-            )
-            response.raise_for_status()
-            return response.json() if response.content else {}
-        except httpx.HTTPStatusError as e:
-            msg = self._extract_api_message(e)
-            if e.response.status_code >= 500:
-                logger.error(f"HTTP {e.response.status_code}: {msg}")
-            else:
-                logger.debug(f"HTTP {e.response.status_code}: {msg}")
-            raise RevolutAPIError(e.response.status_code, msg) from e
-        except Exception as e:
-            logger.error(f"Request failed: {e}")
-            raise
+        last_connect_error: Exception | None = None
+        for base_url in self._base_urls:
+            url = f"{base_url}{endpoint}"
+            if query:
+                url = f"{url}?{query}"
+            try:
+                response = await self.client.request(
+                    method=method, url=url, headers=headers, json=json_data
+                )
+                response.raise_for_status()
+                self.base_url = base_url
+                return response.json() if response.content else {}
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                logger.warning(f"Connection to {base_url} failed: {e}; trying next URL")
+                last_connect_error = e
+                continue
+            except httpx.HTTPStatusError as e:
+                msg = self._extract_api_message(e)
+                if e.response.status_code >= 500:
+                    logger.error(f"HTTP {e.response.status_code}: {msg}")
+                else:
+                    logger.debug(f"HTTP {e.response.status_code}: {msg}")
+                raise RevolutAPIError(e.response.status_code, msg) from e
+            except Exception as e:
+                logger.error(f"Request failed: {e}")
+                raise
+
+        logger.error("All base URLs exhausted")
+        raise last_connect_error  # type: ignore[misc]
 
     async def _public_request(
         self,
@@ -192,21 +203,31 @@ class RevolutAPIClient:
         from urllib.parse import urlencode
 
         query = urlencode(sorted(params.items())) if params else ""
-        url = f"{self.base_url}{endpoint}"
-        if query:
-            url = f"{url}?{query}"
 
-        try:
-            response = await self.client.request(method="GET", url=url)
-            response.raise_for_status()
-            return response.json() if response.content else {}
-        except httpx.HTTPStatusError as e:
-            msg = self._extract_api_message(e)
-            logger.debug(f"HTTP {e.response.status_code}: {msg}")
-            raise RevolutAPIError(e.response.status_code, msg) from e
-        except Exception as e:
-            logger.error(f"Public request failed: {e}")
-            raise
+        last_connect_error: Exception | None = None
+        for base_url in self._base_urls:
+            url = f"{base_url}{endpoint}"
+            if query:
+                url = f"{url}?{query}"
+            try:
+                response = await self.client.request(method="GET", url=url)
+                response.raise_for_status()
+                self.base_url = base_url
+                return response.json() if response.content else {}
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                logger.warning(f"Connection to {base_url} failed: {e}; trying next URL")
+                last_connect_error = e
+                continue
+            except httpx.HTTPStatusError as e:
+                msg = self._extract_api_message(e)
+                logger.debug(f"HTTP {e.response.status_code}: {msg}")
+                raise RevolutAPIError(e.response.status_code, msg) from e
+            except Exception as e:
+                logger.error(f"Public request failed: {e}")
+                raise
+
+        logger.error("All base URLs exhausted")
+        raise last_connect_error  # type: ignore[misc]
 
     # ------------------------------------------------------------------
     # Permissions probe
