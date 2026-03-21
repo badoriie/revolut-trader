@@ -154,13 +154,15 @@ class TestBlocking:
         assert advancing.calls[0] == pytest.approx(1.5)
 
     async def test_no_sleep_when_capacity_becomes_available(self):
+        # max_requests=1 forces expiry to matter: without the advance the
+        # second acquire would be blocked; with it the slot is free.
         clock, advance = make_clock()
         advancing = AdvancingClock(advance)
-        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=advancing.sleep)
+        rl = RateLimiter(max_requests=1, time_window=1.0, clock=clock, sleep=advancing.sleep)
 
         await rl.acquire()
-        advance(1.1)  # first request has expired before we fill up
-        await rl.acquire()  # still one slot free, no sleep needed
+        advance(1.1)  # the single slot has now expired
+        await rl.acquire()  # must not sleep
 
         assert len(advancing.calls) == 0
 
@@ -232,26 +234,44 @@ class TestReset:
 
 class TestConcurrency:
     async def test_concurrent_acquires_do_not_exceed_limit(self):
-        """Fire N coroutines simultaneously; none should bypass the limit."""
+        """Fire N coroutines simultaneously; none should bypass the limit.
+
+        The asyncio.Lock serialises all callers, so execution is deterministic:
+        coroutines 1-3 go through immediately; coroutine 4 sleeps once (all
+        three t=0 entries expire); coroutine 5 finds one entry and proceeds
+        without sleeping.  Exactly one sleep call is expected.
+        """
         clock, advance = make_clock()
         advancing = AdvancingClock(advance)
         rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=advancing.sleep)
 
         await asyncio.gather(*(rl.acquire() for _ in range(5)))
 
-        # After all five have completed the window has advanced; the important
-        # thing is that the limiter never recorded more than max_requests at
-        # any single instant before sleeping.
-        assert len(advancing.calls) > 0  # had to sleep at least once
+        assert len(advancing.calls) == 1
+        assert advancing.calls[0] == pytest.approx(1.0)
 
-    async def test_lock_prevents_simultaneous_burst(self):
-        """Verify the internal lock serialises concurrent callers."""
-        clock, _ = make_clock()
-        rl = RateLimiter(max_requests=2, time_window=60.0, clock=clock, sleep=noop_sleep)
+    async def test_lock_serialises_concurrent_callers(self):
+        """Concurrent acquires must never record more than max_requests entries
+        in the same instant — the lock must prevent interleaving in the
+        check-then-record window.
 
-        # Saturate synchronously first
-        await rl.acquire()
-        await rl.acquire()
+        With max_requests=1, each waiter blocks on the previous waiter's newly
+        recorded entry, so both must sleep.  Trace:
+          setup:  requests=[t=0]  (at capacity)
+          coro A: sleeps 1.0 s → clock=1.0+ε, entry expires, records t=1.0+ε
+          coro B: entry t=1.0+ε is now the sole occupant → sleeps 1.0 s →
+                  clock=2.0+2ε, entry expires, records t=2.0+2ε
+        Result: exactly two sleep calls, each of 1.0 s.
+        """
+        clock, advance = make_clock()
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=1, time_window=1.0, clock=clock, sleep=advancing.sleep)
 
-        peak_usage = rl.current_usage
-        assert peak_usage == 2
+        await rl.acquire()  # fill the single slot at t=0
+
+        # Both waiters must each sleep; neither can bypass the other.
+        await asyncio.gather(rl.acquire(), rl.acquire())
+
+        assert len(advancing.calls) == 2
+        assert advancing.calls[0] == pytest.approx(1.0)
+        assert advancing.calls[1] == pytest.approx(1.0)
