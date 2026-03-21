@@ -166,9 +166,17 @@ Database encryption is mandatory. `DatabaseEncryption` auto-generates a key in 1
 
 Every public function needs type annotations on all parameters and return value, plus a docstring explaining what it does and (for critical functions) why it matters.
 
-### Documentation Updates
+### Documentation Updates — Always, No Exceptions
 
-When changing code, update the relevant docs: `README.md` for features/config changes, `CHANGELOG.md` for bug fixes, inline docstrings for logic changes, `CLAUDE.md` for architectural changes.
+Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
+
+- `README.md` — feature additions, configuration changes, usage instructions
+- `CHANGELOG.md` — bug fixes, new features, breaking changes
+- Inline docstrings — logic changes, new functions, modified behavior
+- `CLAUDE.md` — architectural changes, new components, workflow changes
+- `docs/` files — API changes, strategy changes, development guidelines
+
+Claude Code must handle this proactively without being asked.
 
 ## Key Files
 
