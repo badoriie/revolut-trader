@@ -32,12 +32,10 @@ class BaseStrategy(ABC):
         Returns:
             Signal object if strategy generates a signal, None otherwise
         """
-        pass
 
     @abstractmethod
     def get_parameters(self) -> dict[str, Any]:
         """Return strategy parameters for logging and monitoring."""
-        pass
 
     def activate(self) -> None:
         """Activate the strategy."""

@@ -137,18 +137,21 @@ class BreakoutStrategy(BaseStrategy):
                     f"(+{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}"
                 )
 
-        elif current_price < breakout_low and rsi > self.rsi_oversold:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                signal_type = "SELL"
-                excess = (breakout_low - current_price) / breakout_low
-                strength = min(
-                    1.0,
-                    0.5 + 0.5 * float(excess) / float(self.breakout_threshold),
-                )
-                reason = (
-                    f"Downward breakout: {current_price:.2f} < rolling low {rolling_low:.2f} "
-                    f"(-{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}"
-                )
+        elif (
+            current_price < breakout_low
+            and rsi > self.rsi_oversold
+            and (not existing_position or existing_position.side == OrderSide.BUY)
+        ):
+            signal_type = "SELL"
+            excess = (breakout_low - current_price) / breakout_low
+            strength = min(
+                1.0,
+                0.5 + 0.5 * float(excess) / float(self.breakout_threshold),
+            )
+            reason = (
+                f"Downward breakout: {current_price:.2f} < rolling low {rolling_low:.2f} "
+                f"(-{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}"
+            )
 
         if signal_type == "HOLD":
             return None

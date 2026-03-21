@@ -146,30 +146,31 @@ class RangeReversionStrategy(BaseStrategy):
                     f"({current_price:.2f} near 24h low {low_24h:.2f}), RSI {rsi:.1f}"
                 )
 
-        elif range_position >= self.sell_zone and rsi >= self.rsi_confirmation_overbought:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                signal_type = "SELL"
-                one = Decimal("1")
-                hundred = Decimal("100")
-                # Depth into sell zone (0 at boundary, 1 at daily high)
-                sell_width = one - self.sell_zone
-                position_score = float(
-                    (range_position - self.sell_zone) / sell_width
-                    if sell_width > 0
-                    else Decimal("0")
-                )
-                # RSI confirmation intensity (0 at threshold, 1 when RSI → 100)
-                rsi_width = hundred - self.rsi_confirmation_overbought
-                rsi_score = float(
-                    (rsi - self.rsi_confirmation_overbought) / rsi_width
-                    if rsi_width > 0
-                    else Decimal("0")
-                )
-                strength = min(1.0, max(0.1, (position_score + rsi_score) / 2))
-                reason = (
-                    f"Price at {float(range_position):.0%} of daily range "
-                    f"({current_price:.2f} near 24h high {high_24h:.2f}), RSI {rsi:.1f}"
-                )
+        elif (
+            range_position >= self.sell_zone
+            and rsi >= self.rsi_confirmation_overbought
+            and (not existing_position or existing_position.side == OrderSide.BUY)
+        ):
+            signal_type = "SELL"
+            one = Decimal("1")
+            hundred = Decimal("100")
+            # Depth into sell zone (0 at boundary, 1 at daily high)
+            sell_width = one - self.sell_zone
+            position_score = float(
+                (range_position - self.sell_zone) / sell_width if sell_width > 0 else Decimal("0")
+            )
+            # RSI confirmation intensity (0 at threshold, 1 when RSI → 100)
+            rsi_width = hundred - self.rsi_confirmation_overbought
+            rsi_score = float(
+                (rsi - self.rsi_confirmation_overbought) / rsi_width
+                if rsi_width > 0
+                else Decimal("0")
+            )
+            strength = min(1.0, max(0.1, (position_score + rsi_score) / 2))
+            reason = (
+                f"Price at {float(range_position):.0%} of daily range "
+                f"({current_price:.2f} near 24h high {high_24h:.2f}), RSI {rsi:.1f}"
+            )
 
         if signal_type == "HOLD":
             return None

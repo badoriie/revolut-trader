@@ -640,8 +640,10 @@ class TestMeanReversionStrengthScaling:
         md_b = make_market_data(last=Decimal("47500"))
         result_b = await strategy_b.analyze("BTC-EUR", md_b, [], portfolio_value)
 
-        assert result_a is not None and result_a.signal_type == "BUY"
-        assert result_b is not None and result_b.signal_type == "BUY"
+        assert result_a is not None
+        assert result_a.signal_type == "BUY"
+        assert result_b is not None
+        assert result_b.signal_type == "BUY"
         assert (
             result_b.strength >= result_a.strength
         ), "Larger deviation should yield equal or higher strength"
