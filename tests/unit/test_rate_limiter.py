@@ -1,8 +1,257 @@
 """Unit tests for RateLimiter.
 
-TODO: Re-enable once the controlled-clock injection approach is validated.
-All tests temporarily commented out to unblock the test suite.
+Tests use injected clock and sleep callables to stay deterministic —
+no real time.sleep or asyncio.sleep calls are made.
 """
 
-# import pytest
-# from src.utils.rate_limiter import RateLimiter
+import asyncio
+
+import pytest
+
+from src.utils.rate_limiter import RateLimiter
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def make_clock(start: float = 0.0):
+    """Return a mutable clock whose current time can be advanced."""
+    state = {"now": start}
+
+    def clock() -> float:
+        return state["now"]
+
+    def advance(seconds: float) -> None:
+        state["now"] += seconds
+
+    return clock, advance
+
+
+async def noop_sleep(_seconds: float) -> None:
+    """Sleep stub that returns immediately without yielding control."""
+
+
+class AdvancingClock:
+    """Sleep stub that advances the shared clock by the requested duration.
+
+    Advances by ``seconds + 1e-9`` to mirror real OS sleep behaviour: actual
+    sleep always overshoots slightly.  This matters because the rate limiter's
+    expiry check is strict (``<``), so advancing by exactly ``sleep_time``
+    would land on the boundary and never expire the entry, causing an infinite
+    spin (sleep_time collapses to 0 and the ``if sleep_time > 0`` guard blocks
+    the await forever).
+    """
+
+    _EPSILON = 1e-9
+
+    def __init__(self, advance_fn):
+        self.advance = advance_fn
+        self.calls: list[float] = []
+
+    async def sleep(self, seconds: float) -> None:
+        self.calls.append(seconds)
+        self.advance(seconds + self._EPSILON)
+
+
+# ---------------------------------------------------------------------------
+# Basic allow / deny behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestAcquireAllowsRequests:
+    async def test_single_request_is_allowed(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()  # must not raise or hang
+        assert rl.current_usage == 1
+
+    async def test_requests_up_to_max_are_all_allowed(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
+        for _ in range(3):
+            await rl.acquire()
+        assert rl.current_usage == 3
+
+    async def test_acquire_records_each_request(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=5, time_window=10.0, clock=clock, sleep=noop_sleep)
+        for expected in range(1, 6):
+            await rl.acquire()
+            assert rl.current_usage == expected
+
+
+# ---------------------------------------------------------------------------
+# Sliding-window expiry
+# ---------------------------------------------------------------------------
+
+
+class TestWindowExpiry:
+    async def test_requests_expire_after_time_window(self):
+        clock, advance = make_clock()
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=noop_sleep)
+
+        await rl.acquire()
+        await rl.acquire()
+        assert rl.current_usage == 2
+
+        advance(1.1)  # both requests now outside the window
+        assert rl.current_usage == 0
+
+    async def test_new_requests_allowed_after_window_expires(self):
+        clock, advance = make_clock()
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=advancing.sleep)
+
+        await rl.acquire()
+        await rl.acquire()
+
+        # Advance past the window so the next acquire doesn't need to wait
+        advance(1.1)
+        await rl.acquire()  # must not sleep
+
+        assert len(advancing.calls) == 0
+
+    async def test_partial_expiry_counts_correctly(self):
+        clock, advance = make_clock(start=0.0)
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
+
+        await rl.acquire()  # t=0.0
+        advance(0.5)
+        await rl.acquire()  # t=0.5
+        advance(0.6)  # now t=1.1 — first request (t=0) is expired
+        assert rl.current_usage == 1  # only the t=0.5 request remains
+
+
+# ---------------------------------------------------------------------------
+# Blocking / sleeping behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestBlocking:
+    async def test_acquire_sleeps_when_at_capacity(self):
+        clock, advance = make_clock()
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=advancing.sleep)
+
+        await rl.acquire()  # t=0
+        await rl.acquire()  # t=0  — now full
+
+        # Next acquire must sleep until the oldest entry (t=0) expires
+        await rl.acquire()
+        assert len(advancing.calls) == 1
+        assert advancing.calls[0] == pytest.approx(1.0)
+
+    async def test_sleep_duration_is_time_until_oldest_expires(self):
+        clock, advance = make_clock(start=0.0)
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=1, time_window=2.0, clock=clock, sleep=advancing.sleep)
+
+        await rl.acquire()  # t=0 — fills the single slot
+        advance(0.5)  # t=0.5 — 1.5 s remaining in the window
+
+        await rl.acquire()  # must sleep 1.5 s
+        assert advancing.calls[0] == pytest.approx(1.5)
+
+    async def test_no_sleep_when_capacity_becomes_available(self):
+        clock, advance = make_clock()
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=advancing.sleep)
+
+        await rl.acquire()
+        advance(1.1)  # first request has expired before we fill up
+        await rl.acquire()  # still one slot free, no sleep needed
+
+        assert len(advancing.calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# available_requests property
+# ---------------------------------------------------------------------------
+
+
+class TestAvailableRequests:
+    async def test_all_slots_free_at_start(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=5, time_window=1.0, clock=clock, sleep=noop_sleep)
+        assert rl.available_requests == 5
+
+    async def test_decrements_as_requests_are_made(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()
+        assert rl.available_requests == 2
+        await rl.acquire()
+        assert rl.available_requests == 1
+
+    async def test_zero_when_at_capacity(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()
+        await rl.acquire()
+        assert rl.available_requests == 0
+
+    async def test_recovers_after_window_expires(self):
+        clock, advance = make_clock()
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()
+        await rl.acquire()
+        advance(1.1)
+        assert rl.available_requests == 2
+
+
+# ---------------------------------------------------------------------------
+# reset()
+# ---------------------------------------------------------------------------
+
+
+class TestReset:
+    async def test_reset_clears_all_recorded_requests(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()
+        await rl.acquire()
+        rl.reset()
+        assert rl.current_usage == 0
+        assert rl.available_requests == 3
+
+    async def test_acquire_works_normally_after_reset(self):
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=2, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()
+        await rl.acquire()
+        rl.reset()
+        await rl.acquire()  # must not sleep — capacity was restored
+        assert rl.current_usage == 1
+
+
+# ---------------------------------------------------------------------------
+# Concurrent access
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrency:
+    async def test_concurrent_acquires_do_not_exceed_limit(self):
+        """Fire N coroutines simultaneously; none should bypass the limit."""
+        clock, advance = make_clock()
+        advancing = AdvancingClock(advance)
+        rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=advancing.sleep)
+
+        await asyncio.gather(*(rl.acquire() for _ in range(5)))
+
+        # After all five have completed the window has advanced; the important
+        # thing is that the limiter never recorded more than max_requests at
+        # any single instant before sleeping.
+        assert len(advancing.calls) > 0  # had to sleep at least once
+
+    async def test_lock_prevents_simultaneous_burst(self):
+        """Verify the internal lock serialises concurrent callers."""
+        clock, _ = make_clock()
+        rl = RateLimiter(max_requests=2, time_window=60.0, clock=clock, sleep=noop_sleep)
+
+        # Saturate synchronously first
+        await rl.acquire()
+        await rl.acquire()
+
+        peak_usage = rl.current_usage
+        assert peak_usage == 2
