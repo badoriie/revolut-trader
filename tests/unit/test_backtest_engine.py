@@ -156,6 +156,18 @@ class TestBacktestEngineStrategyCreation:
 
         assert isinstance(e.strategy, MultiStrategy)
 
+    def test_breakout_strategy(self, mock_api):
+        e = BacktestEngine(mock_api, StrategyType.BREAKOUT, RiskLevel.MODERATE)
+        from src.strategies.breakout import BreakoutStrategy
+
+        assert isinstance(e.strategy, BreakoutStrategy)
+
+    def test_range_reversion_strategy(self, mock_api):
+        e = BacktestEngine(mock_api, StrategyType.RANGE_REVERSION, RiskLevel.MODERATE)
+        from src.strategies.range_reversion import RangeReversionStrategy
+
+        assert isinstance(e.strategy, RangeReversionStrategy)
+
 
 # ---------------------------------------------------------------------------
 # BacktestEngine._candle_to_market_data
@@ -408,3 +420,98 @@ class TestComputeSharpeRatio:
         r.compute_sharpe_ratio()
         assert r.sharpe_ratio is not None
         assert r.sharpe_ratio < 0
+
+
+# ---------------------------------------------------------------------------
+# Comparison table formatting
+# ---------------------------------------------------------------------------
+
+
+class TestComparisonTable:
+    """Tests for the comparison table printer in backtest_compare."""
+
+    def test_print_comparison_table_sorts_by_return(self, capsys):
+        """Rows are sorted by return_pct descending."""
+        from cli.backtest_compare import _print_comparison_table
+
+        rows = [
+            {
+                "strategy": "momentum",
+                "risk_level": "conservative",
+                "return_pct": 5.0,
+                "total_pnl": 500.0,
+                "total_trades": 10,
+                "winning_trades": 6,
+                "losing_trades": 4,
+                "win_rate": 60.0,
+                "profit_factor": 1.5,
+                "max_drawdown": 200.0,
+                "sharpe_ratio": 1.2,
+            },
+            {
+                "strategy": "breakout",
+                "risk_level": "conservative",
+                "return_pct": 8.0,
+                "total_pnl": 800.0,
+                "total_trades": 8,
+                "winning_trades": 5,
+                "losing_trades": 3,
+                "win_rate": 62.5,
+                "profit_factor": 2.0,
+                "max_drawdown": 150.0,
+                "sharpe_ratio": 1.8,
+            },
+        ]
+        _print_comparison_table(rows)
+        output = capsys.readouterr().out
+        # Breakout (8%) should appear before momentum (5%)
+        breakout_pos = output.find("breakout")
+        momentum_pos = output.find("momentum")
+        assert breakout_pos < momentum_pos
+
+    def test_print_comparison_table_empty(self, capsys):
+        """Empty list prints a 'no results' message."""
+        from cli.backtest_compare import _print_comparison_table
+
+        _print_comparison_table([])
+        output = capsys.readouterr().out
+        assert "No results" in output
+
+    def test_print_comparison_table_shows_best_and_worst(self, capsys):
+        """Summary shows best and worst strategies."""
+        from cli.backtest_compare import _print_comparison_table
+
+        rows = [
+            {
+                "strategy": "mean_reversion",
+                "risk_level": "moderate",
+                "return_pct": -2.0,
+                "total_pnl": -200.0,
+                "total_trades": 5,
+                "winning_trades": 1,
+                "losing_trades": 4,
+                "win_rate": 20.0,
+                "profit_factor": 0.5,
+                "max_drawdown": 500.0,
+                "sharpe_ratio": -0.5,
+            },
+            {
+                "strategy": "momentum",
+                "risk_level": "moderate",
+                "return_pct": 12.0,
+                "total_pnl": 1200.0,
+                "total_trades": 15,
+                "winning_trades": 10,
+                "losing_trades": 5,
+                "win_rate": 66.7,
+                "profit_factor": 3.0,
+                "max_drawdown": 300.0,
+                "sharpe_ratio": 2.1,
+            },
+        ]
+        _print_comparison_table(rows)
+        output = capsys.readouterr().out
+        assert "Best:" in output
+        assert "momentum" in output
+        assert "Worst:" in output
+        assert "mean_reversion" in output

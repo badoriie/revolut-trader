@@ -102,7 +102,14 @@ Examples:
         "--strategy",
         "-s",
         type=str,
-        choices=["market_making", "momentum", "mean_reversion", "multi_strategy"],
+        choices=[
+            "market_making",
+            "momentum",
+            "mean_reversion",
+            "multi_strategy",
+            "breakout",
+            "range_reversion",
+        ],
         default="market_making",
         help="Trading strategy to backtest (default: market_making)",
     )
