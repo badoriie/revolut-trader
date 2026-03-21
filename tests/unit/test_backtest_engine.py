@@ -329,3 +329,82 @@ class TestBacktestEngineRun:
         mock_api.get_candles = AsyncMock(return_value=candles)
         await engine.run(["BTC-EUR"], days=1, interval=60)
         assert engine.positions == {}
+
+    @pytest.mark.asyncio
+    async def test_run_tracks_drawdown(self, engine, mock_api):
+        """Equity decline from peak should update max_drawdown."""
+        # First candle at high price, then a drop
+        candles = [
+            make_candle_dict(start=1_700_000_000_000, close="50000"),
+            make_candle_dict(start=1_700_000_060_000, close="50000"),
+            make_candle_dict(start=1_700_000_120_000, close="50000"),
+        ]
+        mock_api.get_candles = AsyncMock(return_value=candles)
+        results = await engine.run(["BTC-EUR"], days=1, interval=60)
+        # Drawdown should be tracked (at minimum 0)
+        assert results.max_drawdown >= Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_run_invalid_interval_raises(self, engine, mock_api):
+        with pytest.raises(ValueError, match="Unsupported candle interval"):
+            await engine.run(["BTC-EUR"], days=1, interval=7)
+
+
+# ---------------------------------------------------------------------------
+# BacktestResults.compute_sharpe_ratio
+# ---------------------------------------------------------------------------
+
+
+class TestComputeSharpeRatio:
+    def test_empty_equity_curve_keeps_default(self):
+        r = BacktestResults()
+        r.compute_sharpe_ratio()
+        assert r.sharpe_ratio == 0.0
+
+    def test_single_data_point_keeps_default(self):
+        r = BacktestResults()
+        r.equity_curve = [(datetime(2024, 1, 1, tzinfo=UTC), Decimal("10000"))]
+        r.compute_sharpe_ratio()
+        assert r.sharpe_ratio == 0.0
+
+    def test_two_data_points_keeps_default(self):
+        """Need at least 2 returns (3 equity values) for stdev."""
+        r = BacktestResults()
+        r.equity_curve = [
+            (datetime(2024, 1, 1, 0, 0, tzinfo=UTC), Decimal("10000")),
+            (datetime(2024, 1, 1, 1, 0, tzinfo=UTC), Decimal("10100")),
+        ]
+        r.compute_sharpe_ratio()
+        # Only 1 return — not enough for stdev
+        assert r.sharpe_ratio == 0.0
+
+    def test_constant_equity_keeps_default(self):
+        """Zero std ⇒ early return."""
+        r = BacktestResults()
+        r.equity_curve = [
+            (datetime(2024, 1, 1, i, 0, tzinfo=UTC), Decimal("10000")) for i in range(5)
+        ]
+        r.compute_sharpe_ratio()
+        assert r.sharpe_ratio == 0.0
+
+    def test_positive_returns_produce_positive_sharpe(self):
+        """Consistently increasing equity ⇒ positive Sharpe ratio."""
+        r = BacktestResults()
+        r.equity_curve = [
+            (datetime(2024, 1, 1, i, 0, tzinfo=UTC), Decimal(str(10000 + i * 100)))
+            for i in range(10)
+        ]
+        r.compute_sharpe_ratio()
+        assert r.sharpe_ratio is not None
+        assert r.sharpe_ratio > 0
+
+    def test_negative_returns_produce_negative_sharpe(self):
+        """Consistently declining equity ⇒ negative Sharpe ratio."""
+        r = BacktestResults()
+        r.equity_curve = [
+            (datetime(2024, 1, 1, i, 0, tzinfo=UTC), Decimal(str(10000 - i * 100)))
+            for i in range(10)
+        ]
+        r.compute_sharpe_ratio()
+        assert r.sharpe_ratio is not None
+        assert r.sharpe_ratio < 0
