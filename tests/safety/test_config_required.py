@@ -174,11 +174,8 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(ValueError, match="(?i)invalid.*trading_mode|test"):
                 Settings()
-
-            error_msg = str(exc_info.value)
-            assert "Invalid TRADING_MODE" in error_msg or "test" in error_msg
 
     def test_invalid_risk_level_raises_error(self):
         """CRITICAL: Invalid RISK_LEVEL values MUST be rejected.
@@ -195,11 +192,8 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(ValueError, match="(?i)invalid.*risk_level|extreme"):
                 Settings()
-
-            error_msg = str(exc_info.value)
-            assert "Invalid RISK_LEVEL" in error_msg or "extreme" in error_msg
 
     def test_invalid_default_strategy_raises_error(self):
         """CRITICAL: Invalid DEFAULT_STRATEGY values MUST be rejected."""
@@ -213,11 +207,8 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(ValueError, match="(?i)invalid.*default_strategy|invalid_strategy"):
                 Settings()
-
-            error_msg = str(exc_info.value)
-            assert "Invalid DEFAULT_STRATEGY" in error_msg or "invalid_strategy" in error_msg
 
     def test_invalid_initial_capital_raises_error(self):
         """CRITICAL: Non-numeric INITIAL_CAPITAL MUST be rejected."""
@@ -231,11 +222,8 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(ValueError, match="(?i)invalid.*initial_capital|not_a_number"):
                 Settings()
-
-            error_msg = str(exc_info.value)
-            assert "Invalid INITIAL_CAPITAL" in error_msg or "not_a_number" in error_msg
 
 
 class TestValidConfiguration:

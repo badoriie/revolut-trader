@@ -252,7 +252,7 @@ class TradingBot:
                 if status_code == 401:
                     logger.critical("Authentication failed! Check API credentials.")
                     break  # Stop trading - auth is broken
-                elif status_code == 429:
+                if status_code == 429:
                     logger.warning("⚠️  Rate limited by API, backing off...")
                     await asyncio.sleep(60)  # Wait 1 minute
                 elif status_code >= 500:

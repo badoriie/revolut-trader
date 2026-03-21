@@ -297,9 +297,8 @@ class TestSessionContextManagerError:
 
     def test_session_rolls_back_on_sqlalchemy_error(self, db_persistence):
         """Force a SQLAlchemyError to exercise _session() rollback + re-raise."""
-        with pytest.raises(SQLAlchemyError):
-            with db_persistence._session() as _sess:
-                raise SQLAlchemyError("forced error")
+        with pytest.raises(SQLAlchemyError), db_persistence._session() as _sess:
+            raise SQLAlchemyError("forced error")
 
     def test_save_snapshot_swallows_sqlalchemy_error(self, db_persistence):
         with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
