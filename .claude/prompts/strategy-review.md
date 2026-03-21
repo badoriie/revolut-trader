@@ -156,6 +156,8 @@ Help me configure the MultiStrategy for optimal performance:
 - Market Making: [enabled/disabled]
 - Momentum: [enabled/disabled]
 - Mean Reversion: [enabled/disabled]
+- Breakout: [enabled/disabled]
+- Range Reversion: [enabled/disabled]
 
 **Requirements**:
 - Consensus threshold: [How many strategies must agree?]

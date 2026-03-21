@@ -1,6 +1,6 @@
 {
   "name": "Revolut Trading Bot Specialist",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Specialized agent for algorithmic trading bot development, testing, and deployment",
   "capabilities": [
     "strategy-development",
@@ -34,16 +34,19 @@
       "httpx",
       "pydantic",
       "cryptography",
-      "python-telegram-bot"
+      "sqlalchemy"
     ],
     "trading_modes": ["paper", "live"],
     "strategies": [
       "market_making",
       "momentum",
       "mean_reversion",
-      "multi_strategy"
+      "multi_strategy",
+      "breakout",
+      "range_reversion"
     ],
-    "risk_levels": ["conservative", "moderate", "aggressive"]
+    "risk_levels": ["conservative", "moderate", "aggressive"],
+    "credentials": "1Password (no .env files)"
   },
   "safety_first": true,
   "requires_testing": true,
@@ -52,19 +55,20 @@
     "src/risk_management/**/*.py",
     "src/execution/**/*.py",
     "src/api/**/*.py",
-    "config.py",
-    ".env"
+    "src/config.py"
   ],
   "critical_files": [
     "src/bot.py",
     "src/execution/executor.py",
     "src/risk_management/risk_manager.py",
-    "src/api/client.py"
+    "src/api/client.py",
+    "src/config.py"
   ],
   "pre_deployment_checks": [
     "Run pytest suite",
+    "Run pyright type checking",
     "Validate risk parameters",
-    "Check API credentials",
+    "Check 1Password credentials",
     "Verify paper mode testing",
     "Confirm emergency shutdown works",
     "Review recent commits for security"

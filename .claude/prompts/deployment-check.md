@@ -1,46 +1,37 @@
 # Deployment Checklist Template
 
-Use these templates when preparing for deployment or validating configuration.
+Templates for preparing for deployment or validating configuration.
 
 ## Pre-Paper Trading Checklist
 
 ```
 Validate my setup before starting paper trading:
 
-**Configuration**
-- Review .env file configuration
+**Configuration (1Password)**
+- Run `make opconfig-show` and review settings
 - Verify TRADING_MODE is set to "paper"
-- Check PAPER_INITIAL_CAPITAL is appropriate
 - Validate TRADING_PAIRS are correct
 - Review DEFAULT_STRATEGY selection
+- Check INITIAL_CAPITAL is appropriate
 
 **Risk Parameters**
 - Check RISK_LEVEL setting
 - Verify position size limits are reasonable
 - Review stop loss percentages
-- Check take profit settings
 - Validate max open positions
 
 **API Setup**
-- Verify API key is valid
-- Check private key path is correct
-- Validate API authentication works
-- Test API connectivity
-
-**Notifications**
-- Verify Telegram bot token (if configured)
-- Check Telegram chat ID
-- Test notification delivery
+- Verify API key is valid (`make opstatus`)
+- Validate API authentication works (`make api-test`)
+- Test API connectivity (`make api-balance`)
 
 **Testing**
-- Confirm all tests pass
-- Verify type checking passes
-- Check code formatting
+- Confirm all tests pass (`make test`)
+- Verify type checking passes (`make typecheck`)
+- Check code formatting (`make lint`)
 
-**Monitoring**
-- Verify logging is configured
-- Check log directory exists
-- Review log rotation settings
+**Database**
+- Verify encryption is active (`make db-encrypt-status`)
 
 Confirm all items and suggest any missing steps.
 ```
@@ -57,16 +48,16 @@ I'm ready to deploy to LIVE trading. Perform final validation:
 - [ ] Risk parameters validated with real market data
 - [ ] Emergency shutdown procedure documented and tested
 
-**Configuration Validation**
-- [ ] .env file: TRADING_MODE = "live"
-- [ ] API credentials are for PRODUCTION (not sandbox)
-- [ ] Trading pairs are correct
+**Configuration Validation (1Password)**
+- [ ] `make opconfig-set KEY=TRADING_MODE VALUE=live`
+- [ ] API credentials are valid (`make opstatus`, `make api-test`)
+- [ ] Trading pairs are correct (`make opconfig-show`)
 - [ ] Risk level appropriate for live trading
 - [ ] Position sizes appropriate for account balance
 
 **Account Validation**
 - [ ] Revolut account funded appropriately
-- [ ] Account balance matches expected capital
+- [ ] Account balance matches expected capital (`make api-balance`)
 - [ ] API key has correct permissions
 - [ ] API rate limits understood
 - [ ] Trading fees considered in strategy
@@ -79,22 +70,14 @@ I'm ready to deploy to LIVE trading. Perform final validation:
 - [ ] Total exposure limit is safe
 
 **Code Quality**
-- [ ] All tests pass (pytest --cov)
-- [ ] Type checking passes (pyright src/ cli/)
-- [ ] Code is formatted (ruff format, ruff check)
+- [ ] All tests pass (`make test`)
+- [ ] Type checking passes (`make typecheck`)
+- [ ] Code is formatted (`make lint`)
 - [ ] No security vulnerabilities identified
 - [ ] Recent commits reviewed
 
-**Monitoring Setup**
-- [ ] Telegram notifications configured and tested
-- [ ] Logging level set appropriately (INFO recommended)
-- [ ] Log rotation configured
-- [ ] Monitoring dashboard ready (if applicable)
-- [ ] Alert thresholds configured
-
 **Emergency Procedures**
 - [ ] Know how to stop the bot immediately
-- [ ] Emergency contact information available
 - [ ] Backup of configuration saved
 - [ ] Rollback plan documented
 - [ ] Recovery procedures documented
@@ -106,66 +89,29 @@ I'm ready to deploy to LIVE trading. Perform final validation:
 - [ ] Gradually increase position sizes
 - [ ] Add additional pairs one at a time
 
-**Documentation**
-- [ ] Current configuration documented
-- [ ] Strategy parameters recorded
-- [ ] Risk limits documented
-- [ ] Deployment date/time recorded
-- [ ] Initial conditions noted
-
 Review each item carefully. This is REAL MONEY at risk.
 ```
 
 ## Configuration Validation
 
 ```
-Validate my configuration before deployment:
+Validate my 1Password configuration before deployment:
 
 **Current Configuration**:
-```
-
-\[Paste your .env content, replacing sensitive values with [REDACTED]\]
-
-```
+Run `make opconfig-show` and share the output.
 
 **Account Details**:
-- Account balance: $[AMOUNT]
+- Account balance: €[AMOUNT]
 - Desired risk level: [conservative/moderate/aggressive]
 - Trading experience: [beginner/intermediate/advanced]
-- Time commitment: [hours per day monitoring]
 
 **Questions**:
 1. Are risk parameters appropriate for my account size?
 2. Are position sizes safe for my risk tolerance?
-3. Are stop losses set correctly?
-4. Is the strategy selection appropriate?
-5. Are trading pairs suitable for my strategy?
-6. Is the trading interval appropriate?
+3. Is the strategy selection appropriate?
+4. Are trading pairs suitable for my strategy?
 
 Provide detailed recommendations for each configuration parameter.
-```
-
-## Environment File Review
-
-```
-Review my .env configuration for issues:
-
-```
-
-[Paste .env content with sensitive values redacted]
-
-```
-
-Check for:
-1. All required variables present
-2. Values in correct format
-3. Risk parameters appropriate
-4. Trading mode correctly set
-5. API credentials valid format
-6. Paths exist and are accessible
-7. Numerical values in valid ranges
-
-Highlight any issues or recommendations.
 ```
 
 ## Gradual Rollout Plan
@@ -174,7 +120,7 @@ Highlight any issues or recommendations.
 Help me create a gradual rollout plan for live trading:
 
 **Starting Conditions**:
-- Account size: $[AMOUNT]
+- Account size: €[AMOUNT]
 - Strategy: [STRATEGY_NAME]
 - Risk level: [LEVEL]
 
@@ -201,57 +147,20 @@ Phase 3 (Days 8-14):
 Create a detailed rollout plan with specific criteria for advancing between phases.
 ```
 
-## Paper Trading Analysis
-
-```
-Analyze my paper trading results before going live:
-
-**Paper Trading Period**: [Date range]
-
-**Performance Metrics**:
-- Total return: [X]%
-- Number of trades: [N]
-- Win rate: [X]%
-- Average winning trade: [X]%
-- Average losing trade: [X]%
-- Largest drawdown: [X]%
-- Sharpe ratio: [X] (if calculated)
-
-**Observations**:
-[List any notable patterns or issues]
-
-**Questions**:
-1. Are these results realistic for live trading?
-2. Are there any red flags?
-3. Is the strategy robust enough?
-4. What adjustments should I make?
-5. Am I ready for live trading?
-
-Provide honest assessment and recommendations.
-```
-
 ## Risk Parameter Optimization
 
 ```
 Help me optimize risk parameters for live trading:
 
 **Account Profile**:
-- Total capital: $[AMOUNT]
+- Total capital: €[AMOUNT]
 - Risk tolerance: [Low/Medium/High]
 - Max acceptable drawdown: [X]%
 - Target annual return: [X]%
-- Trading experience: [Beginner/Intermediate/Advanced]
 
-**Current Parameters**:
-- Position size: [X]%
-- Stop loss: [X]%
-- Take profit: [X]%
-- Max positions: [N]
-- Daily loss limit: [X]%
-
-**Trading Style**:
+**Current Parameters** (from `make opconfig-show`):
 - Strategy: [STRATEGY_NAME]
-- Holding period: [Intraday/Swing/Position]
+- Risk level: [LEVEL]
 - Trading pairs: [List]
 
 Suggest optimized parameters with reasoning for each.
@@ -265,30 +174,20 @@ Help me choose the best strategy for my situation:
 **Market Conditions**:
 - Current trend: [Bullish/Bearish/Sideways]
 - Volatility: [High/Medium/Low]
-- My outlook: [Your market view]
 
 **Account Details**:
-- Capital: $[AMOUNT]
+- Capital: €[AMOUNT]
 - Risk level: [conservative/moderate/aggressive]
-- Time availability: [How much monitoring time]
-
-**Experience**:
-- Trading experience: [Beginner/Intermediate/Advanced]
-- Familiarity with crypto: [Low/Medium/High]
-- Technical analysis knowledge: [Low/Medium/High]
 
 **Available Strategies**:
 1. Market Making - Profits from bid-ask spread
-2. Momentum - Follows trends
-3. Mean Reversion - Trades reversals
-4. Multi-Strategy - Combines multiple approaches
+2. Momentum - Follows trends with EMA/RSI
+3. Mean Reversion - Trades reversals with Bollinger Bands
+4. Breakout - Trades range breakouts with RSI confirmation
+5. Range Reversion - Buys near 24h low, sells near 24h high
+6. Multi-Strategy - Weighted consensus of all above
 
-Recommend:
-1. Best strategy for my situation
-2. Appropriate risk parameters
-3. Trading pairs to start with
-4. Expected performance characteristics
-5. Key risks to monitor
+Recommend the best strategy with appropriate risk parameters.
 ```
 
 ## System Health Check
@@ -297,27 +196,22 @@ Recommend:
 Perform a system health check before deployment:
 
 **Code Quality**
-- Run: pytest --cov
-- Run: pyright src/ cli/
-- Run: ruff format src/ --check
-- Run: ruff check src/
+- Run: make test
+- Run: make typecheck
+- Run: make lint
 
 **API Connectivity**
-- Test API authentication
-- Verify market data fetching
-- Check order submission (paper mode)
-- Validate position querying
+- Run: make api-test
+- Run: make api-balance
+- Run: make api-ticker SYMBOL=BTC-EUR
 
-**Monitoring**
-- Test Telegram notifications
-- Verify logging working
-- Check log rotation
-- Test error alerts
+**Database**
+- Run: make db-encrypt-status
+- Run: make db-stats
 
-**Data Storage**
-- Verify data/ directory writable
-- Check logs/ directory writable
-- Test portfolio snapshot saving
+**1Password**
+- Run: make opstatus
+- Run: make opconfig-show
 
 **Risk Controls**
 - Test stop loss triggering
@@ -339,62 +233,21 @@ Help me set up post-deployment monitoring:
 - Alert on: [Conditions]
 
 **Short-term Monitoring (First week)**:
-- Check every: [Frequency]
-- Review: [Metrics to review]
+- Review: `make db-analytics DAYS=7`
 - Adjust if: [Conditions]
 
 **Long-term Monitoring (Ongoing)**:
-- Daily checks: [What to check]
-- Weekly review: [What to analyze]
-- Monthly review: [What to assess]
+- Daily: `make db-analytics DAYS=1`
+- Weekly: `make db-analytics DAYS=7`
+- Monthly: `make db-analytics DAYS=30`
 
 **Key Metrics to Track**:
 - [ ] Total return
 - [ ] Win rate
-- [ ] Average trade size
 - [ ] Risk-adjusted returns
 - [ ] Drawdown
-- [ ] Position count
 - [ ] API errors
 - [ ] Failed orders
-- [ ] Strategy performance
-
-**Alert Conditions**:
-- [ ] Daily loss > [X]%
-- [ ] Drawdown > [X]%
-- [ ] Failed orders > [N]
-- [ ] API errors > [N]
-- [ ] Unusual position sizes
-- [ ] Strategy stopped generating signals
 
 Create a detailed monitoring plan.
-```
-
-## Rollback Procedure
-
-```
-Help me document rollback procedures:
-
-**When to Rollback**:
-- [ ] Daily loss exceeds [X]%
-- [ ] Multiple failed orders
-- [ ] API connectivity issues
-- [ ] Strategy behaving unexpectedly
-- [ ] Risk limits being violated
-- [ ] Other critical issues: [Specify]
-
-**Rollback Steps**:
-1. [How to stop the bot immediately]
-2. [How to cancel open orders]
-3. [How to close positions]
-4. [How to verify shutdown]
-5. [How to preserve logs/data]
-6. [Who to notify]
-
-**Recovery Steps**:
-1. [How to analyze what went wrong]
-2. [How to test fixes in paper mode]
-3. [How to gradually restart]
-
-Document complete rollback and recovery procedures.
 ```
