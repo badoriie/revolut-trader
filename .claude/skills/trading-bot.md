@@ -10,7 +10,7 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
 
 ### 1. Strategy Development & Analysis
 
-- Review and improve trading strategies (market making, momentum, mean reversion, multi-strategy)
+- Review and improve trading strategies (market making, momentum, mean reversion, breakout, range reversion, multi-strategy)
 - Validate strategy logic and signal generation
 - Suggest optimizations for entry/exit conditions
 - Help implement new trading strategies following the BaseStrategy pattern
@@ -34,7 +34,7 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
   - Check for race conditions in order execution
 - Audit Ed25519 cryptographic implementation
 - Review API client security (request signing, nonce handling)
-- Validate environment variable usage and secrets management
+- Validate 1Password credential management
 - Check for proper error handling in financial operations
 
 ### 4. Testing & Quality Assurance
@@ -50,16 +50,14 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
 - Pre-deployment checklist validation:
   - All tests passing
   - Risk parameters properly configured
-  - API keys and credentials secured
-  - Logging configured correctly
-  - Telegram notifications working
-- Review configuration files (.env, config.py)
+  - 1Password credentials secured
+  - Database encryption active
 - Validate paper trading before live deployment
 - Setup monitoring and alerting
 
-### 6. Log Analysis & Debugging
+### 6. Debugging
 
-- Analyze log files in logs/ directory
+- Query encrypted database for log entries and trade history
 - Debug trading issues and unexpected behavior
 - Investigate failed orders or execution problems
 - Monitor position management and portfolio tracking
@@ -76,13 +74,13 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
 ## Key Files to Monitor
 
 - `src/bot.py` - Main orchestrator, trading loop
-- `src/strategies/*.py` - Trading strategy implementations
+- `src/strategies/*.py` - Trading strategy implementations (6 strategies)
 - `src/risk_management/risk_manager.py` - Risk controls
 - `src/execution/executor.py` - Order execution logic
 - `src/api/client.py` - Revolut API client
-- `run.py` - CLI entry point
-- `config.py` - Configuration and risk parameters
-- `.env` - Environment variables (API keys, trading mode)
+- `cli/run.py` - CLI entry point
+- `src/config.py` - Pydantic configuration (loaded from 1Password)
+- `src/utils/onepassword.py` - 1Password CLI wrapper
 
 ## Safety Protocols
 
@@ -91,7 +89,7 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
 1. **Never bypass risk limits** - All trading must respect position limits and stop losses
 1. **Validate before live trading** - Always test in paper mode first
 1. **Audit order sizes** - Check calculations before order submission
-1. **Protect API keys** - Never log or expose credentials
+1. **Protect credentials** - All secrets in 1Password only, never log or expose
 1. **Verify trading mode** - Clearly distinguish paper vs live mode
 1. **Double-check financial calculations** - Verify position sizing, P&L, and risk metrics
 1. **Rate limit API calls** - Respect Revolut API rate limits to avoid bans
@@ -104,72 +102,10 @@ Before any live trading deployment, verify:
 - [ ] All type checks pass (`pyright src/ cli/`)
 - [ ] Code is properly formatted (`ruff format`, `ruff check`)
 - [ ] Risk parameters are appropriate for account size
-- [ ] API credentials are valid and secured
+- [ ] 1Password credentials are valid and secured
 - [ ] Paper mode testing completed successfully
-- [ ] Telegram notifications configured and working
-- [ ] Logging configured with proper retention
 - [ ] Stop loss and position limits are enabled
 - [ ] Emergency shutdown procedures documented
-
-## Common Tasks
-
-### Review a New Strategy
-
-```
-Review the [strategy_name] strategy for:
-1. Signal generation logic
-2. Risk parameter adherence
-3. Edge case handling
-4. Backtesting potential
-5. Integration with existing system
-```
-
-### Audit Security
-
-```
-Perform a security audit focusing on:
-1. API authentication and signing
-2. Order validation and limits
-3. Credential management
-4. Error handling in financial operations
-5. Race condition prevention
-```
-
-### Debug Trading Issue
-
-```
-Analyze the trading bot logs and help debug:
-[Describe the issue]
-
-Check:
-1. Recent log entries in logs/
-2. Order execution history
-3. Position management
-4. API responses
-5. Risk limit triggers
-```
-
-### Add New Feature
-
-```
-Help implement [feature] ensuring:
-1. Follows existing architecture patterns
-2. Includes proper risk controls
-3. Has comprehensive tests
-4. Maintains security standards
-5. Includes proper logging
-```
-
-## Example Invocations
-
-- "Review the momentum strategy for potential improvements"
-- "Audit the order execution logic for security vulnerabilities"
-- "Help me add a new Bollinger Bands strategy"
-- "Debug why stop losses aren't triggering correctly"
-- "Write tests for the risk manager"
-- "Validate my .env configuration before going live"
-- "Analyze today's trading logs for issues"
-- "Help me optimize the market making strategy parameters"
 
 ## Risk Awareness
 

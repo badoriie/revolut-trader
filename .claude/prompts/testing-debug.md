@@ -91,7 +91,7 @@ Analyze trading logs for issues:
 [Describe any specific issues to investigate]
 
 **Log Files**:
-- logs/[filename]
+- Database log entries (`make db-stats`)
 
 Provide:
 1. Summary of trading activity
@@ -383,7 +383,7 @@ Debug strategy signal generation:
 [No signals / Too many signals / Wrong signals]
 
 **Market Conditions**:
-- Pair: [BTC-USD, etc.]
+- Pair: [BTC-EUR, etc.]
 - Price: $[PRICE]
 - Trend: [Up/Down/Sideways]
 - Volatility: [High/Low]
@@ -538,7 +538,7 @@ Test data validation across the system:
 - [ ] Position data
 
 **Configuration Validation**:
-- [ ] .env values
+- [ ] 1Password config values
 - [ ] Risk parameters
 - [ ] Trading pairs
 
