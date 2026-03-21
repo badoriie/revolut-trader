@@ -96,15 +96,15 @@ class TestCandleData:
         candle = self._make_candle(volume="2.75")
         assert candle.volume_decimal == Decimal("2.75")
 
-    def test_float_values_are_accepted(self):
-        """API may return float values — they should be converted correctly."""
+    def test_string_values_required_per_api_docs(self):
+        """API always returns string values for price/volume fields."""
         candle = CandleData(
             start=1_700_000_000,
-            open=50000.0,
-            high=51000.0,
-            low=49000.0,
-            close=50500.0,
-            volume=1.5,
+            open="50000.0",
+            high="51000.0",
+            low="49000.0",
+            close="50500.0",
+            volume="1.5",
         )
         assert candle.open_price == Decimal("50000.0")
         assert candle.high_price == Decimal("51000.0")

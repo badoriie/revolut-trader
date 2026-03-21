@@ -11,6 +11,7 @@ Coverage goals per endpoint:
   ✓ Edge-cases specific to each endpoint
 """
 
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlparse
 
@@ -376,16 +377,16 @@ class TestGetBalance:
         client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         btc = result["balances"]["BTC"]
-        assert btc["available"] == 0.5
-        assert btc["reserved"] == 0.01
-        assert btc["total"] == 0.51
+        assert btc["available"] == Decimal("0.5")
+        assert btc["reserved"] == Decimal("0.01")
+        assert btc["total"] == Decimal("0.51")
 
     async def test_staked_field_included(self, client):
         _mock_http(client, BALANCE_RESPONSE)
         client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert "staked" in result["balances"]["BTC"]
-        assert result["balances"]["BTC"]["staked"] == 0.0
+        assert result["balances"]["BTC"]["staked"] == Decimal("0")
 
     async def test_includes_currencies_list(self, client):
         _mock_http(client, BALANCE_RESPONSE)
@@ -398,7 +399,7 @@ class TestGetBalance:
         client.get_ticker = AsyncMock(side_effect=ValueError("no pair"))
         result = await client.get_balance()
         assert "total_eur" in result
-        assert result["total_eur"] == 5000.0
+        assert result["total_eur"] == Decimal("5000.00")
 
     async def test_fx_conversion_uses_live_rate(self, client):
         """Non-base currencies are converted using a live ticker rate."""
@@ -420,10 +421,16 @@ class TestGetBalance:
         ]
         _mock_http(client, response)
         client.get_ticker = AsyncMock(
-            return_value={"last": "0.91", "bid": "0.90", "ask": "0.92", "symbol": "USD-EUR"}
+            return_value={
+                "last": Decimal("0.91"),
+                "bid": Decimal("0.90"),
+                "ask": Decimal("0.92"),
+                "symbol": "USD-EUR",
+            }
         )
         result = await client.get_balance()
-        assert result["total_eur"] == pytest.approx(1000.0 + 500.0 * 0.91)
+        expected = Decimal("1000.00") + Decimal("500.00") * Decimal("0.91")
+        assert result["total_eur"] == expected
         client.get_ticker.assert_awaited_once_with("USD-EUR")
 
     async def test_fx_conversion_skipped_on_ticker_failure(self, client):
@@ -441,7 +448,7 @@ class TestGetBalance:
         _mock_http(client, response)
         client.get_ticker = AsyncMock(side_effect=ValueError("no order book"))
         result = await client.get_balance()
-        assert result["total_eur"] == 2000.0  # BTC excluded, no error raised
+        assert result["total_eur"] == Decimal("2000.00")  # BTC excluded, no error raised
 
     async def test_zero_balance_currencies_skipped_for_fx(self, client):
         """Currencies with zero total don't trigger a ticker lookup."""
@@ -458,7 +465,7 @@ class TestGetBalance:
         _mock_http(client, response)
         client.get_ticker = AsyncMock()
         result = await client.get_balance()
-        assert result["total_eur"] == 3000.0
+        assert result["total_eur"] == Decimal("3000.00")
         client.get_ticker.assert_not_awaited()
 
     async def test_raises_value_error_on_non_list_response(self, client):
@@ -1470,23 +1477,23 @@ class TestGetTicker:
     async def test_returns_best_bid(self, client):
         _mock_http(client, ORDER_BOOK_RESPONSE)
         result = await client.get_ticker("BTC-EUR")
-        assert result["bid"] == 50000.0
+        assert result["bid"] == Decimal("50000.00")
 
     async def test_returns_best_ask(self, client):
         _mock_http(client, ORDER_BOOK_RESPONSE)
         result = await client.get_ticker("BTC-EUR")
-        assert result["ask"] == 51000.0
+        assert result["ask"] == Decimal("51000.00")
 
     async def test_last_is_midprice(self, client):
         _mock_http(client, ORDER_BOOK_RESPONSE)
         result = await client.get_ticker("BTC-EUR")
-        assert result["last"] == (50000.0 + 51000.0) / 2
+        assert result["last"] == (Decimal("50000.00") + Decimal("51000.00")) / 2
 
     async def test_volume_is_sum_of_bid_and_ask_quantities(self, client):
         _mock_http(client, ORDER_BOOK_RESPONSE)
         result = await client.get_ticker("BTC-EUR")
         # bids qty 0.2 + asks qty 0.1 = 0.3
-        assert result["volume"] == pytest.approx(0.3)
+        assert result["volume"] == Decimal("0.3")
 
     async def test_includes_symbol(self, client):
         _mock_http(client, ORDER_BOOK_RESPONSE)

@@ -268,27 +268,31 @@ class RevolutAPIClient:
         """Get all account balances.
 
         Docs: GET /api/1.0/balances — Auth required.
+        API returns a JSON array of balance objects with string amounts.
 
         Returns:
-            ``{"balances": {currency: {...}}, "currencies": [...], "total_eur": float}``
+            ``{"balances": {currency: {...}}, "currencies": [...], "total_<base>": Decimal}``
+            All monetary values are ``Decimal`` — never ``float``.
         """
+        from decimal import Decimal
+
         raw = await self._request("GET", "/balances")
         if not isinstance(raw, list):
             raise ValueError(f"Invalid balance response: expected list, got {type(raw).__name__}")
 
         base_currency = settings.base_currency
-        balances: dict[str, dict[str, float]] = {}
-        total_base = 0.0
+        balances: dict[str, dict[str, Decimal]] = {}
+        total_base = Decimal("0")
 
         # Collect non-base currencies that need FX conversion
-        fx_needed: dict[str, float] = {}  # currency -> total amount
+        fx_needed: dict[str, Decimal] = {}  # currency -> total amount
 
         for item in raw:
             currency = item.get("currency", "UNKNOWN")
-            available = float(item.get("available", "0"))
-            reserved = float(item.get("reserved", "0"))
-            staked = float(item.get("staked", "0"))
-            total = float(item.get("total", "0"))
+            available = Decimal(item.get("available", "0"))
+            reserved = Decimal(item.get("reserved", "0"))
+            staked = Decimal(item.get("staked", "0"))
+            total = Decimal(item.get("total", "0"))
             balances[currency] = {
                 "available": available,
                 "reserved": reserved,
@@ -305,7 +309,7 @@ class RevolutAPIClient:
             symbol = f"{currency}-{base_currency}"
             try:
                 ticker = await self.get_ticker(symbol)
-                rate = float(ticker.get("last", 0))
+                rate = Decimal(str(ticker.get("last", "0")))
                 if rate > 0:
                     total_base += amount * rate
             except Exception:  # nosec B110 — currency has no pair, FX contribution is zero
@@ -834,11 +838,13 @@ class RevolutAPIClient:
         The mid-price is used as ``last``.
 
         Returns:
-            ``{"bid", "ask", "last", "volume", "symbol"}``
+            ``{"bid": Decimal, "ask": Decimal, "last": Decimal, "volume": Decimal, "symbol": str}``
 
         Raises:
             ValueError: If the order book is empty or malformed.
         """
+        from decimal import Decimal
+
         raw = await self.get_order_book(symbol)
 
         try:
@@ -852,10 +858,12 @@ class RevolutAPIClient:
         if not asks and not bids:
             raise ValueError(f"Empty order book for {symbol}")
 
-        best_bid = float(bids[0].price) if bids else 0.0
-        best_ask = float(asks[0].price) if asks else 0.0
-        last = (best_bid + best_ask) / 2 if (best_bid and best_ask) else 0.0
-        volume = sum(float(b.quantity) for b in bids) + sum(float(a.quantity) for a in asks)
+        best_bid = bids[0].price if bids else Decimal("0")
+        best_ask = asks[0].price if asks else Decimal("0")
+        last = (best_bid + best_ask) / 2 if (best_bid and best_ask) else Decimal("0")
+        volume = sum((b.quantity for b in bids), Decimal("0")) + sum(
+            (a.quantity for a in asks), Decimal("0")
+        )
 
         return {
             "bid": best_bid,

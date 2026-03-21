@@ -171,17 +171,17 @@ class PortfolioSnapshot(BaseModel):
 class OrderBookEntry(BaseModel):
     """Single order book level from the Revolut X API.
 
-    API shape (both public and authenticated order book):
+    API shape:
       aid  — asset ID (e.g. "BTC")
       anm  — asset name (e.g. "Bitcoin")
-      s    — side: "SELL" for asks, "BUY" for bids
+      s    — side: "SELL" for asks; "BUY" (authenticated) or "BUYI" (public) for bids
       p    — price as string
       pc   — price currency (e.g. "EUR")
       q    — quantity as string
       qc   — quantity currency (e.g. "BTC")
       no   — number of orders at this level
       ts   — trading system type (e.g. "CLOB")
-      pdt  — timestamp (unix ms)
+      pdt  — timestamp (unix ms for authenticated, ISO-8601 string for public)
     """
 
     p: str  # Price (required)
@@ -193,7 +193,7 @@ class OrderBookEntry(BaseModel):
     qc: str | None = None  # Quantity currency
     no: str | None = None  # Number of orders at this level
     ts: str | None = None  # Trading system type
-    pdt: int | None = None  # Timestamp (unix ms)
+    pdt: int | str | None = None  # Timestamp (unix ms or ISO-8601 string)
 
     @property
     def price(self) -> Decimal:
@@ -252,14 +252,18 @@ class BalanceResponse(BaseModel):
 
 
 class CandleData(BaseModel):
-    """Historical candle data."""
+    """Historical candle data.
 
-    start: int  # Timestamp
-    open: str | float  # Open price (API may return string or float)
-    high: str | float  # High price
-    low: str | float  # Low price
-    close: str | float  # Close price
-    volume: str | float  # Volume
+    API shape (GET /candles/{symbol}):
+      All price and volume fields are returned as strings.
+    """
+
+    start: int  # Timestamp (Unix epoch ms)
+    open: str  # Open price
+    high: str  # High price
+    low: str  # Low price
+    close: str  # Close price
+    volume: str  # Volume
 
     @property
     def timestamp(self) -> int:
