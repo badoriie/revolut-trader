@@ -80,8 +80,8 @@ I'm ready to deploy to LIVE trading. Perform final validation:
 
 **Code Quality**
 - [ ] All tests pass (pytest --cov)
-- [ ] Type checking passes (mypy src/)
-- [ ] Code is formatted (black, ruff)
+- [ ] Type checking passes (pyright src/ cli/)
+- [ ] Code is formatted (ruff format, ruff check)
 - [ ] No security vulnerabilities identified
 - [ ] Recent commits reviewed
 
@@ -298,8 +298,8 @@ Perform a system health check before deployment:
 
 **Code Quality**
 - Run: pytest --cov
-- Run: mypy src/
-- Run: black src/ --check
+- Run: pyright src/ cli/
+- Run: ruff format src/ --check
 - Run: ruff check src/
 
 **API Connectivity**

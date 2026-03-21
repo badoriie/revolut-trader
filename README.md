@@ -4,7 +4,7 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 
 ## Features
 
-- **4 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy (weighted consensus)
+- **6 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy, Breakout, Range Reversion
 - **3 Risk Levels**: Conservative, Moderate, Aggressive — with position limits, stop-loss, daily loss limits
 - **3 Trading Modes**: Backtesting, Paper Trading, Live Trading
 - **Secure**: All credentials and config in 1Password — zero disk footprint for secrets
@@ -72,12 +72,14 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 
 ## Strategies
 
-| Strategy           | Best For                       | Key Indicators     |
-| ------------------ | ------------------------------ | ------------------ |
-| **Market Making**  | Stable markets, high liquidity | Bid-ask spread     |
-| **Momentum**       | Trending markets               | EMA(12/26), RSI    |
-| **Mean Reversion** | Range-bound markets            | Bollinger Bands    |
-| **Multi-Strategy** | Mixed conditions               | Weighted consensus |
+| Strategy            | Best For                       | Key Indicators                  |
+| ------------------- | ------------------------------ | ------------------------------- |
+| **Market Making**   | Stable markets, high liquidity | Bid-ask spread                  |
+| **Momentum**        | Trending markets               | EMA(12/26), RSI                 |
+| **Mean Reversion**  | Range-bound markets            | Bollinger Bands                 |
+| **Breakout**        | Volatile markets, breakouts    | Rolling high/low, RSI           |
+| **Range Reversion** | Ranging markets                | 24h high/low range position     |
+| **Multi-Strategy**  | Mixed conditions               | Weighted consensus of all above |
 
 ## Risk Levels
 
@@ -93,13 +95,12 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 revolut-trader/
 ├── src/
 │   ├── api/              # Revolut API client (Ed25519 auth)
-│   ├── strategies/       # Trading strategies
+│   ├── strategies/       # 6 trading strategies
 │   ├── risk_management/  # Risk controls and position sizing
 │   ├── execution/        # Order execution and position management
-│   ├── notifications/    # Telegram alerts
+│   ├── backtest/         # Backtesting engine
 │   ├── models/           # Domain models + SQLAlchemy ORM
 │   ├── utils/            # 1Password, indicators, persistence, encryption
-│   ├── backtest/         # Backtesting engine
 │   ├── config.py         # Pydantic config (loaded from 1Password)
 │   └── bot.py            # Main orchestrator
 ├── cli/                  # CLI entry points (run, backtest, api_test, db_manage)
@@ -130,7 +131,7 @@ See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 make test             # run tests with coverage
 make lint             # ruff check
 make format           # ruff format
-make typecheck        # pyright
+make typecheck        # pyright src/ cli/
 make check            # all of the above + tests
 make pre-commit       # run all pre-commit hooks
 ```

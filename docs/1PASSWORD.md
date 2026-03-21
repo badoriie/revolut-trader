@@ -79,14 +79,14 @@ The bot uses two 1Password items in the `revolut-trader` vault:
 
 ### Trading Configuration (`revolut-trader-config`)
 
-| Field              | Type | Default           | Valid Values                                                    |
-| ------------------ | ---- | ----------------- | --------------------------------------------------------------- |
-| `TRADING_MODE`     | text | `paper`           | `paper`, `live`                                                 |
-| `DEFAULT_STRATEGY` | text | `market_making`   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy` |
-| `RISK_LEVEL`       | text | `conservative`    | `conservative`, `moderate`, `aggressive`                        |
-| `BASE_CURRENCY`    | text | `EUR`             | `EUR`, `USD`, `GBP`                                             |
-| `TRADING_PAIRS`    | text | `BTC-EUR,ETH-EUR` | Comma-separated symbols                                         |
-| `INITIAL_CAPITAL`  | text | `10000`           | Any positive number                                             |
+| Field              | Type | Default           | Valid Values                                                                                   |
+| ------------------ | ---- | ----------------- | ---------------------------------------------------------------------------------------------- |
+| `TRADING_MODE`     | text | `paper`           | `paper`, `live`                                                                                |
+| `DEFAULT_STRATEGY` | text | `market_making`   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion` |
+| `RISK_LEVEL`       | text | `conservative`    | `conservative`, `moderate`, `aggressive`                                                       |
+| `BASE_CURRENCY`    | text | `EUR`             | `EUR`, `USD`, `GBP`                                                                            |
+| `TRADING_PAIRS`    | text | `BTC-EUR,ETH-EUR` | Comma-separated symbols                                                                        |
+| `INITIAL_CAPITAL`  | text | `10000`           | Any positive number                                                                            |
 
 All six config fields are **required**. If any field is missing, the bot refuses to start with an actionable error:
 
