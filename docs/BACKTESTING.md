@@ -34,7 +34,7 @@ make db-export-csv
 
 ```
 --strategy, -s    Trading strategy to test
-                  Choices: market_making, momentum, mean_reversion, multi_strategy
+                  Choices: market_making, momentum, mean_reversion, multi_strategy, breakout, range_reversion
                   Default: market_making
 
 --risk, -r        Risk management level
@@ -166,6 +166,20 @@ Total Fees:         €38.50
 - **Profit Factor**: 1.5-2.0
 - **Works Best**: In sideways/oscillating markets
 
+### Breakout
+
+- **Expected**: Fewer trades, larger moves
+- **Good Win Rate**: 40-50%
+- **Profit Factor**: 2.0-3.0
+- **Works Best**: In volatile markets with clear consolidation patterns
+
+### Range Reversion
+
+- **Expected**: Frequent trades near daily extremes
+- **Good Win Rate**: 55-65%
+- **Profit Factor**: 1.4-2.0
+- **Works Best**: In ranging markets with well-defined 24h high/low
+
 ### Multi-Strategy
 
 - **Expected**: Balanced performance
@@ -201,7 +215,7 @@ make backtest STRATEGY=momentum DAYS=180   # Semi-annual
 ### 2. Compare Different Strategies
 
 ```bash
-for strategy in market_making momentum mean_reversion multi_strategy; do
+for strategy in market_making momentum mean_reversion multi_strategy breakout range_reversion; do
   make backtest STRATEGY=$strategy DAYS=90
 done
 make db-backtests LIMIT=20

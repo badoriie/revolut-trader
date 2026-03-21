@@ -101,8 +101,8 @@ This agent is an expert in algorithmic trading systems, cryptocurrency markets, 
 Before any live trading deployment, verify:
 
 - [ ] All unit tests pass (`pytest`)
-- [ ] All type checks pass (`mypy src/`)
-- [ ] Code is properly formatted (`black`, `ruff`)
+- [ ] All type checks pass (`pyright src/ cli/`)
+- [ ] Code is properly formatted (`ruff format`, `ruff check`)
 - [ ] Risk parameters are appropriate for account size
 - [ ] API credentials are valid and secured
 - [ ] Paper mode testing completed successfully

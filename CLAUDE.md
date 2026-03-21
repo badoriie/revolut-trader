@@ -22,7 +22,7 @@ uv run pytest tests/unit/test_risk_manager.py::TestClassName::test_name -v
 # Lint, format, type-check
 make lint                    # ruff check
 make format                  # ruff format + ruff check --fix
-make typecheck               # mypy src/ cli/
+make typecheck               # pyright src/ cli/
 make check                   # all of the above + tests
 
 # Run pre-commit hooks on all files
@@ -64,10 +64,10 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper
 
 **Component hierarchy:**
 
-- `TradingBot` (orchestrator) owns: `RevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `TelegramNotifier`, `DatabasePersistence`
+- `TradingBot` (orchestrator) owns: `RevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
 - Each trading loop iteration: fetch market data → `strategy.analyze()` → `risk_manager.validate()` → `executor.execute()` → persist
 
-**Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Four implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting across all three). Adding a strategy only requires a new file implementing `BaseStrategy`.
+**Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 **Configuration** (`src/config.py`): Pydantic-based. All trading config (mode, strategy, risk level, pairs, capital) is fetched from 1Password at startup — there are no code-level defaults. Config fails fast with actionable error messages if 1Password fields are missing.
 

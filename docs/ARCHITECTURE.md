@@ -12,10 +12,12 @@ cli/run.py  (entry point)
         │   ├── RevolutAPIClient
         │   └── RiskManager
         ├── BaseStrategy  (src/strategies/)
-        │   ├── MomentumStrategy       — EMA(12/26) + RSI
-        │   ├── MarketMakingStrategy   — bid/ask spread
-        │   ├── MeanReversionStrategy  — Bollinger Bands
-        │   └── MultiStrategy          — weighted voting across all 3
+        │   ├── MomentumStrategy         — EMA(12/26) + RSI
+        │   ├── MarketMakingStrategy     — bid/ask spread
+        │   ├── MeanReversionStrategy    — Bollinger Bands
+        │   ├── BreakoutStrategy         — rolling high/low + RSI
+        │   ├── RangeReversionStrategy   — 24h range position + RSI
+        │   └── MultiStrategy            — weighted voting across all
         ├── DatabasePersistence  (src/utils/db_persistence.py)
         │   ├── SQLAlchemy ORM  (src/models/db.py)
         │   └── DatabaseEncryption  (src/utils/db_encryption.py)
