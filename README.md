@@ -1,584 +1,167 @@
-# Revolut Trader: Professional Algorithmic Trading Bot
+# Revolut Trader: Algorithmic Trading Bot
 
-A sophisticated, production-ready algorithmic trading bot for Revolut Crypto API with multiple strategies, robust risk management, and comprehensive monitoring.
+A production-ready algorithmic trading bot for Revolut X Crypto API with multiple strategies, robust risk management, and comprehensive monitoring.
 
 ## Features
 
-### Trading Strategies
-
-- **Market Making**: Profit from bid-ask spreads with intelligent inventory management
-- **Momentum**: Follow trends using moving averages and RSI indicators
-- **Mean Reversion**: Trade price deviations using Bollinger Bands
-- **Multi-Strategy**: Combine multiple strategies with weighted consensus
-
-### Risk Management
-
-- Configurable risk levels (Conservative, Moderate, Aggressive)
-- Position size limits based on portfolio percentage
-- Stop loss and take profit automation
-- Daily loss limits with automatic trading suspension
-- Concentration risk controls
-
-### Trading Modes
-
-- **Backtesting**: Validate strategies on historical data before deploying
-- **Paper Trading**: Test strategies with real-time data and simulated execution
-- **Live Trading**: Execute real trades on Revolut X exchange
-
-### Monitoring & Notifications
-
-- **Interactive Web Dashboard**: Visualize backtests, compare strategies, monitor performance
-- Telegram notifications for signals, orders, and alerts
-- Comprehensive logging system
-- Portfolio tracking and performance metrics
-- Real-time position monitoring
-- Daily trading summaries
+- **4 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy (weighted consensus)
+- **3 Risk Levels**: Conservative, Moderate, Aggressive — with position limits, stop-loss, daily loss limits
+- **3 Trading Modes**: Backtesting, Paper Trading, Live Trading
+- **Secure**: All credentials and config in 1Password — zero disk footprint for secrets
+- **Encrypted DB**: Sensitive fields encrypted with Fernet, key in 1Password
+- **Monitoring**: Telegram notifications, database analytics, CSV export
 
 ## Quick Start
 
-### 1. Installation
-
 ```bash
-# Clone the repository
-cd revolut-trader
-
-# Complete setup (uv + 1Password + dependencies + key generation)
+# 1. Complete setup (uv + 1Password + keys + deps)
 make setup
-```
 
-This single command will:
+# 2. Store your Revolut API key
+make ops
 
-- Install/verify uv (modern Python package manager)
-- Create Python 3.11+ virtual environment
-- Install 1Password CLI (if needed)
-- Generate Ed25519 keys securely
-- Store keys in 1Password
-- Install all dependencies
-
-### 2. Configure Credentials
-
-After running `make setup`, you'll have keys auto-generated and stored in 1Password. Now configure your Revolut API:
-
-#### Register Public Key on Revolut X
-
-1. Copy the public key displayed during setup (or get it with `make opshow`)
-1. Log in to [Revolut X web app](https://www.revolut.com/business/merchant-api)
-1. Navigate to API settings
-1. Create new API key
-1. Paste your public key
-1. Copy the generated API key (64 characters)
-
-#### Store API Key in 1Password
-
-```bash
-# Store your Revolut API key
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  REVOLUT_API_KEY[concealed]="your-api-key-from-revolut"
-```
-
-**Security Benefits:**
-
-- ✅ Private keys NEVER stored on disk
-- ✅ Generated in temp directory, immediately stored in 1Password
-- ✅ Auto-deleted after storage (zero disk footprint)
-- ✅ Encrypted vault storage with audit trail
-- ✅ No risk of accidental git commits
-
-See [1Password Integration Guide](docs/1PASSWORD_INTEGRATION.md) for full details.
-
-### 3. Setup Telegram Notifications (Optional)
-
-```bash
-# Get bot token from @BotFather and chat ID from @userinfobot
-op item edit revolut-trader-credentials \
-  --vault revolut-trader \
-  TELEGRAM_BOT_TOKEN[concealed]="your-telegram-bot-token" \
-  TELEGRAM_CHAT_ID[concealed]="your-telegram-chat-id"
-```
-
-### 4. Verify Setup
-
-```bash
-# Check 1Password status
+# 3. Verify
 make opstatus
-
-# View credentials (masked)
 make opshow
+
+# 4. Run in paper mode
+make run-paper
 ```
 
-### 5. Run the Bot
+See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
+
+## Usage
+
+### Backtesting
 
 ```bash
-# Paper trading with market making (RECOMMENDED for testing)
+make backtest                              # 30 days, default strategy
+make backtest STRATEGY=momentum DAYS=90    # specific strategy and period
+make db-backtests                          # view stored results
+make db-export-csv                         # export to CSV
+```
+
+See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and best practices.
+
+### Paper Trading
+
+```bash
 make run-paper
 
-# Or directly with options
-uv run python cli/run.py --strategy market_making --mode paper
-
-# View all options
-uv run python cli/run.py --help
-```
-
-## Usage Examples
-
-### Backtesting (Historical Data Validation)
-
-Test strategies on historical data before deploying:
-
-```bash
-# Basic backtest: 30 days with default strategy
-make backtest
-
-# Specify strategy and time range
-make backtest STRATEGY=momentum DAYS=90
-
-# Or run directly with full options
-uv run python cli/backtest.py --strategy mean_reversion --risk moderate \
-  --days 60 --output ./results/backtest.json
-uv run python cli/backtest.py --strategy multi_strategy --interval 60 --days 180
-uv run python cli/backtest.py --strategy momentum --capital 50000 --days 90
-```
-
-See [Backtesting Guide](docs/BACKTESTING.md) for detailed documentation.
-
-### Paper Trading (Safe Testing)
-
-```bash
-# Test market making strategy
-uv run python cli/run.py --strategy market_making --mode paper
-
-# Test momentum strategy with moderate risk
+# Or with options
 uv run python cli/run.py --strategy momentum --risk moderate --mode paper
-
-# Test mean reversion
-uv run python cli/run.py --strategy mean_reversion --mode paper
-
-# Test multi-strategy (combines all strategies)
-uv run python cli/run.py --strategy multi_strategy --mode paper
-
-# OR use Makefile shortcut
-make run-paper
 ```
 
-### Live Trading (Real Money)
+### Live Trading
 
-⚠️ **WARNING**: Live trading uses real money. Test thoroughly in paper mode first!
+**WARNING**: Uses real money. Test thoroughly in paper mode first!
 
 ```bash
-# Live trading with conservative risk (recommended)
-uv run python cli/run.py --strategy market_making --risk conservative --mode live
-
-# Live momentum trading with moderate risk
-uv run python cli/run.py --strategy momentum --risk moderate --mode live
-
-# OR use Makefile (with safety confirmation)
-make run-live
+make run-live   # with safety confirmation
 ```
 
 ### API Testing
 
-Test API connectivity and fetch market data quickly:
-
 ```bash
-# Test API connection
-make api-test
-
-# Get account balances (all currencies)
-make api-balance
-
-# Get current price for a symbol
-make api-ticker SYMBOL=BTC-EUR
-make api-ticker SYMBOL=ETH-EUR
-
-# Get multiple tickers at once
-make api-tickers
-make api-tickers SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR,DOGE-EUR
-
-# Get recent candles (historical data)
-make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10
-make api-candles SYMBOL=ETH-EUR INTERVAL=15 LIMIT=20
+make api-test                                          # connection check
+make api-balance                                       # account balances
+make api-ticker SYMBOL=BTC-EUR                         # single ticker
+make api-tickers SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR      # multiple tickers
+make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 ```
 
-### Advanced Options
+## Strategies
 
-```bash
-# Custom trading pairs
-uv run python cli/run.py --strategy momentum --pairs BTC-USD,ETH-USD,SOL-USD
+| Strategy           | Best For                       | Key Indicators     |
+| ------------------ | ------------------------------ | ------------------ |
+| **Market Making**  | Stable markets, high liquidity | Bid-ask spread     |
+| **Momentum**       | Trending markets               | EMA(12/26), RSI    |
+| **Mean Reversion** | Range-bound markets            | Bollinger Bands    |
+| **Multi-Strategy** | Mixed conditions               | Weighted consensus |
 
-# Faster update interval (30 seconds)
-uv run python cli/run.py --strategy market_making --interval 30
+## Risk Levels
 
-# Debug logging
-uv run python cli/run.py --strategy momentum --log-level DEBUG
-```
-
-## Strategy Details
-
-### Market Making
-
-- Places limit orders on both sides of order book
-- Profits from bid-ask spread
-- Best for: High liquidity pairs, stable markets
-- Parameters: spread threshold, inventory target
-
-### Momentum
-
-- Follows price trends using technical indicators
-- Uses fast/slow moving averages and RSI
-- Best for: Trending markets
-- Parameters: MA periods, RSI thresholds
-
-### Mean Reversion
-
-- Buys oversold, sells overbought
-- Uses Bollinger Bands for entry/exit
-- Best for: Range-bound markets
-- Parameters: lookback period, standard deviations
-
-### Multi-Strategy
-
-- Combines all strategies with weighted voting
-- Requires consensus before trading
-- Best for: Diverse market conditions
-- Parameters: strategy weights, consensus threshold
-
-## Risk Management
-
-### Conservative (Recommended for Beginners)
-
-- Max 1.5% per position
-- Max 3% daily loss
-- Max 3 open positions
-- Tight stop losses (1.5%)
-
-### Moderate
-
-- Max 3% per position
-- Max 5% daily loss
-- Max 5 open positions
-- Balanced stops (2.5%)
-
-### Aggressive
-
-- Max 5% per position
-- Max 10% daily loss
-- Max 8 open positions
-- Wider stops (4%)
+| Level        | Max Position | Max Daily Loss | Max Open Positions | Stop Loss |
+| ------------ | ------------ | -------------- | ------------------ | --------- |
+| Conservative | 1.5%         | 3%             | 3                  | 1.5%      |
+| Moderate     | 3%           | 5%             | 5                  | 2.5%      |
+| Aggressive   | 5%           | 10%            | 8                  | 4%        |
 
 ## Project Structure
 
 ```
 revolut-trader/
 ├── src/
-│   ├── api/              # Revolut API client (Ed25519 auth, all 17 endpoints)
-│   ├── strategies/       # Trading strategies (market making, momentum, mean reversion, multi)
+│   ├── api/              # Revolut API client (Ed25519 auth)
+│   ├── strategies/       # Trading strategies
 │   ├── risk_management/  # Risk controls and position sizing
 │   ├── execution/        # Order execution and position management
 │   ├── notifications/    # Telegram alerts
-│   ├── data/             # Domain models (Order, Position, Trade, Signal)
-│   ├── utils/            # 1Password, indicators, persistence helpers
-│   ├── models/           # SQLAlchemy ORM models
+│   ├── models/           # Domain models + SQLAlchemy ORM
+│   ├── utils/            # 1Password, indicators, persistence, encryption
+│   ├── backtest/         # Backtesting engine
 │   ├── config.py         # Pydantic config (loaded from 1Password)
 │   └── bot.py            # Main orchestrator
-├── cli/
-│   ├── run.py            # Bot entry point
-│   ├── api_test.py       # API testing utilities
-│   ├── backtest.py       # Backtesting CLI
-│   └── db_manage.py      # Database management CLI
+├── cli/                  # CLI entry points (run, backtest, api_test, db_manage)
 ├── tests/
-│   ├── unit/             # Component unit tests
-│   └── safety/           # Safety-critical tests (order limits, loss limits)
-├── .claude/              # Claude Code agent configuration
-├── docs/                 # Documentation
-├── logs/                 # Runtime logs (gitignored)
-├── data/                 # Runtime trading data (gitignored)
-├── Makefile              # All project commands
-└── README.md             # This file
+│   ├── safety/           # Safety-critical tests
+│   └── unit/             # Component unit tests
+├── docs/                 # Documentation (see docs/README.md for index)
+└── Makefile              # All project commands
 ```
 
-**Note:** No `.env` or `config/*.pem` files - all credentials in 1Password only.
+## Database & Monitoring
 
-## Safety Features
-
-1. **Paper Trading Mode**: Test without risking real money
-1. **Position Limits**: Prevent over-exposure
-1. **Daily Loss Limits**: Auto-stop on bad days
-1. **Stop Loss/Take Profit**: Automatic exits
-1. **Real-time Monitoring**: Telegram alerts
-1. **Comprehensive Logging**: Full audit trail
-
-## Monitoring
-
-### Logs
-
-Check `logs/trading.log` for detailed activity:
+Trading data is stored in an encrypted SQLite database (`data/trading.db`).
 
 ```bash
-tail -f logs/trading.log
+make db-stats         # database overview
+make db-analytics     # trading analytics (DAYS=30)
+make db-backtests     # backtest results
+make db-export-csv    # export to CSV
+make db-encrypt-status # check encryption status
 ```
 
-### Trading Data
-
-The bot uses a **hybrid persistence system** combining SQLite database (primary) with JSON backup:
-
-#### Database Storage (Primary)
-
-- **Database File**: `data/trading.db` - SQLite database for fast queries
-- **Portfolio Snapshots**: Time-series data saved immediately for real-time analytics
-- **Trade History**: All completed trades with indexed queries
-- **Session Tracking**: Each bot run is tracked with start/end metrics
-- **Backtest Results**: All backtest runs with performance metrics and analytics
-- **Log Entries** (optional): Critical events and errors stored for analysis
-
-#### JSON Backup (Secondary)
-
-- **Portfolio Snapshots**: `data/portfolio_snapshots.json` - Daily backup
-- **Trade History**: `data/trade_history.json` - All completed trades
-- **Session Data**: `data/current_session.json` - Current session state
-
-#### Data Management Commands
-
-```bash
-# Show database statistics
-make db-stats
-
-# Show trading analytics (last 30 days)
-make db-analytics
-
-# Show backtest results (last 10 runs)
-make db-backtests
-
-# Export data to JSON files
-make db-export
-
-# Export to CSV for analysis
-make db-export-csv
-```
-
-#### Data Saving Schedule
-
-- **Database**: Immediately after each trade, snapshot, and backtest run
-- **JSON Backup**: Daily at midnight (last 7 days)
-- **Periodic Save**: Every 10 iterations (~10 minutes)
-- **On Shutdown**: Final state saved to both systems
-- **Backtest Results**: Saved to database and JSON after each backtest run
-
-#### Database Encryption
-
-**Protect sensitive trading data** with application-level encryption:
-
-```bash
-# Setup encryption (one-time)
-make db-encrypt-setup
-
-# Check encryption status
-make db-encrypt-status
-```
-
-**How it works:**
-
-- 🔐 Generates Fernet encryption key using industry-standard cryptography
-- 🔑 Stores key securely in 1Password vault (never in files or code)
-- ✅ Automatically encrypts sensitive text fields before database storage
-- 🔄 Transparently decrypts when loading data for bot operations
-- 📊 Financial metrics remain queryable for analytics (not encrypted)
-- ⚠️ Gracefully falls back to plaintext if encryption not enabled
-
-**What gets encrypted:**
-
-- Trading strategy names (e.g., "market_making", "momentum")
-- Risk level settings (e.g., "conservative", "aggressive")
-- Trading mode (e.g., "paper", "live")
-- Symbol lists (e.g., ["BTC-USD", "ETH-USD"])
-- Log messages and module names (may contain sensitive details)
-
-**What is NOT encrypted (needed for SQL analytics):**
-
-- Financial amounts (balances, P&L, prices, quantities)
-- Timestamps and dates
-- Trade counts and statistics
-- Order IDs and status codes
-
-**Key management:**
-
-- Encryption key never stored in code, config files, or database
-- Retrieved from 1Password on each bot startup
-- If encryption key is lost, encrypted data becomes unreadable
-- To regenerate key: run `make db-encrypt-setup` again (loses old data)
-
-**Important notes:**
-
-- This is **field-level encryption**, not full database encryption
-- The database file itself is still readable in IDE tools (schema visible)
-- Encrypted fields appear as gibberish in database browsers
-- For full database encryption (entire .db file), use SQLCipher instead
-
-This data persists across bot restarts and can be used for:
-
-- Performance analysis with SQL queries
-- Backtesting validation
-- Trade journal and tax reporting
-- Real-time analytics without parsing JSON files
-
-### Telegram Alerts
-
-Receive real-time notifications for:
-
-- Trading signals generated
-- Orders placed/filled
-- Position updates
-- Risk alerts
-- Daily summaries
-
-## Important Warnings
-
-⚠️ **LIVE TRADING RISKS**:
-
-- Cryptocurrency trading is highly risky
-- You can lose your entire investment
-- Past performance doesn't guarantee future results
-- Start with paper trading
-- Only invest what you can afford to lose
-- This software is provided as-is with no guarantees
-
-⚠️ **SECURITY**:
-
-- **1Password Required**: All credentials stored exclusively in 1Password
-- **Zero Disk Footprint**: Private keys never written to disk
-- **Service Account**: Set `OP_SERVICE_ACCOUNT_TOKEN` before using the bot
-- **Strong Password**: Use a strong 1Password master password
-- **2FA**: Enable 2FA on your Revolut account
-- **Never Bypass**: Don't create .env files or store keys locally
-
-## Troubleshooting
-
-### API Connection Issues
-
-```bash
-# Verify 1Password is signed in
-make opstatus
-
-# View credentials (masked)
-make opshow
-
-# Check credentials in 1Password
-op item get revolut-trader-credentials --vault revolut-trader --format json
-
-# Ensure public key is registered on Revolut X
-```
-
-### No Signals Generated
-
-- Strategies need time to collect data (especially Momentum/Mean Reversion)
-- Check if market conditions match strategy (e.g., trends for Momentum)
-- Verify trading pairs are correct
-- Check logs for specific errors: `make logs`
-
-### Telegram Not Working
-
-```bash
-# Verify credentials are in 1Password
-make opshow
-
-# Update Telegram credentials
-op item edit revolut-trader-credentials --vault revolut-trader \
-  TELEGRAM_BOT_TOKEN[concealed]="your-bot-token" \
-  TELEGRAM_CHAT_ID[concealed]="your-chat-id"
-```
+See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 
 ## Development
 
-### Available Make Commands
-
 ```bash
-make help               # Show all commands
-make setup              # Complete project setup
-make install            # Install/update dependencies
-make pre-commit-install # Install pre-commit hooks
-make pre-commit         # Run pre-commit hooks manually
-make test               # Run tests with coverage
-make lint               # Check code quality
-make format             # Format code
-make typecheck          # Run mypy type checking
-make check              # Run all quality checks
-make clean              # Remove cache files
+make test             # run tests with coverage
+make lint             # ruff check
+make format           # ruff format
+make typecheck        # pyright
+make check            # all of the above + tests
+make pre-commit       # run all pre-commit hooks
 ```
 
-### Pre-commit Hooks
+See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
 
-The project uses pre-commit hooks to maintain code quality. Install them once:
+## Troubleshooting
 
-```bash
-make pre-commit-install
-```
-
-The hooks will automatically run on every commit and check:
-
-- Code formatting (ruff)
-- Linting (ruff)
-- Type checking (mypy)
-- Security issues (bandit)
-- Common issues (trailing whitespace, merge conflicts, etc.)
-
-To run hooks manually on all files:
+**API connection issues:**
 
 ```bash
-make pre-commit
+make opstatus   # check 1Password auth
+make opshow     # verify credentials
+make api-test   # test API connectivity
 ```
 
-### Running Tests
+**No signals generated:** Strategies need warmup time to collect data. Check logs and verify trading pairs.
 
-```bash
-make test
+**Telegram not working:** Verify credentials with `make opshow`, update with `make ops`.
 
-# Or directly with uv
-uv run pytest --cov=src
-```
+## Documentation
 
-### Code Formatting
+See [docs/README.md](docs/README.md) for the full documentation index.
 
-```bash
-make format
+## Warnings
 
-# Or directly
-uv run ruff format src/ tests/ cli/
-uv run ruff check --fix src/ tests/ cli/
-```
-
-### Type Checking
-
-```bash
-make typecheck
-
-# Or directly
-uv run mypy src/ cli/
-```
-
-## Performance Tips
-
-1. Start with conservative risk in paper mode
-1. Test each strategy separately before using multi-strategy
-1. Monitor for at least 24 hours in paper mode
-1. Start live trading with small amounts
-1. Gradually increase position sizes as confidence grows
-
-## Support
-
-For issues and questions:
-
-- Check logs: `logs/trading.log`
-- Review Revolut API docs: https://developer.revolut.com/docs/x-api/
-- File issues on GitHub
+- Cryptocurrency trading is highly risky — you can lose your entire investment
+- Past performance does not guarantee future results
+- Start with paper trading, only invest what you can afford to lose
+- This software is provided as-is with no guarantees
 
 ## License
 
-MIT License - use at your own risk
-
-## Disclaimer
-
-This software is for educational purposes. Cryptocurrency trading carries substantial risk of loss. The authors and contributors are not responsible for any financial losses incurred through use of this software. Always do your own research and consult with financial advisors before trading.
-
-______________________________________________________________________
-
-**Happy Trading! 🚀** (But seriously, start with paper mode!)
+MIT License — use at your own risk
