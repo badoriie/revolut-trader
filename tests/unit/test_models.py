@@ -1,11 +1,21 @@
 """Unit tests for data models.
 
 Covers the uncovered property accessors in BalanceData and CandleData,
-plus Position helper methods.
+plus Position helper methods, and ORM model __repr__ methods.
 """
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
+from src.models.db import (
+    BacktestRunDB,
+    LogEntryDB,
+    PortfolioSnapshotDB,
+    SessionDB,
+    TradeDB,
+    create_db_engine,
+    init_database,
+)
 from src.models.domain import (
     BalanceData,
     CandleData,
@@ -335,3 +345,92 @@ class TestPositionShouldClose:
         should_close, reason = pos.should_close()
         assert should_close is False
         assert reason == ""
+
+
+# ---------------------------------------------------------------------------
+# ORM model __repr__ methods
+# ---------------------------------------------------------------------------
+
+
+class TestOrmRepr:
+    def test_portfolio_snapshot_repr(self):
+        ts = datetime(2024, 6, 1, tzinfo=UTC)
+        obj = PortfolioSnapshotDB(
+            timestamp=ts,
+            total_value=10000.0,
+            total_pnl=500.0,
+            cash_balance=9000.0,
+            positions_value=1000.0,
+            num_positions=1,
+        )
+        r = repr(obj)
+        assert "PortfolioSnapshot" in r
+        assert "10000" in r
+
+    def test_trade_repr(self):
+        obj = TradeDB(
+            order_id="order-1",
+            symbol="BTC-EUR",
+            side="BUY",
+            quantity=0.1,
+            price=50000.0,
+        )
+        r = repr(obj)
+        assert "Trade" in r
+        assert "BTC-EUR" in r
+
+    def test_session_repr(self):
+        obj = SessionDB(
+            started_at=datetime(2024, 6, 1, tzinfo=UTC),
+            strategy="momentum",
+            status="ACTIVE",
+            initial_balance=10000.0,
+        )
+        r = repr(obj)
+        assert "Session" in r
+        assert "momentum" in r
+
+    def test_backtest_run_repr(self):
+        obj = BacktestRunDB(
+            strategy="momentum",
+            return_pct=10.5,
+            total_trades=5,
+            run_at=datetime(2024, 6, 1, tzinfo=UTC),
+            initial_capital=10000.0,
+            final_capital=11050.0,
+            total_pnl=1050.0,
+            winning_trades=3,
+            losing_trades=2,
+            win_rate=60.0,
+            max_drawdown=200.0,
+        )
+        r = repr(obj)
+        assert "BacktestRun" in r
+        assert "10.50%" in r
+
+    def test_log_entry_repr(self):
+        obj = LogEntryDB(
+            level="ERROR",
+            timestamp=datetime(2024, 6, 1, tzinfo=UTC),
+        )
+        r = repr(obj)
+        assert "LogEntry" in r
+        assert "ERROR" in r
+
+
+# ---------------------------------------------------------------------------
+# Database pragma listener
+# ---------------------------------------------------------------------------
+
+
+class TestDatabasePragmas:
+    def test_create_db_engine_sets_wal_mode(self, tmp_path):
+        db_url = f"sqlite:///{tmp_path}/pragma_test.db"
+        engine = create_db_engine(db_url)
+        init_database(engine)
+
+        with engine.connect() as conn:
+            result = conn.exec_driver_sql("PRAGMA journal_mode").scalar()
+            assert result == "wal"
+
+        engine.dispose()

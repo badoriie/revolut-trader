@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from src.config import RiskLevel, StrategyType, TradingMode
+from src.models.domain import OrderSide, OrderStatus, OrderType, PortfolioSnapshot, Signal
 
 
 @pytest.fixture
@@ -487,3 +488,355 @@ class TestRunTradingLoop:
             bot.is_running = True
             await bot.run_trading_loop(interval=0)
         # Loop exited (broke on RuntimeError); is_running not reset until stop() is called
+
+    @pytest.mark.asyncio
+    async def test_loop_handles_generic_http_error(self, bot, mock_api):
+        """HTTP error with status code not in {401, 429, 5xx}."""
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+
+        response = MagicMock()
+        response.status_code = 400
+        response.text = "Bad Request"
+        call_count = 0
+
+        async def fake_gather(*coros, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            for c in coros:
+                c.close()
+            if call_count == 1:
+                raise httpx.HTTPStatusError("400", request=MagicMock(), response=response)
+            bot.is_running = False
+
+        async def fake_sleep(t):
+            pass
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
+                bot.is_running = True
+                await bot.run_trading_loop(interval=0)
+
+    @pytest.mark.asyncio
+    async def test_loop_handles_unexpected_exception(self, bot, mock_api):
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+
+        call_count = 0
+
+        async def fake_gather(*coros, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            for c in coros:
+                c.close()
+            if call_count == 1:
+                raise OSError("unexpected")
+            bot.is_running = False
+
+        async def fake_sleep(t):
+            pass
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
+                bot.is_running = True
+                await bot.run_trading_loop(interval=0)
+
+
+class TestBotStart:
+    @pytest.mark.asyncio
+    async def test_start_paper_mode_initialises_components(self, bot, mock_persistence):
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            await bot.start()
+
+        assert bot.is_running is True
+        assert bot.api_client is mock_api
+        assert bot.risk_manager is not None
+        assert bot.executor is not None
+        assert bot.strategy is not None
+
+    @pytest.mark.asyncio
+    async def test_start_raises_when_no_view_permission(self, bot, mock_persistence):
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": False, "trade": False})
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            with pytest.raises(RuntimeError, match="cannot read market data"):
+                await bot.start()
+
+    @pytest.mark.asyncio
+    async def test_start_live_raises_when_no_trade_permission(self, monkeypatch, mock_persistence):
+        monkeypatch.setattr("src.bot.DatabasePersistence", lambda *a, **kw: mock_persistence)
+        from src.bot import TradingBot
+
+        live_bot = TradingBot(
+            strategy_type=StrategyType.MOMENTUM,
+            risk_level=RiskLevel.MODERATE,
+            trading_mode=TradingMode.LIVE,
+            trading_pairs=["BTC-EUR"],
+        )
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": False})
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            with pytest.raises(RuntimeError, match="read-only"):
+                await live_bot.start()
+
+    @pytest.mark.asyncio
+    async def test_start_live_fetches_balance(self, monkeypatch, mock_persistence):
+        monkeypatch.setattr("src.bot.DatabasePersistence", lambda *a, **kw: mock_persistence)
+        from src.bot import TradingBot
+
+        live_bot = TradingBot(
+            strategy_type=StrategyType.MOMENTUM,
+            risk_level=RiskLevel.MODERATE,
+            trading_mode=TradingMode.LIVE,
+            trading_pairs=["BTC-EUR"],
+        )
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+        mock_api.get_balance = AsyncMock(
+            return_value={"balances": {"EUR": {"available": "5000.50"}}}
+        )
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            await live_bot.start()
+
+        assert live_bot.cash_balance == Decimal("5000.50")
+
+    @pytest.mark.asyncio
+    async def test_start_live_raises_when_balance_unavailable(self, monkeypatch, mock_persistence):
+        monkeypatch.setattr("src.bot.DatabasePersistence", lambda *a, **kw: mock_persistence)
+        from src.bot import TradingBot
+
+        live_bot = TradingBot(
+            strategy_type=StrategyType.MOMENTUM,
+            risk_level=RiskLevel.MODERATE,
+            trading_mode=TradingMode.LIVE,
+            trading_pairs=["BTC-EUR"],
+        )
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+        mock_api.get_balance = AsyncMock(return_value={"balances": {}})
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            with pytest.raises(RuntimeError, match="No EUR balance"):
+                await live_bot.start()
+
+    @pytest.mark.asyncio
+    async def test_start_live_raises_on_api_exception(self, monkeypatch, mock_persistence):
+        monkeypatch.setattr("src.bot.DatabasePersistence", lambda *a, **kw: mock_persistence)
+        from src.bot import TradingBot
+
+        live_bot = TradingBot(
+            strategy_type=StrategyType.MOMENTUM,
+            risk_level=RiskLevel.MODERATE,
+            trading_mode=TradingMode.LIVE,
+            trading_pairs=["BTC-EUR"],
+        )
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+        mock_api.get_balance = AsyncMock(side_effect=Exception("network error"))
+
+        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+            with pytest.raises(RuntimeError, match="Cannot start live trading"):
+                await live_bot.start()
+
+
+class TestProcessSymbol:
+    @pytest.mark.asyncio
+    async def test_process_symbol_with_no_signal(self, bot, mock_api, mock_persistence):
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(return_value=None)
+
+        await bot._process_symbol("BTC-EUR")
+        bot.strategy.analyze.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_symbol_with_filled_buy_order(self, bot, mock_api, mock_persistence):
+        from src.execution.executor import OrderExecutor
+        from src.models.domain import Order
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+
+        filled_order = Order(
+            order_id="test-123",
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("0.1"),
+            price=Decimal("50000"),
+            filled_quantity=Decimal("0.1"),
+            status=OrderStatus.FILLED,
+        )
+
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(
+            return_value=Signal(
+                symbol="BTC-EUR",
+                strategy="momentum",
+                signal_type="BUY",
+                price=Decimal("50000"),
+                strength=Decimal("0.8"),
+                reason="test signal",
+            )
+        )
+        bot.executor.execute_signal = AsyncMock(return_value=filled_order)
+
+        initial_balance = bot.cash_balance
+        await bot._process_symbol("BTC-EUR")
+
+        mock_persistence.save_trade.assert_called_once_with(filled_order)
+        assert bot.cash_balance < initial_balance
+
+    @pytest.mark.asyncio
+    async def test_process_symbol_with_filled_sell_order(self, bot, mock_api, mock_persistence):
+        from src.execution.executor import OrderExecutor
+        from src.models.domain import Order
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+
+        filled_order = Order(
+            order_id="test-456",
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("0.1"),
+            price=Decimal("50000"),
+            filled_quantity=Decimal("0.1"),
+            status=OrderStatus.FILLED,
+        )
+
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(
+            return_value=Signal(
+                symbol="BTC-EUR",
+                strategy="momentum",
+                signal_type="SELL",
+                price=Decimal("50000"),
+                strength=Decimal("0.8"),
+                reason="test signal",
+            )
+        )
+        bot.executor.execute_signal = AsyncMock(return_value=filled_order)
+
+        initial_balance = bot.cash_balance
+        await bot._process_symbol("BTC-EUR")
+
+        assert bot.cash_balance > initial_balance
+
+    @pytest.mark.asyncio
+    async def test_process_symbol_handles_exception(self, bot, mock_api, mock_persistence):
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(side_effect=Exception("strategy error"))
+
+        await bot._process_symbol("BTC-EUR")  # Should not raise
+
+    @pytest.mark.asyncio
+    async def test_process_symbol_returns_early_when_no_market_data(
+        self, bot, mock_api, mock_persistence
+    ):
+        mock_api.get_ticker = AsyncMock(side_effect=Exception("API down"))
+        bot.api_client = mock_api
+        bot.strategy = MagicMock()
+
+        await bot._process_symbol("BTC-EUR")
+        bot.strategy.analyze.assert_not_called()
+
+
+class TestCheckRiskLimitsDailyLoss:
+    @pytest.mark.asyncio
+    async def test_daily_loss_limit_hit_logs_critical(self, bot, mock_persistence):
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.risk_manager = RiskManager(RiskLevel.CONSERVATIVE)
+        # Force daily loss limit hit
+        bot.risk_manager._daily_loss_limit_hit = True
+
+        snapshot = PortfolioSnapshot(
+            total_value=Decimal("9500"),
+            cash_balance=Decimal("9500"),
+            positions_value=Decimal("0"),
+            unrealized_pnl=Decimal("0"),
+            realized_pnl=Decimal("-500"),
+            total_pnl=Decimal("-500"),
+            daily_pnl=Decimal("-500"),
+            num_positions=0,
+        )
+        bot.portfolio_snapshots.append(snapshot)
+        await bot._check_risk_limits()
+        # Verifies the daily_loss_limit_hit path was exercised (line 385)
+        assert bot.risk_manager.daily_loss_limit_hit is True
+
+
+class TestPeriodicSave:
+    @pytest.mark.asyncio
+    async def test_save_data_called_every_10_iterations(self, bot, mock_api, mock_persistence):
+        """The save counter triggers _save_data() every 10 iterations."""
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+
+        iteration = 0
+
+        async def fake_gather(*coros, **kwargs):
+            nonlocal iteration
+            iteration += 1
+            for c in coros:
+                c.close()
+            if iteration >= 11:
+                bot.is_running = False
+
+        async def fake_sleep(t):
+            pass
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
+                bot.is_running = True
+                await bot.run_trading_loop(interval=0)

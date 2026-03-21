@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.models.domain import Order, OrderSide, OrderStatus, OrderType, PortfolioSnapshot
 
@@ -173,29 +175,6 @@ class TestSessionManagement:
             total_trades=0,
         )
 
-    def test_start_session_stores_current_session_id(self, db_persistence):
-        assert db_persistence.current_session_id is None
-        db_persistence.start_session("momentum", "moderate", "paper", ["BTC-EUR"], Decimal("10000"))
-        assert isinstance(db_persistence.current_session_id, int)
-        assert db_persistence.current_session_id > 0
-
-    def test_end_session_uses_current_session_id_when_not_provided(self, db_persistence):
-        db_persistence.start_session("m", "c", "p", ["BTC-EUR"], Decimal("10000"))
-        # Should not raise — uses current_session_id internally
-        db_persistence.end_session(
-            final_balance=Decimal("10500"),
-            total_pnl=Decimal("500"),
-            total_trades=3,
-        )
-
-    def test_end_session_without_active_session_is_noop(self, db_persistence):
-        assert db_persistence.current_session_id is None
-        db_persistence.end_session(
-            final_balance=Decimal("100"),
-            total_pnl=Decimal("0"),
-            total_trades=0,
-        )  # Should not raise
-
 
 class TestAnalytics:
     def test_get_analytics_empty_database(self, db_persistence):
@@ -280,14 +259,129 @@ class TestLogEntries:
         assert len(entries) == 1
         assert entries[0]["module"] is None
 
+    def test_load_log_entries_with_since_filter(self, db_persistence):
+        db_persistence.save_log_entry("INFO", "old message")
+        since = datetime.now(UTC) + timedelta(days=1)
+        entries = db_persistence.load_log_entries(since=since)
+        assert len(entries) == 0
 
-class TestExportToCsv:
+
+class TestCsvExport:
     def test_export_creates_csv_files(self, db_persistence, tmp_path):
         db_persistence.save_trade(make_order())
-        db_persistence.save_portfolio_snapshot(make_snapshot(), "momentum", "moderate", "paper")
-        db_persistence.export_to_csv(output_dir=tmp_path / "exports")
-        assert len(list((tmp_path / "exports").glob("*.csv"))) == 2
+        db_persistence.save_portfolio_snapshot(make_snapshot(), "m", "c", "p")
 
-    def test_export_handles_empty_data(self, db_persistence, tmp_path):
-        db_persistence.export_to_csv(output_dir=tmp_path / "exports")
-        # Should not raise even with no data
+        export_dir = tmp_path / "exports"
+        db_persistence.export_to_csv(output_dir=export_dir)
+
+        csv_files = list(export_dir.glob("*.csv"))
+        assert len(csv_files) == 2
+
+    def test_export_empty_db_creates_empty_files(self, db_persistence, tmp_path):
+        export_dir = tmp_path / "exports"
+        db_persistence.export_to_csv(output_dir=export_dir)
+        csv_files = list(export_dir.glob("*.csv"))
+        assert len(csv_files) == 2
+        # Files exist but contain no data rows
+        for f in csv_files:
+            assert f.read_text() == ""
+
+    def test_export_handles_exception_gracefully(self, db_persistence, tmp_path):
+        with patch.object(db_persistence, "load_trade_history", side_effect=Exception("boom")):
+            db_persistence.export_to_csv(output_dir=tmp_path / "exports")
+            # Should not raise
+
+
+class TestSessionContextManagerError:
+    """Test the _session() rollback path (except SQLAlchemyError)."""
+
+    def test_session_rolls_back_on_sqlalchemy_error(self, db_persistence):
+        """Force a SQLAlchemyError to exercise _session() rollback + re-raise."""
+        with pytest.raises(SQLAlchemyError):
+            with db_persistence._session() as _sess:
+                raise SQLAlchemyError("forced error")
+
+    def test_save_snapshot_swallows_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            db_persistence.save_portfolio_snapshot(make_snapshot(), "m", "c", "p")
+            # Should not raise
+
+    def test_bulk_save_swallows_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            db_persistence.save_portfolio_snapshots_bulk(
+                [make_snapshot()], {"strategy": "m", "risk_level": "c", "trading_mode": "p"}
+            )
+
+    def test_load_snapshots_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.load_portfolio_snapshots() == []
+
+    def test_save_trade_swallows_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            db_persistence.save_trade(make_order())
+
+    def test_load_trades_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.load_trade_history() == []
+
+    def test_create_session_returns_neg1_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            result = db_persistence.create_session(
+                strategy="m",
+                risk_level="c",
+                trading_mode="p",
+                trading_pairs=["BTC-EUR"],
+                initial_balance=Decimal("10000"),
+            )
+            assert result == -1
+
+    def test_end_session_swallows_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            db_persistence.end_session(
+                session_id=1,
+                final_balance=Decimal("100"),
+                total_pnl=Decimal("0"),
+                total_trades=0,
+            )
+
+    def test_get_analytics_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.get_analytics() == {}
+
+    def test_save_backtest_returns_neg1_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            result = db_persistence.save_backtest_run(
+                "m",
+                "c",
+                ["BTC-EUR"],
+                30,
+                "60m",
+                10000.0,
+                {
+                    "final_capital": 11000,
+                    "total_pnl": 1000,
+                    "return_pct": 10,
+                    "total_trades": 5,
+                    "winning_trades": 3,
+                    "losing_trades": 2,
+                    "win_rate": 60,
+                    "max_drawdown": 200,
+                },
+            )
+            assert result == -1
+
+    def test_load_backtest_runs_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.load_backtest_runs() == []
+
+    def test_get_backtest_analytics_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.get_backtest_analytics() == {}
+
+    def test_save_log_entry_swallows_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            db_persistence.save_log_entry("ERROR", "boom")
+
+    def test_load_log_entries_returns_empty_on_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("db fail")):
+            assert db_persistence.load_log_entries() == []

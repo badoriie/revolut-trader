@@ -143,6 +143,27 @@ class TestDatabaseEncryptionEnabled:
 # ---------------------------------------------------------------------------
 
 
+class TestDatabaseEncryptionDisabledDictPassthrough:
+    """When encryption is disabled, encrypt_dict / decrypt_dict return data as-is."""
+
+    @pytest.fixture
+    def disabled_enc(self):
+        enc = DatabaseEncryption.__new__(DatabaseEncryption)
+        enc._cipher = None
+        enc._is_enabled = False
+        return enc
+
+    def test_encrypt_dict_returns_data_unchanged(self, disabled_enc):
+        data = {"secret": "value", "public": "open"}
+        result = disabled_enc.encrypt_dict(data, ["secret"])
+        assert result == data
+
+    def test_decrypt_dict_returns_data_unchanged(self, disabled_enc):
+        data = {"secret": "encrypted_blob", "public": "open"}
+        result = disabled_enc.decrypt_dict(data, ["secret"])
+        assert result == data
+
+
 class TestDatabaseEncryptionErrors:
     def test_raises_when_op_unavailable(self):
         import src.utils.db_encryption as enc_module
