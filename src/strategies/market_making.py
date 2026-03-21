@@ -31,18 +31,27 @@ class MarketMakingStrategy(BaseStrategy):
         positions: list[Position],
         portfolio_value: Decimal,
     ) -> Signal | None:
-        """Generate market making signals based on spread and inventory."""
+        """Generate market making signals based on spread and inventory.
+
+        Uses a signed inventory ratio so that net-short positions are handled
+        correctly: a net short means we should buy to rebalance, not sell more.
+        """
 
         # Calculate current spread
         spread = (market_data.ask - market_data.bid) / market_data.bid
         mid_price = (market_data.bid + market_data.ask) / 2
+
+        # Guard against zero mid price (should never happen in practice)
+        if mid_price <= Decimal("0"):
+            logger.warning(f"{symbol}: Zero or negative mid price {mid_price}, skipping")
+            return None
 
         # Check if spread is wide enough to be profitable
         if spread < self.spread_threshold:
             logger.debug(f"{symbol}: Spread {spread:.4f} below threshold {self.spread_threshold}")
             return None
 
-        # Calculate current inventory position
+        # Calculate net inventory: positive = net long, negative = net short
         position_qty = Decimal("0")
         for pos in positions:
             if pos.symbol == symbol:
@@ -51,28 +60,35 @@ class MarketMakingStrategy(BaseStrategy):
                 else:
                     position_qty -= pos.quantity
 
-        # Determine signal based on inventory skew
-        # If we have too much inventory, prefer selling
-        # If we have too little, prefer buying
-        inventory_ratio = abs(position_qty) / (portfolio_value / mid_price)
+        # Signed inventory ratio: how much of our theoretical max portfolio qty do we hold?
+        # Positive = net long, negative = net short. Range is typically -1 to +1.
+        max_base_qty = portfolio_value / mid_price
+        signed_ratio = position_qty / max_base_qty
 
-        if inventory_ratio > self.inventory_target:
-            # Too much inventory, prefer selling
+        if signed_ratio > self.inventory_target:
+            # Net long above target → prefer selling to rebalance toward neutral
             signal_type = "SELL"
-            strength = min(1.0, float(inventory_ratio))
+            strength = min(1.0, float(signed_ratio - self.inventory_target))
             reason = (
-                f"Inventory imbalance: {inventory_ratio:.2%} > target {self.inventory_target:.2%}"
+                f"Excess long inventory: {signed_ratio:.2%} > target {self.inventory_target:.2%}"
             )
-        elif inventory_ratio < self.inventory_target * Decimal("0.5"):
-            # Too little inventory, prefer buying
+        elif signed_ratio < -self.inventory_target:
+            # Net short below negative target → prefer buying to rebalance toward neutral
             signal_type = "BUY"
-            strength = min(1.0, 1.0 - float(inventory_ratio))
-            reason = f"Low inventory: {inventory_ratio:.2%} < target {self.inventory_target:.2%}"
-        else:
-            # Balanced, place both sides
-            signal_type = "BUY"  # Default to buy at bid
+            strength = min(1.0, float(-signed_ratio - self.inventory_target))
+            reason = (
+                f"Excess short inventory: {signed_ratio:.2%} < target -{self.inventory_target:.2%}"
+            )
+        elif abs(signed_ratio) < self.inventory_target * Decimal("0.5"):
+            # Near-zero inventory → buy at bid to begin market making
+            signal_type = "BUY"
             strength = 0.5
-            reason = f"Balanced inventory, spread profitable: {spread:.4f}"
+            reason = f"Low inventory ({signed_ratio:.2%}), spread profitable: {spread:.4f}"
+        else:
+            # Balanced inventory → maintain position, buy at bid
+            signal_type = "BUY"
+            strength = 0.5
+            reason = f"Balanced inventory ({signed_ratio:.2%}), spread profitable: {spread:.4f}"
 
         return Signal(
             symbol=symbol,
@@ -85,7 +101,7 @@ class MarketMakingStrategy(BaseStrategy):
                 "spread": float(spread),
                 "bid": float(market_data.bid),
                 "ask": float(market_data.ask),
-                "inventory_ratio": float(inventory_ratio),
+                "inventory_ratio": float(signed_ratio),
             },
         )
 

@@ -1569,7 +1569,11 @@ class TestCheckPermissions:
     async def test_view_false_error_unreachable_on_connect_error(self, client):
         order_resp = self._http_error_resp(401)
         client.client.request = AsyncMock(
-            side_effect=[httpx.ConnectError("connection refused"), order_resp]
+            side_effect=[
+                httpx.ConnectError("connection refused"),  # balance - primary URL
+                httpx.ConnectError("connection refused"),  # balance - fallback URL
+                order_resp,  # order probe
+            ]
         )
         result = await client.check_permissions()
         assert result["view"] is False
@@ -1635,7 +1639,88 @@ class TestRevolutAPIError:
         assert err.error_id == "test-error-id"
 
     async def test_httpx_transport_errors_not_swallowed(self, client):
-        """Network errors (ConnectError) propagate unmodified from _request."""
+        """Network errors (ConnectError) propagate after all URLs are exhausted."""
         client.client.request = AsyncMock(side_effect=httpx.ConnectError("timeout"))
         with pytest.raises(httpx.ConnectError):
             await client.get_balance()
+
+
+# ===========================================================================
+# Base URL fallback
+# ===========================================================================
+
+
+class TestBaseUrlFallback:
+    """Client retries with the secondary base URL on connection failure."""
+
+    async def test_authenticated_request_falls_back_on_connect_error(self, client):
+        """_request retries with fallback URL when primary raises ConnectError."""
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.content = b"content"
+        success_resp.json.return_value = CURRENCIES_RESPONSE
+        success_resp.raise_for_status = MagicMock()
+
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise httpx.ConnectError("primary unreachable")
+            return success_resp
+
+        client.client.request = AsyncMock(side_effect=side_effect)
+        result = await client.get_currencies()
+        assert result == CURRENCIES_RESPONSE
+        assert call_count == 2
+
+    async def test_fallback_url_is_remembered(self, client):
+        """After fallback succeeds, base_url is updated to the fallback URL."""
+        from src.config import REVOLUT_API_BASE_URLS
+
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.content = b"content"
+        success_resp.json.return_value = CURRENCIES_RESPONSE
+        success_resp.raise_for_status = MagicMock()
+
+        async def side_effect(*args, **kwargs):
+            url = kwargs.get("url", "")
+            if REVOLUT_API_BASE_URLS[0].rstrip("/") in url:
+                raise httpx.ConnectError("primary unreachable")
+            return success_resp
+
+        client.client.request = AsyncMock(side_effect=side_effect)
+        await client.get_currencies()
+        assert client.base_url == REVOLUT_API_BASE_URLS[1].rstrip("/")
+
+    async def test_no_fallback_on_api_error(self, client):
+        """HTTP 4xx errors are not retried with the fallback URL."""
+        _mock_http_error(client, 401, "Unauthorized")
+        with pytest.raises(RevolutAPIError) as exc_info:
+            await client.get_balance()
+        assert exc_info.value.status_code == 401
+        assert client.client.request.call_count == 1
+
+    async def test_public_request_falls_back_on_connect_error(self, client):
+        """_public_request retries with fallback URL when primary raises ConnectError."""
+        success_resp = MagicMock()
+        success_resp.status_code = 200
+        success_resp.content = b"content"
+        success_resp.json.return_value = {"data": []}
+        success_resp.raise_for_status = MagicMock()
+
+        call_count = 0
+
+        async def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise httpx.ConnectError("primary unreachable")
+            return success_resp
+
+        client.client.request = AsyncMock(side_effect=side_effect)
+        result = await client.get_last_public_trades()
+        assert result == {"data": []}
+        assert call_count == 2

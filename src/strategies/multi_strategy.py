@@ -5,28 +5,43 @@ from loguru import logger
 
 from src.models.domain import MarketData, Position, Signal
 from src.strategies.base_strategy import BaseStrategy
+from src.strategies.breakout import BreakoutStrategy
 from src.strategies.market_making import MarketMakingStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
+from src.strategies.range_reversion import RangeReversionStrategy
 
 
 class MultiStrategy(BaseStrategy):
     """
     Multi-Strategy: Combines multiple strategies with weighted voting.
+
+    Aggregates signals from five complementary sub-strategies:
+    - Momentum       (trend-following, highest weight)
+    - Breakout       (range-escape entries, strong weight)
+    - Market Making  (spread / inventory management)
+    - Mean Reversion (Bollinger Band reversion)
+    - Range Reversion (intraday 24h-range reversion)
+
+    A consensus signal is produced only when the weighted score of the
+    winning direction meets or exceeds ``min_consensus``.
     """
 
     def __init__(
         self,
         weights: dict[str, float] | None = None,
-        min_consensus: float = 0.6,  # 60% agreement required
+        min_consensus: float = 0.6,  # 60% weighted score required
     ):
         super().__init__("Multi-Strategy")
 
-        # Default equal weights
+        # Default weights — momentum and breakout lead; range reversion is
+        # a lighter complement since its signal frequency is lower.
         self.weights = weights or {
-            "market_making": 0.3,
-            "momentum": 0.4,
-            "mean_reversion": 0.3,
+            "momentum": 0.30,
+            "breakout": 0.25,
+            "market_making": 0.20,
+            "mean_reversion": 0.15,
+            "range_reversion": 0.10,
         }
 
         self.min_consensus = min_consensus
@@ -36,6 +51,8 @@ class MultiStrategy(BaseStrategy):
             "market_making": MarketMakingStrategy(),
             "momentum": MomentumStrategy(),
             "mean_reversion": MeanReversionStrategy(),
+            "breakout": BreakoutStrategy(),
+            "range_reversion": RangeReversionStrategy(),
         }
 
         # Validate weights sum to 1.0

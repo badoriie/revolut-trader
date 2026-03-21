@@ -12,10 +12,12 @@ from src.execution.executor import OrderExecutor
 from src.models.domain import MarketData, PortfolioSnapshot
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
+from src.strategies.breakout import BreakoutStrategy
 from src.strategies.market_making import MarketMakingStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
+from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.db_persistence import DatabasePersistence
 
 
@@ -187,6 +189,8 @@ class TradingBot:
             StrategyType.MOMENTUM: MomentumStrategy(),
             StrategyType.MEAN_REVERSION: MeanReversionStrategy(),
             StrategyType.MULTI_STRATEGY: MultiStrategy(),
+            StrategyType.BREAKOUT: BreakoutStrategy(),
+            StrategyType.RANGE_REVERSION: RangeReversionStrategy(),
         }
         return strategies.get(strategy_type, MarketMakingStrategy())
 

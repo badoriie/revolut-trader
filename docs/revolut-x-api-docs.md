@@ -1,7 +1,11 @@
 # Revolut X Crypto Exchange REST API — Complete Documentation
 
 **Version:** 1.0.0
-**Base URL:** `https://revx.revolut.com/api/1.0`
+**Base URLs (primary / fallback):**
+
+- `https://revx.revolut.com/api/1.0` *(primary)*
+- `https://revx.revolut.codes/api/1.0` *(fallback — used when the primary is unreachable)*
+
 **Source:** [developer.revolut.com](https://developer.revolut.com/docs/x-api/revolut-x-crypto-exchange-rest-api)
 
 ______________________________________________________________________

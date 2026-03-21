@@ -81,8 +81,10 @@ class MeanReversionStrategy(BaseStrategy):
         if current_price <= lower_band and abs(deviation) >= self.min_deviation:
             if not existing_position or existing_position.side == OrderSide.SELL:
                 signal_type = "BUY"
-                # Stronger signal the further below the band
-                strength = min(1.0, abs(float(deviation)) / float(self.min_deviation))
+                # Scale strength between 0.5 (at threshold) and 1.0 (at 2× threshold).
+                # The original formula always produced 1.0 because abs(deviation) ≥ min_deviation
+                # guaranteed a ratio ≥ 1.0, which was immediately capped.
+                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
                 reason = (
                     f"Price {current_price:.2f} below lower band {lower_band:.2f}, "
                     f"deviation {deviation:.2%}"
@@ -92,7 +94,7 @@ class MeanReversionStrategy(BaseStrategy):
         elif current_price >= upper_band and abs(deviation) >= self.min_deviation:
             if not existing_position or existing_position.side == OrderSide.BUY:
                 signal_type = "SELL"
-                strength = min(1.0, abs(float(deviation)) / float(self.min_deviation))
+                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
                 reason = (
                     f"Price {current_price:.2f} above upper band {upper_band:.2f}, "
                     f"deviation {deviation:.2%}"
