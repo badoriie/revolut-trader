@@ -778,6 +778,7 @@ class TestProcessSymbol:
     ):
         mock_api.get_ticker = AsyncMock(side_effect=Exception("API down"))
         bot.api_client = mock_api
+        bot.executor = MagicMock()
         bot.strategy = MagicMock()
 
         await bot._process_symbol("BTC-EUR")

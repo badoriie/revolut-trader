@@ -18,7 +18,7 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.6.0",
-    "mypy>=1.8.0",
+    "pyright>=1.1.0",
     "pre-commit>=3.0.0",
 ]
 
@@ -57,54 +57,12 @@ line-ending = "auto"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[tool.mypy]
-python_version = "3.11"
-# Balanced type checking - strict where it matters, practical where it doesn't
-warn_return_any = false  # Too noisy for practical development
-warn_unused_configs = true
-warn_redundant_casts = true
-warn_unused_ignores = false  # Allow unused ignores for compatibility
-warn_no_return = true
-warn_unreachable = true
-# Core type checking
-disallow_untyped_defs = false  # Allow gradual typing
-disallow_incomplete_defs = false  # Allow gradual typing
-check_untyped_defs = true
-disallow_untyped_calls = false  # Too strict for external libraries
-# Type checking improvements
-no_implicit_optional = true
-strict_optional = false  # Allow None without explicit Optional checks
-strict_equality = true
-# Error reporting
-show_error_codes = true
-show_column_numbers = true
-pretty = true
-
-# Strict mode for core trading strategies and risk management only
-[[tool.mypy.overrides]]
-module = ["src.strategies.*", "src.risk_management.*", "src.utils.indicators"]
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-strict_optional = true
-
-# Relax even more for CLI tools and infrastructure
-[[tool.mypy.overrides]]
-module = ["cli.*", "src.notifications.*", "src.backtest.*"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-warn_return_any = false
-strict_optional = false
-
-# Ignore missing stubs for visualization and external libraries
-[[tool.mypy.overrides]]
-module = [
-    "loguru",
-    "httpx",
-    "cryptography.*",
-    "sqlalchemy",
-    "sqlalchemy.*",
-]
-ignore_missing_imports = true
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+reportMissingTypeStubs = false
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "venv"]

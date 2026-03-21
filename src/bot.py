@@ -273,6 +273,8 @@ class TradingBot:
 
     async def _process_symbol(self, symbol: str):
         """Process a single trading pair."""
+        assert self.executor is not None
+        assert self.strategy is not None
         try:
             # Get market data
             market_data = await self._fetch_market_data(symbol)
@@ -305,7 +307,7 @@ class TradingBot:
                         self.persistence.save_trade(order)
 
                     # Update cash balance if order filled
-                    if order.status.value == "FILLED":
+                    if order.status.value == "FILLED" and order.price is not None:
                         order_value = order.price * order.filled_quantity
                         if order.side.value == "BUY":
                             self.cash_balance -= order_value
@@ -321,6 +323,7 @@ class TradingBot:
         Both paper and live modes use real market data from the Revolut API.
         The difference is in execution: paper mode simulates orders, live mode executes them.
         """
+        assert self.api_client is not None
         try:
             # Fetch real market data from API (used in both paper and live modes)
             ticker_data = await self.api_client.get_ticker(symbol)
@@ -342,6 +345,7 @@ class TradingBot:
 
     async def _update_portfolio(self):
         """Update and save portfolio snapshot."""
+        assert self.executor is not None
         positions = self.executor.get_positions()
 
         positions_value = sum((pos.quantity * pos.current_price for pos in positions), Decimal("0"))
@@ -376,6 +380,7 @@ class TradingBot:
 
         current_snapshot = self.portfolio_snapshots[-1]
 
+        assert self.risk_manager is not None
         # Update risk manager with daily P&L
         self.risk_manager.update_daily_pnl(
             current_snapshot.daily_pnl, Decimal(str(settings.paper_initial_capital))

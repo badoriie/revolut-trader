@@ -63,7 +63,7 @@ help:
 	@echo "  make test              - Run tests with coverage"
 	@echo "  make lint              - Check code with ruff"
 	@echo "  make format            - Format code with ruff"
-	@echo "  make typecheck         - Run mypy type checking"
+	@echo "  make typecheck         - Run pyright type checking"
 	@echo "  make check             - Run all quality checks"
 	@echo "  make pre-commit        - Run pre-commit hooks on all files"
 	@echo ""
@@ -181,7 +181,7 @@ clean:
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name ".pyright" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
@@ -194,7 +194,7 @@ deep-clean:
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type d -name ".pyright" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
@@ -423,7 +423,7 @@ format:
 	@uv run ruff check --fix src/ tests/ cli/
 
 typecheck:
-	@uv run mypy src/ cli/
+	@uv run pyright src/ cli/
 
 check: lint format typecheck test
 	@echo "All quality checks passed"
