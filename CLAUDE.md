@@ -68,9 +68,11 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper ENV=dev
 
 **Environments** (`src/config.py`): Three stages — `dev`, `int`, `prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE=live` is only allowed in `ENVIRONMENT=prod`. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
+**Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`.
+
 **Component hierarchy:**
 
-- `TradingBot` (orchestrator) owns: `RevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
+- `TradingBot` (orchestrator) owns: `RevolutAPIClient` or `MockRevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
 - Each trading loop iteration: fetch market data → `strategy.analyze()` → `risk_manager.validate()` → `executor.execute()` → persist
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
@@ -189,6 +191,7 @@ Claude Code must handle this proactively without being asked.
 
 | File                                  | Purpose                                                         |
 | ------------------------------------- | --------------------------------------------------------------- |
+| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)         |
 | `src/bot.py`                          | Main orchestrator — start here to understand flow               |
 | `src/config.py`                       | Pydantic config + 1Password loading                             |
 | `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)       |

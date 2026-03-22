@@ -125,12 +125,20 @@ setup:
 		if op item get $$CREDS --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CREDS: exists"; \
 		else \
-			op item create \
-				--category "Secure Note" \
-				--vault $(OP_VAULT) \
-				--title $$CREDS \
-				"REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" \
-				>/dev/null && echo "  $$CREDS: created"; \
+			if [ "$$env" = "dev" ]; then \
+				op item create \
+					--category "Secure Note" \
+					--vault $(OP_VAULT) \
+					--title $$CREDS \
+					>/dev/null && echo "  $$CREDS: created (dev uses mock API — no API key needed)"; \
+			else \
+				op item create \
+					--category "Secure Note" \
+					--vault $(OP_VAULT) \
+					--title $$CREDS \
+					"REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" \
+					>/dev/null && echo "  $$CREDS: created"; \
+			fi; \
 		fi; \
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
@@ -147,26 +155,30 @@ setup:
 				"INITIAL_CAPITAL[text]=10000" \
 				>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 		fi; \
-		echo "  Checking Ed25519 keys for $$env..."; \
-		if op item get $$CREDS --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
-			echo "  $$env keys: already in 1Password"; \
+		if [ "$$env" = "dev" ]; then \
+			echo "  $$env: mock API — skipping Ed25519 key generation"; \
 		else \
-			echo "  Generating Ed25519 key pair for $$env..."; \
-			TMPDIR=$$(mktemp -d); \
-			openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
-			openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
-			op item edit $$CREDS --vault $(OP_VAULT) \
-				"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
-				"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
-				>/dev/null; \
-			echo "  $$env keys: stored in $$CREDS"; \
-			echo ""; \
-			echo "  ======================================================"; \
-			echo "  Register this $$env public key with Revolut X:"; \
-			echo "  ======================================================"; \
-			cat $$TMPDIR/public.pem; \
-			echo "  ======================================================"; \
-			rm -rf $$TMPDIR; \
+			echo "  Checking Ed25519 keys for $$env..."; \
+			if op item get $$CREDS --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
+				echo "  $$env keys: already in 1Password"; \
+			else \
+				echo "  Generating Ed25519 key pair for $$env..."; \
+				TMPDIR=$$(mktemp -d); \
+				openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
+				openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
+				op item edit $$CREDS --vault $(OP_VAULT) \
+					"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
+					"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
+					>/dev/null; \
+				echo "  $$env keys: stored in $$CREDS"; \
+				echo ""; \
+				echo "  ======================================================"; \
+				echo "  Register this $$env public key with Revolut X:"; \
+				echo "  ======================================================"; \
+				cat $$TMPDIR/public.pem; \
+				echo "  ======================================================"; \
+				rm -rf $$TMPDIR; \
+			fi; \
 		fi; \
 		echo ""; \
 	done
@@ -185,8 +197,8 @@ setup:
 	@echo "=== Setup complete! ==="
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Add your API keys:   make ops ENV=dev  (and ENV=int, ENV=prod)"
-	@echo "  2. Test in dev mode:    make run-dev"
+	@echo "  1. Run in dev mode:     make run-dev  (uses mock API — no API key needed)"
+	@echo "  2. Add API keys for int/prod: make ops ENV=int  (and ENV=prod)"
 	@echo "  3. View configuration:  make opconfig-show ENV=dev"
 
 install:
@@ -225,6 +237,11 @@ deep-clean:
 
 ops:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
+	@if [ "$(ENV)" = "dev" ]; then \
+		echo "Dev environment uses mock API — no API credentials needed."; \
+		echo "Run 'make run-dev' to start with the mock API."; \
+		exit 0; \
+	fi
 	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
 	@echo ""
 	@read -p "Revolut API Key: " api_key; \

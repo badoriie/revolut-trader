@@ -55,25 +55,31 @@ ______________________________________________________________________
 ## Quick Start
 
 ```bash
-make setup       # create vault, items, generate keys, install deps
-make ops         # store your Revolut API credentials
+make setup       # create vault, items, generate keys (int/prod only), install deps
+make run-dev     # start in dev mode (mock API — no API key needed)
+
+# For int/prod environments (real API):
+make ops ENV=int # store your Revolut API credentials
 make opshow      # verify stored values (masked)
-make run-paper   # start trading bot
+make run-int     # start with real API in paper mode
 ```
 
 ______________________________________________________________________
 
 ## Stored Items
 
-The bot uses two 1Password items in the `revolut-trader` vault:
+The bot uses two 1Password items per environment in the `revolut-trader` vault.
 
-### Credentials (`revolut-trader-credentials`)
+### Credentials (`revolut-trader-credentials-{env}`)
 
-| Field                     | Type      | Required       |
-| ------------------------- | --------- | -------------- |
-| `REVOLUT_API_KEY`         | concealed | Yes            |
-| `REVOLUT_PRIVATE_KEY`     | concealed | Yes            |
-| `DATABASE_ENCRYPTION_KEY` | concealed | Auto-generated |
+| Field                     | Type      | dev            | int / prod     |
+| ------------------------- | --------- | -------------- | -------------- |
+| `REVOLUT_API_KEY`         | concealed | Not needed     | Yes            |
+| `REVOLUT_PRIVATE_KEY`     | concealed | Not needed     | Yes            |
+| `REVOLUT_PUBLIC_KEY`      | concealed | Not needed     | Yes            |
+| `DATABASE_ENCRYPTION_KEY` | concealed | Auto-generated | Auto-generated |
+
+> **Dev uses mock API** — no Revolut API key or Ed25519 keys are required. Only the database encryption key (auto-generated) is stored in the dev credentials item.
 
 ### Trading Configuration (`revolut-trader-config`)
 
@@ -205,7 +211,7 @@ ______________________________________________________________________
 ## FAQ
 
 **Q: Do I need 1Password to run the bot?**
-Yes — it is the only credential and config source. No fallback exists.
+Yes — trading configuration is always loaded from 1Password. However, **dev** mode does not require API credentials (REVOLUT_API_KEY, REVOLUT_PRIVATE_KEY) since it uses the mock API.
 
 **Q: What if 1Password is unavailable?**
 The bot fails to start immediately with a clear error message.

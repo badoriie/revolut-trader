@@ -563,7 +563,7 @@ class TestBotStart:
         mock_api.initialize = AsyncMock()
         mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             await bot.start()
 
         assert bot.is_running is True
@@ -578,7 +578,7 @@ class TestBotStart:
         mock_api.initialize = AsyncMock()
         mock_api.check_permissions = AsyncMock(return_value={"view": False, "trade": False})
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             with pytest.raises(RuntimeError, match="cannot read market data"):
                 await bot.start()
 
@@ -597,7 +597,7 @@ class TestBotStart:
         mock_api.initialize = AsyncMock()
         mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": False})
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             with pytest.raises(RuntimeError, match="read-only"):
                 await live_bot.start()
 
@@ -619,7 +619,7 @@ class TestBotStart:
             return_value={"balances": {"EUR": {"available": "5000.50"}}}
         )
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             await live_bot.start()
 
         assert live_bot.cash_balance == Decimal("5000.50")
@@ -640,7 +640,7 @@ class TestBotStart:
         mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
         mock_api.get_balance = AsyncMock(return_value={"balances": {}})
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             with pytest.raises(RuntimeError, match="No EUR balance"):
                 await live_bot.start()
 
@@ -660,7 +660,7 @@ class TestBotStart:
         mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
         mock_api.get_balance = AsyncMock(side_effect=Exception("network error"))
 
-        with patch("src.bot.RevolutAPIClient", return_value=mock_api):
+        with patch("src.bot.create_api_client", return_value=mock_api):
             with pytest.raises(RuntimeError, match="Cannot start live trading"):
                 await live_bot.start()
 

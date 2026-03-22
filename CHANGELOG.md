@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added - Mock API for Dev Environment
+
+- **`MockRevolutAPIClient`** (`src/api/mock_client.py`) — in-process mock of all 17 Revolut X API endpoints
+  - Returns realistic fake data matching exact response shapes from `docs/revolut-x-api-docs.md`
+  - No network calls, no 1Password credentials, no Ed25519 keys required
+  - Maintains in-memory order state for realistic order lifecycle (create → cancel)
+  - Static mock prices for BTC-EUR, ETH-EUR, SOL-EUR, XRP-EUR
+- **`create_api_client()` factory** (`src/api/__init__.py`) — selects mock vs real client based on environment
+  - `ENVIRONMENT=dev` → `MockRevolutAPIClient` (no real API calls)
+  - `ENVIRONMENT=int|prod` → `RevolutAPIClient` (real API)
+- **`TradingBot.start()`** now uses the factory instead of hardcoding `RevolutAPIClient()`
+- **36 new tests** (`tests/unit/test_mock_api_client.py`) covering all mock endpoints, factory function, and API contract compliance
+- **Dev setup no longer requires API credentials** — `make setup` skips API key placeholder and Ed25519 key generation for dev environment. Only `DATABASE_ENCRYPTION_KEY` (auto-generated) is needed in the dev credentials item.
+- **`make ops ENV=dev`** now exits early with a message that dev uses mock API
+
 ### Added - Environment Stages (dev / int / prod)
 
 - **Three deployment environments** with full isolation of credentials, config, and data
