@@ -19,17 +19,19 @@ repos:
       - id: detect-private-key
         exclude: ^(tests/mocks/|docs/)
 
-  # Ruff - linting and formatting (replaces black, isort, flake8)
+  # Ruff — linting and formatting (same config as pyproject.toml, same scope as Makefile)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.5
     hooks:
       # Linter — auto-fix, same as `make format`
       - id: ruff
         args: [--fix]
-      # Formatter
+        files: ^(src|tests|cli)/
+      # Formatter — same as `make format`
       - id: ruff-format
+        files: ^(src|tests|cli)/
 
-  # Type checking with pyright
+  # Type checking — same as `make typecheck`
   - repo: local
     hooks:
       - id: pyright
@@ -40,14 +42,14 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # Security checks
+  # Security — same as `make lint` (bandit reads config from pyproject.toml)
   - repo: https://github.com/PyCQA/bandit
     rev: 1.8.0
     hooks:
       - id: bandit
         args: ['-c', 'pyproject.toml', '-r', 'src/', 'cli/']
         additional_dependencies: ['bandit[toml]']
-        exclude: ^tests/
+        pass_filenames: false
 
   # Markdown formatting
   - repo: https://github.com/executablebooks/mdformat
@@ -58,13 +60,13 @@ repos:
           - mdformat-gfm
           - mdformat-black
 
-  # Run tests before commit
+  # Tests — same as `make test`
   - repo: local
     hooks:
       - id: pytest
         name: pytest
-        entry: pytest
-        args: [tests/, --tb=short, -q, --cov=src, --cov-fail-under=97]
+        entry: uv run pytest
+        args: [tests/, --tb=short, -q, --cov=src, --cov-report=term-missing, --cov-fail-under=97]
         language: system
         pass_filenames: false
         always_run: true
