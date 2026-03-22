@@ -249,7 +249,7 @@ async def run_compare(args) -> None:
         _print_comparison_table(comparison_rows)
 
         logger.info(
-            f"All {total_runs} backtest runs saved to database. " "View with: make db-backtests"
+            f"All {total_runs} backtest runs saved to database. View with: make db-backtests"
         )
 
     finally:
@@ -279,9 +279,7 @@ Examples:
         "--strategies",
         type=str,
         default=None,
-        help=(
-            "Comma-separated strategies to compare " f"(default: all — {','.join(ALL_STRATEGIES)})"
-        ),
+        help=(f"Comma-separated strategies to compare (default: all — {','.join(ALL_STRATEGIES)})"),
     )
     parser.add_argument(
         "--risk",
@@ -289,8 +287,7 @@ Examples:
         type=str,
         choices=ALL_RISK_LEVELS,
         default="conservative",
-        help="Risk level for all runs (default: conservative). "
-        "Use --risk-levels to test multiple.",
+        help="Risk level for all runs (default: conservative). Use --risk-levels to test multiple.",
     )
     parser.add_argument(
         "--risk-levels",

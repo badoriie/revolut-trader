@@ -1,5 +1,7 @@
 # Revolut Trader: Algorithmic Trading Bot
 
+[![CI](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml)
+
 A production-ready algorithmic trading bot for Revolut X Crypto API with multiple strategies, robust risk management, and comprehensive monitoring.
 
 ## Features
@@ -42,15 +44,28 @@ make db-export-csv                         # export to CSV
 
 See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and best practices.
 
-## Environments
+## Environments & Branches
 
-The project uses three environments with separate API keys, config, and databases:
+The project uses three environments, each with its own Git branch, API keys, config, and database:
 
-| Environment | API                  | Trading Mode | DB File        | Make Target     |
-| ----------- | -------------------- | ------------ | -------------- | --------------- |
-| **dev**     | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
-| **int**     | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
-| **prod**    | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
+| Environment | Branch | API                  | Trading Mode | DB File        | Make Target     |
+| ----------- | ------ | -------------------- | ------------ | -------------- | --------------- |
+| **dev**     | `dev`  | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
+| **int**     | `int`  | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
+| **prod**    | `main` | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
+
+### Branch Flow
+
+```
+feature branches → dev → int → main (prod)
+```
+
+- **Feature branches** — all development happens here, PRs target `dev`
+- **`dev`** — integration of features, tested with mock API
+- **`int`** — staging ground, tested with real API in paper mode
+- **`main`** — production, live trading with real money
+
+CI runs on all three branches. Direct commits to `dev`, `int`, and `main` are blocked by pre-commit hooks.
 
 Each environment has its own 1Password items:
 
@@ -113,6 +128,11 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 
 ```
 revolut-trader/
+├── .github/
+│   ├── workflows/ci.yml  # CI pipeline (lint, typecheck, security, tests)
+│   ├── dependabot.yml    # Automated dependency updates
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── ISSUE_TEMPLATE/   # Bug report & feature request forms
 ├── src/
 │   ├── api/              # Revolut API client (Ed25519 auth)
 │   ├── strategies/       # 6 trading strategies
@@ -155,6 +175,19 @@ make typecheck        # pyright src/ cli/
 make check            # all of the above + tests
 make pre-commit       # run all pre-commit hooks
 ```
+
+### CI Pipeline
+
+GitHub Actions runs on every push to `dev`, `int`, and `main`, and on PRs targeting these branches:
+
+- **Lint & Format** — ruff check + format verification
+- **Type Check** — pyright strict checking on `src/` and `cli/`
+- **Security Scan** — bandit static analysis
+- **Tests** — pytest with coverage as high as possible (currently ≥ 97%)
+
+The `ENVIRONMENT` variable is automatically set based on the target branch (`dev` → dev, `int` → int, `main` → prod).
+
+Dependabot keeps Python and GitHub Actions dependencies up to date with weekly PRs.
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
 

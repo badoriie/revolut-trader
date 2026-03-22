@@ -15,7 +15,7 @@ repos:
       - id: check-ast
       - id: debug-statements
       - id: no-commit-to-branch
-        args: ['--branch', 'main']
+        args: ['--branch', 'main', '--branch', 'int', '--branch', 'dev']
       - id: detect-private-key
         exclude: ^(tests/mocks/|docs/)
 
@@ -64,7 +64,7 @@ repos:
       - id: pytest
         name: pytest
         entry: pytest
-        args: [tests/, --tb=short, -q, --cov=src, --cov-fail-under=91]
+        args: [tests/, --tb=short, -q, --cov=src, --cov-fail-under=97]
         language: system
         pass_filenames: false
         always_run: true

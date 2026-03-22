@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added - GitHub Actions CI & Branch Strategy
+
+- **Three environment branches** — `dev`, `int`, `main` (prod) with promotion flow: `feature → dev → int → main`
+- **CI workflow** (`.github/workflows/ci.yml`) — runs on push/PR to all three branches
+  - Lint & format check (ruff)
+  - Type check (pyright)
+  - Security scan (bandit)
+  - Tests with coverage as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
+  - All jobs run in parallel using `uv` with dependency caching
+  - `ENVIRONMENT` automatically mapped from branch (`dev` → dev, `int` → int, `main` → prod)
+- **Direct commit protection** — pre-commit hook blocks direct commits to `dev`, `int`, and `main`
+- **Dependabot** (`.github/dependabot.yml`) — weekly PRs for Python and GitHub Actions dependencies
+- **PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) — includes target branch checklist
+- **Issue templates** (`.github/ISSUE_TEMPLATE/`) — bug report and feature request forms with environment dropdown
+
 ### Added - Mock API for Dev Environment
 
 - **`MockRevolutAPIClient`** (`src/api/mock_client.py`) — in-process mock of all 17 Revolut X API endpoints
