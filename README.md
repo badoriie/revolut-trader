@@ -184,10 +184,21 @@ GitHub Actions runs on every push to `dev`, `int`, and `main`, and on PRs target
 - **Type Check** — pyright strict checking on `src/` and `cli/`
 - **Security Scan** — bandit static analysis
 - **Tests** — pytest with coverage as high as possible (currently ≥ 97%)
+- **Backtest Matrix** (PRs to `main` only) — runs all 6 strategies against real market data via Revolut X API and posts results as a PR comment
 
 The `ENVIRONMENT` variable is automatically set based on the target branch (`dev` → dev, `int` → int, `main` → prod).
 
-Dependabot keeps Python and GitHub Actions dependencies up to date with weekly PRs.
+Dependabot targets `dev` so dependency updates flow through the full promotion chain (`dev → int → main`).
+
+#### Required GitHub Secret
+
+The backtest matrix workflow requires a 1Password service account token to fetch real market data:
+
+```bash
+# Add to GitHub repo → Settings → Secrets and variables → Actions:
+#   Name:  OP_SERVICE_ACCOUNT_TOKEN
+#   Value: ops_xxxx... (1Password service account token with read access to revolut-trader vault)
+```
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
 

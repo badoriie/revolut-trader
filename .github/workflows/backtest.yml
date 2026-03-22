@@ -1,0 +1,135 @@
+name: Backtest Matrix
+
+# Runs a backtest for every strategy when a PR targets main (int → prod promotion).
+# Uses ENVIRONMENT=int with real Revolut X API to fetch actual market data.
+# Results are posted as a Markdown table in the PR comments.
+#
+# Required GitHub secret:
+#   OP_SERVICE_ACCOUNT_TOKEN — 1Password service account token with read access
+#                              to the revolut-trader vault (int credentials).
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  ENVIRONMENT: int
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  backtest:
+    name: "${{ matrix.strategy }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        strategy:
+          - market_making
+          - momentum
+          - mean_reversion
+          - multi_strategy
+          - breakout
+          - range_reversion
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install 1Password CLI
+        run: |
+          curl -sS https://downloads.1password.com/linux/keys/1password.asc | \
+            sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" | \
+            sudo tee /etc/apt/sources.list.d/1password.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq 1password-cli
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Run backtest
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+        run: |
+          uv run python cli/backtest_ci.py \
+            --strategy ${{ matrix.strategy }} \
+            --risk conservative \
+            --days 30 \
+            --capital 10000 > result.json
+
+      - name: Upload result
+        uses: actions/upload-artifact@v7
+        with:
+          name: backtest-${{ matrix.strategy }}
+          path: result.json
+          retention-days: 1
+
+  report:
+    name: Post Report
+    needs: backtest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: backtest-*
+          merge-multiple: false
+
+      - name: Build Markdown report
+        id: report
+        run: |
+          {
+            echo "## Backtest Matrix Report"
+            echo ""
+            echo "| Strategy | Return | Trades | Win Rate | Profit Factor | Max Drawdown | Sharpe | Status |"
+            echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
+
+            for dir in backtest-*/; do
+              FILE="$dir/result.json"
+              if [ ! -f "$FILE" ]; then continue; fi
+
+              STATUS=$(jq -r '.status' "$FILE")
+              STRATEGY=$(jq -r '.strategy' "$FILE")
+
+              if [ "$STATUS" = "ok" ]; then
+                RETURN=$(jq -r '.return_pct' "$FILE")
+                TRADES=$(jq -r '.total_trades' "$FILE")
+                WIN_RATE=$(jq -r '.win_rate' "$FILE")
+                PF=$(jq -r '.profit_factor' "$FILE")
+                MDD=$(jq -r '.max_drawdown_pct' "$FILE")
+                SHARPE=$(jq -r '.sharpe_ratio' "$FILE")
+                echo "| ${STRATEGY} | ${RETURN}% | ${TRADES} | ${WIN_RATE}% | ${PF} | ${MDD}% | ${SHARPE} | :white_check_mark: |"
+              else
+                ERROR=$(jq -r '.error // "unknown"' "$FILE")
+                echo "| ${STRATEGY} | - | - | - | - | - | - | :x: ${ERROR} |"
+              fi
+            done
+
+            echo ""
+            echo "*Real market data via Revolut X API (int) · Capital: €10,000 · Period: 30 days · Risk: conservative · Interval: 60 min*"
+          } > report.md
+
+          cat report.md
+
+      - name: Comment on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+
+          # Delete previous backtest comment if it exists
+          COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.body | startswith("## Backtest Matrix Report")) | .id' | head -1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X DELETE "repos/$REPO/issues/comments/$COMMENT_ID"
+          fi
+
+          # Post new comment
+          gh pr comment "$PR_NUMBER" --body-file report.md
