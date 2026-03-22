@@ -6,7 +6,9 @@ from decimal import Decimal
 import httpx
 from loguru import logger
 
+from src.api import create_api_client
 from src.api.client import RevolutAPIClient
+from src.api.mock_client import MockRevolutAPIClient
 from src.config import RiskLevel, StrategyType, TradingMode, settings
 from src.execution.executor import OrderExecutor
 from src.models.domain import MarketData, PortfolioSnapshot
@@ -38,7 +40,7 @@ class TradingBot:
         self.trading_pairs = trading_pairs or settings.trading_pairs
 
         # Components (initialized in start())
-        self.api_client: RevolutAPIClient | None = None
+        self.api_client: RevolutAPIClient | MockRevolutAPIClient | None = None
         self.risk_manager: RiskManager | None = None
         self.executor: OrderExecutor | None = None
         self.strategy: BaseStrategy | None = None
@@ -97,8 +99,8 @@ class TradingBot:
         )
         logger.info(f"Trading session started: {self.current_session_id}")
 
-        # Initialize API client
-        self.api_client = RevolutAPIClient()
+        # Initialize API client (mock for dev, real for int/prod)
+        self.api_client = create_api_client(settings.environment)
         await self.api_client.initialize()
 
         # Check key permissions before going further

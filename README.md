@@ -18,15 +18,13 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 # 1. Complete setup (creates 1Password items for dev/int/prod)
 make setup
 
-# 2. Store your dev API key
-make ops ENV=dev
-
-# 3. Verify
-make opstatus
-make opshow ENV=dev
-
-# 4. Run in dev environment (paper mode, mock API)
+# 2. Run in dev environment (paper mode, mock API — no API key needed)
 make run-dev
+
+# For int/prod (real API):
+make ops ENV=int          # store your Revolut API credentials
+make opshow ENV=int       # verify stored values
+make run-int              # run with real API in paper mode
 ```
 
 See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.

@@ -4,6 +4,7 @@ from decimal import Decimal
 from loguru import logger
 
 from src.api.client import RevolutAPIClient
+from src.api.mock_client import MockRevolutAPIClient
 from src.config import TradingMode
 from src.models.domain import Order, OrderSide, OrderStatus, OrderType, Position, Signal
 from src.risk_management.risk_manager import RiskManager
@@ -35,7 +36,7 @@ class OrderExecutor:
 
     def __init__(
         self,
-        api_client: RevolutAPIClient,
+        api_client: RevolutAPIClient | MockRevolutAPIClient,
         risk_manager: RiskManager,
         trading_mode: TradingMode,
     ) -> None:
