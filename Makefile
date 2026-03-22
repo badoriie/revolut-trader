@@ -50,23 +50,23 @@ help:
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
-	@echo "API Testing (requires ENV=int or ENV=prod — not available in dev):"
-	@echo "  make api-test ENV=int                     - Test authenticated connection"
-	@echo "  make api-ready ENV=int                    - Check API permissions (view + trade)"
-	@echo "  make api-balance ENV=int                  - Account balances"
-	@echo "  make api-ticker SYMBOL=BTC-EUR ENV=int    - Single ticker (via order book)"
-	@echo "  make api-tickers SYMBOLS=BTC-EUR ENV=int  - Multiple tickers"
-	@echo "  make api-all-tickers ENV=int              - All pairs (GET /tickers)"
-	@echo "  make api-currencies ENV=int               - All currencies"
-	@echo "  make api-currency-pairs ENV=int           - All pairs config"
-	@echo "  make api-last-public-trades ENV=int       - Last 100 public trades"
-	@echo "  make api-order-book SYMBOL=BTC-EUR ENV=int   - Order book snapshot"
-	@echo "  make api-candles SYMBOL=BTC-EUR ENV=int      - Candles (60min, last 10)"
-	@echo "  make api-open-orders ENV=int              - All active orders"
-	@echo "  make api-historical-orders ENV=int        - Completed/cancelled orders"
-	@echo "  make api-trades SYMBOL=BTC-EUR ENV=int    - Private trade history"
-	@echo "  make api-public-trades SYMBOL=BTC-EUR ENV=int - Public trade history"
-	@echo "  make api-order ORDER_ID=<uuid> ENV=int    - Single order details"
+	@echo "API Testing (defaults to int — use ENV=prod for production):"
+	@echo "  make api-test                             - Test authenticated connection"
+	@echo "  make api-ready                            - Check API permissions (view + trade)"
+	@echo "  make api-balance                          - Account balances"
+	@echo "  make api-ticker SYMBOL=BTC-EUR            - Single ticker (via order book)"
+	@echo "  make api-tickers SYMBOLS=BTC-EUR          - Multiple tickers"
+	@echo "  make api-all-tickers                      - All pairs (GET /tickers)"
+	@echo "  make api-currencies                       - All currencies"
+	@echo "  make api-currency-pairs                   - All pairs config"
+	@echo "  make api-last-public-trades               - Last 100 public trades"
+	@echo "  make api-order-book SYMBOL=BTC-EUR        - Order book snapshot"
+	@echo "  make api-candles SYMBOL=BTC-EUR           - Candles (60min, last 10)"
+	@echo "  make api-open-orders                      - All active orders"
+	@echo "  make api-historical-orders                - Completed/cancelled orders"
+	@echo "  make api-trades SYMBOL=BTC-EUR            - Private trade history"
+	@echo "  make api-public-trades SYMBOL=BTC-EUR     - Public trade history"
+	@echo "  make api-order ORDER_ID=<uuid>            - Single order details"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -432,12 +432,15 @@ backtest-matrix:
 		--risk-levels conservative,moderate,aggressive
 
 # ============================================================================
-# API Testing (requires real API — not available in dev)
+# API Testing (defaults to int — dev uses mock API, so api-* targets skip it)
 # ============================================================================
 
-# Guard: block api-* targets in dev environment (mock API has no real endpoints)
+# API_ENV defaults to int (real API).  Override with ENV=prod to target prod.
+# Dev is blocked because it uses mock API with no real endpoints.
+API_ENV ?= $(if $(filter dev,$(ENV)),int,$(ENV))
+
 define require_real_api
-	@if [ "$(ENV)" = "dev" ]; then \
+	@if [ "$(API_ENV)" = "dev" ]; then \
 		echo "Error: API commands require a real API (ENV=int or ENV=prod)."; \
 		echo "Dev environment uses mock API — no real endpoints available."; \
 		echo ""; \
@@ -448,83 +451,83 @@ endef
 
 api-ready:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py trade-ready
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py trade-ready
 
 api-test:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py test
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py test
 
 api-balance:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py balance
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py balance
 
 api-ticker:
 	$(call require_real_api,$@)
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
 
 api-tickers:
 	$(call require_real_api,$@)
 	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
 
 api-candles:
 	$(call require_real_api,$@)
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
 
 api-all-tickers:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py all-tickers
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py all-tickers
 
 api-currencies:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currencies
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currencies
 
 api-currency-pairs:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currency-pairs
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currency-pairs
 
 api-last-public-trades:
 	$(call require_real_api,$@)
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py last-public-trades
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py last-public-trades
 
 api-order-book:
 	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20] ENV=int"; exit 1; fi
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
 	@DEPTH=$${DEPTH:-20}; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
 
 api-open-orders:
 	$(call require_real_api,$@)
 	@ARGS=""; \
 	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py open-orders $$ARGS
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py open-orders $$ARGS
 
 api-historical-orders:
 	$(call require_real_api,$@)
 	@LIMIT=$${LIMIT:-20}; \
 	ARGS="--limit $$LIMIT"; \
 	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py historical-orders $$ARGS
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py historical-orders $$ARGS
 
 api-trades:
 	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR ENV=int"; exit 1; fi
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
 	@LIMIT=$${LIMIT:-20}; \
-	ENVIRONMENT=$(ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
+	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
 
 api-public-trades:
 	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR ENV=int"; exit 1; fi
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
 
 api-order:
 	$(call require_real_api,$@)
-	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid> ENV=int"; exit 1; fi
-	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
+	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
+	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
 
 # ============================================================================
 # Code Quality
