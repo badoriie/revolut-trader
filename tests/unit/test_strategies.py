@@ -644,9 +644,9 @@ class TestMeanReversionStrengthScaling:
         assert result_a.signal_type == "BUY"
         assert result_b is not None
         assert result_b.signal_type == "BUY"
-        assert (
-            result_b.strength >= result_a.strength
-        ), "Larger deviation should yield equal or higher strength"
+        assert result_b.strength >= result_a.strength, (
+            "Larger deviation should yield equal or higher strength"
+        )
 
     @pytest.mark.asyncio
     async def test_entry_strength_does_not_always_equal_one(self):
