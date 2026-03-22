@@ -17,8 +17,6 @@
 - **CI backtest runner** (`cli/backtest_ci.py`) — outputs JSON for CI consumption (no terminal noise)
 - **Direct commit protection** — pre-commit hook blocks direct commits to `dev`, `int`, and `main`
 - **Dependabot** (`.github/dependabot.yml`) — targets `dev` branch, updates flow through promotion chain
-- **PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) — includes target branch checklist
-- **Issue templates** (`.github/ISSUE_TEMPLATE/`) — bug report and feature request forms with environment dropdown
 
 ### Added - Mock API for Dev Environment
 
