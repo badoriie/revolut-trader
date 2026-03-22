@@ -1,8 +1,8 @@
 name: Backtest Matrix
 
-# Runs the full strategy × risk level matrix backtest (identical to make backtest-matrix)
+# Runs the full strategy × risk level matrix (identical to `make backtest-matrix`)
 # when a PR targets main (int → prod promotion).
-# Uses ENVIRONMENT=int with real Revolut X API to fetch actual market data.
+# Uses ENVIRONMENT=int with real Revolut X API for actual market data.
 # Posts the comparison table as a PR comment.
 #
 # Required GitHub secret:
