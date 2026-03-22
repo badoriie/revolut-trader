@@ -14,7 +14,6 @@
   - `ENVIRONMENT` automatically mapped from branch (`dev` → dev, `int` → int, `main` → prod)
 - **Backtest matrix** (`.github/workflows/backtest.yml`) — runs all 6 strategies against real market data (int API) on PRs to `main`, posts results as PR comment
 - **Promotion workflow** (`.github/workflows/promote.yml`) — auto-creates PRs: `dev → int` and `int → main`
-- **CI backtest runner** (`cli/backtest_ci.py`) — outputs JSON for CI consumption (no terminal noise)
 - **Direct commit protection** — pre-commit hook blocks direct commits to `dev`, `int`, and `main`
 - **Dependabot** (`.github/dependabot.yml`) — targets `dev` branch, updates flow through promotion chain
 
