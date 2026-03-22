@@ -8,8 +8,11 @@ from unittest.mock import patch
 
 import pytest
 
-# Set ENVIRONMENT before anything imports src.config (which creates the Settings singleton).
-_os.environ.setdefault("ENVIRONMENT", "dev")
+# Force ENVIRONMENT=dev for all tests.  Tests use the mock 1Password vault and
+# mock API client — they must never run as int/prod (which would require real
+# credentials or derive TRADING_MODE=live).  The safety tests for environment
+# behaviour (test_environment.py) patch the environment explicitly.
+_os.environ["ENVIRONMENT"] = "dev"
 
 from tests.mocks.mock_onepassword import create_mock_vault
 
