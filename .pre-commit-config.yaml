@@ -23,9 +23,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.5
     hooks:
-      # Linter
+      # Linter — auto-fix, same as `make format`
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [--fix]
       # Formatter
       - id: ruff-format
 
