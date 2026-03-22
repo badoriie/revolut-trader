@@ -474,34 +474,6 @@ Create regression test suite:
 Provide regression test implementation.
 ```
 
-## Debug Telegram Notifications
-
-```
-Debug Telegram notification issues:
-
-**Problem**:
-[Notifications not sending / Delayed / Wrong format]
-
-**Configuration**:
-- Bot token: [Configured? Yes/No]
-- Chat ID: [Configured? Yes/No]
-
-**Error Messages**:
-```
-
-[Paste any error messages]
-
-```
-
-**Expected**:
-[What notifications should be sent]
-
-**Actual**:
-[What's happening]
-
-Diagnose and fix notification issues.
-```
-
 ## Async Code Review
 
 ```
