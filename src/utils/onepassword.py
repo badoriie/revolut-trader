@@ -21,14 +21,48 @@ Public API:
 """
 
 import json
+import os
 import subprocess
 from threading import Lock
 
 from loguru import logger
 
 VAULT = "revolut-trader"
+
+# Legacy constants kept for backward-compatible imports (e.g. db_encryption.py).
+# Prefer the functions get_credentials_item() / get_config_item() for new code.
 CREDENTIALS_ITEM = "revolut-trader-credentials"
 CONFIG_ITEM = "revolut-trader-config"
+
+
+def get_credentials_item(env: str | None = None) -> str:
+    """Return the environment-suffixed credentials item name.
+
+    Args:
+        env: Environment string (dev, int, prod).  Falls back to
+             ``os.environ["ENVIRONMENT"]`` if not provided.
+
+    Returns:
+        1Password item name, e.g. ``"revolut-trader-credentials-dev"``.
+    """
+    if env is None:
+        env = os.environ.get("ENVIRONMENT", "dev")
+    return f"revolut-trader-credentials-{env}"
+
+
+def get_config_item(env: str | None = None) -> str:
+    """Return the environment-suffixed config item name.
+
+    Args:
+        env: Environment string (dev, int, prod).  Falls back to
+             ``os.environ["ENVIRONMENT"]`` if not provided.
+
+    Returns:
+        1Password item name, e.g. ``"revolut-trader-config-dev"``.
+    """
+    if env is None:
+        env = os.environ.get("ENVIRONMENT", "dev")
+    return f"revolut-trader-config-{env}"
 
 
 def _fetch_item_fields(item_name: str) -> dict[str, str]:
@@ -118,7 +152,7 @@ class _VaultCache:
         return not self._cache
 
     def _refresh(self) -> None:
-        """Batch-fetch all fields from both vault items."""
+        """Batch-fetch all fields from both vault items (environment-aware)."""
         if not self.is_available():
             raise RuntimeError(
                 "1Password is required but not available.\n"
@@ -127,18 +161,24 @@ class _VaultCache:
                 "3. Setup:   make ops"
             )
 
-        credentials = _fetch_item_fields(CREDENTIALS_ITEM)
-        config = _fetch_item_fields(CONFIG_ITEM)
+        creds_item = get_credentials_item()
+        conf_item = get_config_item()
+
+        credentials = _fetch_item_fields(creds_item)
+        config = _fetch_item_fields(conf_item)
         merged = {**credentials, **config}
 
         if not merged:
+            env = os.environ.get("ENVIRONMENT", "dev")
             raise RuntimeError(
-                f"No fields found in 1Password vault '{VAULT}'.\n"
-                "Run: make ops && make opconfig-init"
+                f"No fields found in 1Password vault '{VAULT}' "
+                f"for environment '{env}'.\n"
+                f"Run: make ops ENV={env} && make opconfig-init ENV={env}"
             )
 
         self._cache = merged
-        logger.info(f"1Password cache loaded: {len(merged)} fields")
+        env = os.environ.get("ENVIRONMENT", "dev")
+        logger.info(f"1Password cache loaded ({env}): {len(merged)} fields")
 
     def get(self, key: str) -> str:
         """Get a required value; raises ``RuntimeError`` if missing."""

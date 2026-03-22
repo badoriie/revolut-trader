@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added - Environment Stages (dev / int / prod)
+
+- **Three deployment environments** with full isolation of credentials, config, and data
+  - `dev` — local development with mock API (no real HTTP calls), paper mode only
+  - `int` — integration testing with real Revolut X API, paper mode only
+  - `prod` — production with real API, paper or live trading
+- **Separate API keys per environment** stored in 1Password
+  - `revolut-trader-credentials-dev`, `revolut-trader-credentials-int`, `revolut-trader-credentials-prod`
+  - `revolut-trader-config-dev`, `revolut-trader-config-int`, `revolut-trader-config-prod`
+- **Separate database per environment**: `data/dev.db`, `data/int.db`, `data/prod.db`
+- **Safety enforcement**: `TRADING_MODE=live` is rejected unless `ENVIRONMENT=prod`
+- **New `Environment` enum** in `src/config.py` (dev, int, prod)
+- **New CLI argument**: `--env dev|int|prod` in `cli/run.py`
+- **New Makefile targets**: `run-dev`, `run-int`, `run-prod-paper`, `run-prod-live`
+  - `run-paper` and `run-live` kept as backward-compatible aliases
+  - All targets (`ops`, `opshow`, `opconfig-*`, `db-*`, `api-*`, `backtest`) accept `ENV=dev|int|prod`
+- **Environment-aware 1Password**: `get_credentials_item(env)` / `get_config_item(env)` functions
+- **Safety tests**: `tests/safety/test_environment.py` — verifies live mode restriction, environment validation
+- **Unit tests**: environment-aware item names, DB URL per environment
+
 ### Changed - EUR as Base Currency
 
 - **EUR is now the default base fiat currency** (previously USD)

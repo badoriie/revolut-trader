@@ -1,11 +1,15 @@
 """Shared pytest fixtures and configuration for all tests."""
 
+import os as _os
 import subprocess as _subprocess
 from datetime import UTC, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+
+# Set ENVIRONMENT before anything imports src.config (which creates the Settings singleton).
+_os.environ.setdefault("ENVIRONMENT", "dev")
 
 from tests.mocks.mock_onepassword import create_mock_vault
 

@@ -6,26 +6,27 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 
 - **6 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy, Breakout, Range Reversion
 - **3 Risk Levels**: Conservative, Moderate, Aggressive — with position limits, stop-loss, daily loss limits
+- **3 Environments**: Dev (mock API), Int (real API, paper only), Prod (real API, paper or live)
 - **3 Trading Modes**: Backtesting, Paper Trading, Live Trading
-- **Secure**: All credentials and config in 1Password — zero disk footprint for secrets
-- **Encrypted DB**: Sensitive fields encrypted with Fernet, key in 1Password
+- **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
+- **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
 - **Monitoring**: Telegram notifications, database analytics, CSV export
 
 ## Quick Start
 
 ```bash
-# 1. Complete setup (uv + 1Password + keys + deps)
+# 1. Complete setup (creates 1Password items for dev/int/prod)
 make setup
 
-# 2. Store your Revolut API key
-make ops
+# 2. Store your dev API key
+make ops ENV=dev
 
 # 3. Verify
 make opstatus
-make opshow
+make opshow ENV=dev
 
-# 4. Run in paper mode
-make run-paper
+# 4. Run in dev environment (paper mode, mock API)
+make run-dev
 ```
 
 See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
@@ -43,21 +44,39 @@ make db-export-csv                         # export to CSV
 
 See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and best practices.
 
+## Environments
+
+The project uses three environments with separate API keys, config, and databases:
+
+| Environment | API                  | Trading Mode  | DB File        | Make Target                                  |
+| ----------- | -------------------- | ------------- | -------------- | -------------------------------------------- |
+| **dev**     | Mock (no real calls) | Paper only    | `data/dev.db`  | `make run-dev`                               |
+| **int**     | Real Revolut X API   | Paper only    | `data/int.db`  | `make run-int`                               |
+| **prod**    | Real Revolut X API   | Paper or Live | `data/prod.db` | `make run-prod-paper` / `make run-prod-live` |
+
+Each environment has its own 1Password items:
+
+- `revolut-trader-credentials-{env}` — API keys
+- `revolut-trader-config-{env}` — trading configuration
+
+**Safety**: `TRADING_MODE=live` is only accepted in `ENVIRONMENT=prod`. The bot refuses to start otherwise.
+
 ### Paper Trading
 
 ```bash
-make run-paper
+make run-dev     # dev environment (mock API)
+make run-int     # int environment (real API, paper mode)
 
 # Or with options
-uv run python cli/run.py --strategy momentum --risk moderate --mode paper
+ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk moderate --mode paper
 ```
 
 ### Live Trading
 
-**WARNING**: Uses real money. Test thoroughly in paper mode first!
+**WARNING**: Uses real money. Only available in prod environment. Test thoroughly in paper mode first!
 
 ```bash
-make run-live   # with safety confirmation
+make run-prod-live   # with safety confirmation
 ```
 
 ### API Testing
@@ -113,7 +132,7 @@ revolut-trader/
 
 ## Database & Monitoring
 
-Trading data is stored in an encrypted SQLite database (`data/trading.db`).
+Trading data is stored in an encrypted SQLite database per environment (`data/dev.db`, `data/int.db`, `data/prod.db`).
 
 ```bash
 make db-stats         # database overview

@@ -9,7 +9,6 @@ from cryptography.fernet import Fernet, InvalidToken
 from loguru import logger
 
 import src.utils.onepassword as op
-from src.utils.onepassword import CREDENTIALS_ITEM
 
 
 class DatabaseEncryption:
@@ -38,7 +37,7 @@ class DatabaseEncryption:
         if not encryption_key:
             logger.info("No DATABASE_ENCRYPTION_KEY found — generating one now...")
             encryption_key = generate_encryption_key()
-            op.set_credential(CREDENTIALS_ITEM, "DATABASE_ENCRYPTION_KEY", encryption_key)
+            op.set_credential(op.get_credentials_item(), "DATABASE_ENCRYPTION_KEY", encryption_key)
             logger.info("✓ New encryption key generated and stored in 1Password")
 
         try:
@@ -127,7 +126,7 @@ def setup_database_encryption() -> str:
             return existing_key
 
     encryption_key = generate_encryption_key()
-    op.set_credential(CREDENTIALS_ITEM, "DATABASE_ENCRYPTION_KEY", encryption_key)
+    op.set_credential(op.get_credentials_item(), "DATABASE_ENCRYPTION_KEY", encryption_key)
     logger.info("✓ Database encryption key generated and stored in 1Password")
     logger.info("ℹ️  Key ID: " + encryption_key[:16] + "...")
     return encryption_key

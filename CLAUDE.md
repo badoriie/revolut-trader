@@ -28,39 +28,45 @@ make check                   # all of the above + tests
 # Run pre-commit hooks on all files
 make pre-commit
 
-# Run the bot
-make run-paper               # paper trading (safe)
-make run-live                # live trading (real money — requires confirmation)
+# Run the bot (ENV defaults to dev)
+make run-dev                 # dev environment (paper mode, mock API)
+make run-int                 # int environment (paper mode, real API)
+make run-prod-paper          # prod environment (paper mode, real API)
+make run-prod-live           # prod environment (live trading — requires confirmation)
+make run-paper               # alias for run-dev
+make run-live                # alias for run-prod-live
 
 # Backtesting (results saved to encrypted DB, not files)
-make backtest                # STRATEGY=momentum DAYS=30
-make db-backtests            # view stored results
+make backtest                # STRATEGY=momentum DAYS=30 ENV=dev
+make db-backtests            # view stored results (uses ENV)
 make db-export-csv           # export results to CSV
 
-# Database
-make db                      # show database overview
+# Database (per environment: data/dev.db, data/int.db, data/prod.db)
+make db                      # show database overview (ENV=dev)
 make db-stats                # show database statistics
 make db-analytics            # trading analytics (DAYS=30)
 make db-encrypt-setup        # generate and store encryption key in 1Password
 make db-encrypt-status       # check if encryption is active
 
-# API utilities
-make api-test
-make api-balance
-make api-ticker SYMBOL=BTC-EUR
+# API utilities (use ENV to select API keys)
+make api-test ENV=int
+make api-balance ENV=int
+make api-ticker SYMBOL=BTC-EUR ENV=int
 
-# 1Password / credential management (vault/item names defined in Makefile + src/utils/onepassword.py)
-make setup                   # first-time setup: vault, items, key generation, deps, pre-commit hooks
-make ops                     # interactively set API key / Telegram credentials
-make opshow                  # show all stored values (credentials + config, masked)
+# 1Password / credential management (per environment)
+make setup                   # first-time setup: creates items for dev/int/prod
+make ops ENV=dev             # interactively set API key for dev environment
+make opshow ENV=dev          # show stored values for dev (masked)
 make opstatus                # check 1Password CLI status
-make opconfig-show           # show trading configuration
-make opconfig-set KEY=TRADING_MODE VALUE=paper
+make opconfig-show ENV=dev   # show trading configuration for dev
+make opconfig-set KEY=TRADING_MODE VALUE=paper ENV=dev
 ```
 
 ## Architecture
 
-**Entry point**: `cli/run.py` → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
+**Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
+
+**Environments** (`src/config.py`): Three stages — `dev`, `int`, `prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE=live` is only allowed in `ENVIRONMENT=prod`. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
 **Component hierarchy:**
 
@@ -69,21 +75,22 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
 
-**Configuration** (`src/config.py`): Pydantic-based. All trading config (mode, strategy, risk level, pairs, capital) is fetched from 1Password at startup — there are no code-level defaults. Config fails fast with actionable error messages if 1Password fields are missing.
+**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). All trading config (mode, strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. Config fails fast with actionable error messages if 1Password fields are missing.
 
-**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv` for on-demand exports.
+**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv ENV=prod` for on-demand exports.
 
-**Security**: All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY`). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
+**Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
-**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Retrieves API keys, private keys, bot tokens, trading configuration, and the database encryption key. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
+**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys, bot tokens, trading configuration, and the database encryption key from the environment-specific items. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
 **Tests** (`tests/`):
 
-- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits)
+- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions)
+- `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager)
-- `tests/mocks/` — mock 1Password for testing
+- `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage target: ≥ 91%
 
 ## Mandatory Rules
@@ -150,7 +157,7 @@ All monetary columns in the ORM use `Numeric(20, 10)` — never `Float`. Never c
 
 ### Configuration — No Code Defaults
 
-Trading config must come from 1Password exclusively. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=...`). Never silently fall back to a hardcoded default.
+Trading config must come from 1Password exclusively. `ENVIRONMENT` is the one exception — it comes from `os.environ` (set by the Makefile or `--env` CLI arg) because it must be known before 1Password items can be resolved. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
 
 ### Database Encryption — Always On
 
@@ -188,7 +195,7 @@ Claude Code must handle this proactively without being asked.
 | `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)   |
 | `src/risk_management/risk_manager.py` | Risk validation and position sizing                             |
 | `src/strategies/base_strategy.py`     | Abstract base all strategies implement                          |
-| `src/utils/onepassword.py`            | 1Password CLI wrapper                                           |
+| `src/utils/onepassword.py`            | 1Password CLI wrapper (environment-aware item names)            |
 | `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export |
 | `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password              |
 | `src/backtest/engine.py`              | Backtest engine with pagination, slippage, fees, Sharpe ratio   |

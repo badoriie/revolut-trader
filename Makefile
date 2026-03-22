@@ -1,12 +1,18 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-dev run-int run-prod-paper run-prod-live run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
-# 1Password vault/item names — must match src/utils/onepassword.py constants
+# Environment — dev (default), int, prod
+# ============================================================================
+
+ENV ?= dev
+
+# ============================================================================
+# 1Password vault/item names — environment-suffixed
 # ============================================================================
 
 OP_VAULT  := revolut-trader
-OP_CREDS  := revolut-trader-credentials
-OP_CONFIG := revolut-trader-config
+OP_CREDS  := revolut-trader-credentials-$(ENV)
+OP_CONFIG := revolut-trader-config-$(ENV)
 
 # ============================================================================
 # Help
@@ -15,14 +21,17 @@ OP_CONFIG := revolut-trader-config
 help:
 	@echo "Revolut Trading Bot - Make Commands"
 	@echo ""
+	@echo "Current environment: $(ENV)  (override with ENV=dev|int|prod)"
+	@echo "  1Password items: $(OP_CREDS) / $(OP_CONFIG)"
+	@echo ""
 	@echo "Setup & Installation:"
-	@echo "  make setup             - First-time project setup"
+	@echo "  make setup             - First-time project setup (creates all env items)"
 	@echo "  make install           - Install/update dependencies"
 	@echo "  make clean             - Remove cache files and artifacts"
 	@echo "  make deep-clean        - Remove ALL generated files (data, venv)"
 	@echo ""
-	@echo "Credentials & Configuration (1Password vault: $(OP_VAULT)):"
-	@echo "  make ops               - Set API credentials interactively"
+	@echo "Credentials & Configuration (use ENV=dev|int|prod to target an environment):"
+	@echo "  make ops               - Set API credentials for ENV (default: dev)"
 	@echo "  make opshow            - Show stored credentials and config (masked)"
 	@echo "  make opstatus          - Check 1Password CLI status"
 	@echo "  make opdelete          - Delete credentials item from 1Password"
@@ -32,13 +41,17 @@ help:
 	@echo "  make opconfig-delete   - Remove a config key (KEY=...)"
 	@echo ""
 	@echo "Trading & Analysis:"
-	@echo "  make run-paper         - Run in paper mode (safe, simulated trading)"
-	@echo "  make run-live          - Run in live mode (REAL MONEY)"
+	@echo "  make run-dev           - Run in dev environment (paper mode, mock API)"
+	@echo "  make run-int           - Run in int environment (paper mode, real API)"
+	@echo "  make run-prod-paper    - Run in prod environment (paper mode, real API)"
+	@echo "  make run-prod-live     - Run in prod environment (LIVE - REAL MONEY)"
+	@echo "  make run-paper         - Alias for run-dev"
+	@echo "  make run-live          - Alias for run-prod-live"
 	@echo "  make backtest          - Backtest one strategy (STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=...)"
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
-	@echo "API Testing:"
+	@echo "API Testing (uses ENV for credentials):"
 	@echo "  make api-ready                    - Check API permissions (view + trade)"
 	@echo "  make api-test                     - Test authenticated connection"
 	@echo "  make api-balance                  - Account balances"
@@ -69,7 +82,7 @@ help:
 	@echo "  make check             - Run all quality checks"
 	@echo "  make pre-commit        - Run pre-commit hooks on all files"
 	@echo ""
-	@echo "Database:"
+	@echo "Database (uses ENV for DB file selection):"
 	@echo "  make db                - Show database overview"
 	@echo "  make db-stats          - Show database statistics"
 	@echo "  make db-analytics      - Trading analytics (DAYS=30)"
@@ -81,8 +94,8 @@ help:
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
-	@echo "  2. make ops"
-	@echo "  3. make run-paper"
+	@echo "  2. make ops ENV=dev"
+	@echo "  3. make run-dev"
 
 # ============================================================================
 # Setup & Installation
@@ -104,31 +117,51 @@ setup:
 		&& echo "  Vault exists" \
 		|| { op vault create $(OP_VAULT) && echo "  Vault created: $(OP_VAULT)"; }
 	@echo ""
-	@echo "Setting up credentials item: $(OP_CREDS)"
-	@if op item get $(OP_CREDS) --vault $(OP_VAULT) >/dev/null 2>&1; then \
-		echo "  Item exists"; \
-	else \
-		op item create \
-			--category "Secure Note" \
-			--vault $(OP_VAULT) \
-			--title $(OP_CREDS) \
-			"REVOLUT_API_KEY[concealed]=<add-your-api-key>" \
-			>/dev/null && echo "  Item created"; \
-	fi
-	@echo ""
-	@echo "Checking Ed25519 keys..."
-	@if op item get $(OP_CREDS) --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
+	@# --- Create credentials + config items for each environment ---
+	@for env in dev int prod; do \
+		CREDS="revolut-trader-credentials-$$env"; \
+		CONFIG="revolut-trader-config-$$env"; \
+		echo "Setting up $$env environment..."; \
+		if op item get $$CREDS --vault $(OP_VAULT) >/dev/null 2>&1; then \
+			echo "  $$CREDS: exists"; \
+		else \
+			op item create \
+				--category "Secure Note" \
+				--vault $(OP_VAULT) \
+				--title $$CREDS \
+				"REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" \
+				>/dev/null && echo "  $$CREDS: created"; \
+		fi; \
+		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
+			echo "  $$CONFIG: exists"; \
+		else \
+			op item create \
+				--category "Secure Note" \
+				--vault $(OP_VAULT) \
+				--title $$CONFIG \
+				"TRADING_MODE[text]=paper" \
+				"RISK_LEVEL[text]=conservative" \
+				"BASE_CURRENCY[text]=EUR" \
+				"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+				"DEFAULT_STRATEGY[text]=market_making" \
+				"INITIAL_CAPITAL[text]=10000" \
+				>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
+		fi; \
+		echo ""; \
+	done
+	@echo "Checking Ed25519 keys for prod credentials..."
+	@if op item get revolut-trader-credentials-prod --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
 		echo "  Keys already in 1Password"; \
 	else \
 		echo "  Generating new Ed25519 key pair..."; \
 		TMPDIR=$$(mktemp -d); \
 		openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
 		openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
-		op item edit $(OP_CREDS) --vault $(OP_VAULT) \
+		op item edit revolut-trader-credentials-prod --vault $(OP_VAULT) \
 			"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
 			"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
 			>/dev/null; \
-		echo "  Keys stored in 1Password"; \
+		echo "  Keys stored in revolut-trader-credentials-prod"; \
 		echo ""; \
 		echo "  ======================================================"; \
 		echo "  IMPORTANT: Register this public key with Revolut X:"; \
@@ -136,23 +169,6 @@ setup:
 		cat $$TMPDIR/public.pem; \
 		echo "  ======================================================"; \
 		rm -rf $$TMPDIR; \
-	fi
-	@echo ""
-	@echo "Setting up configuration item: $(OP_CONFIG)"
-	@if op item get $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null 2>&1; then \
-		echo "  Item exists"; \
-	else \
-		op item create \
-			--category "Secure Note" \
-			--vault $(OP_VAULT) \
-			--title $(OP_CONFIG) \
-			"TRADING_MODE[text]=paper" \
-			"RISK_LEVEL[text]=conservative" \
-			"BASE_CURRENCY[text]=EUR" \
-			"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
-			"DEFAULT_STRATEGY[text]=market_making" \
-			"INITIAL_CAPITAL[text]=10000" \
-			>/dev/null && echo "  Item created with safe defaults"; \
 	fi
 	@echo ""
 	@echo "Creating directories..."
@@ -169,9 +185,9 @@ setup:
 	@echo "=== Setup complete! ==="
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Add your Revolut API key:  make ops"
-	@echo "  2. Test in paper mode:        make run-paper"
-	@echo "  3. View configuration:        make opconfig-show"
+	@echo "  1. Add your API keys:   make ops ENV=dev  (and ENV=int, ENV=prod)"
+	@echo "  2. Test in dev mode:    make run-dev"
+	@echo "  3. View configuration:  make opconfig-show ENV=dev"
 
 install:
 	@echo "Installing dependencies with uv..."
@@ -314,16 +330,28 @@ opconfig-delete:
 # Trading Bot
 # ============================================================================
 
-run-paper:
-	@echo "Starting bot in PAPER mode (simulated trading)"
-	@uv run python cli/run.py --mode paper --strategy market_making --risk conservative
+run-dev:
+	@echo "Starting bot in DEV environment (paper mode)"
+	@ENVIRONMENT=dev uv run python cli/run.py --env dev --mode paper --strategy market_making --risk conservative
 
-run-live:
+run-int:
+	@echo "Starting bot in INT environment (paper mode, real API)"
+	@ENVIRONMENT=int uv run python cli/run.py --env int --mode paper --strategy market_making --risk conservative
+
+run-prod-paper:
+	@echo "Starting bot in PROD environment (paper mode, real API)"
+	@ENVIRONMENT=prod uv run python cli/run.py --env prod --mode paper --strategy market_making --risk conservative
+
+run-prod-live:
 	@echo ""
-	@echo "LIVE TRADING MODE - REAL MONEY AT RISK"
+	@echo "LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK"
 	@echo ""
 	@read -p "Type 'I UNDERSTAND' to continue: " confirm && [ "$$confirm" = "I UNDERSTAND" ] || (echo "Cancelled" && exit 1)
-	@uv run python cli/run.py --mode live --strategy market_making --risk conservative
+	@ENVIRONMENT=prod uv run python cli/run.py --env prod --mode live --strategy market_making --risk conservative
+
+# Backward-compatible aliases
+run-paper: run-dev
+run-live: run-prod-live
 
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \
@@ -332,16 +360,16 @@ backtest:
 	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
 	CAPITAL=$${CAPITAL:-10000}; \
 	RISK=$${RISK:-conservative}; \
-	echo "Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: $$INTERVAL min | Pairs: $$PAIRS"; \
-	uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
+	echo "Environment: $(ENV) | Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: $$INTERVAL min | Pairs: $$PAIRS"; \
+	ENVIRONMENT=$(ENV) uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
 		--interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL \
-		&& echo "Backtest complete — results saved to database (make db-backtests)" \
+		&& echo "Backtest complete — results saved to database (make db-backtests ENV=$(ENV))" \
 		|| echo "Backtest failed - check logs above"
 
 backtest-compare:
 	@echo ""; \
 	echo "============================================================"; \
-	echo "  STRATEGY COMPARISON BACKTEST"; \
+	echo "  STRATEGY COMPARISON BACKTEST ($(ENV))"; \
 	echo "============================================================"; \
 	DAYS=$${DAYS:-30}; \
 	INTERVAL=$${INTERVAL:-60}; \
@@ -349,20 +377,20 @@ backtest-compare:
 	CAPITAL=$${CAPITAL:-10000}; \
 	RISK=$${RISK:-conservative}; \
 	STRATEGIES=$${STRATEGIES:-}; \
-	CMD="uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL --risk $$RISK"; \
+	CMD="ENVIRONMENT=$(ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL --risk $$RISK"; \
 	if [ -n "$$STRATEGIES" ]; then CMD="$$CMD --strategies $$STRATEGIES"; fi; \
 	eval $$CMD
 
 backtest-matrix:
 	@echo ""; \
 	echo "============================================================"; \
-	echo "  STRATEGY × RISK LEVEL MATRIX BACKTEST"; \
+	echo "  STRATEGY × RISK LEVEL MATRIX BACKTEST ($(ENV))"; \
 	echo "============================================================"; \
 	DAYS=$${DAYS:-30}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
 	CAPITAL=$${CAPITAL:-10000}; \
-	uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL \
+	ENVIRONMENT=$(ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL \
 		--pairs $$PAIRS --capital $$CAPITAL \
 		--risk-levels conservative,moderate,aggressive
 
@@ -371,68 +399,68 @@ backtest-matrix:
 # ============================================================================
 
 api-ready:
-	@uv run python cli/api_test.py trade-ready
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py trade-ready
 
 api-test:
-	@uv run python cli/api_test.py test
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py test
 
 api-balance:
-	@uv run python cli/api_test.py balance
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py balance
 
 api-ticker:
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	uv run python cli/api_test.py ticker --symbol $$SYMBOL
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
 
 api-tickers:
 	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
-	uv run python cli/api_test.py tickers --symbols $$SYMBOLS
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
 
 api-candles:
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
-	uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
 
 api-all-tickers:
-	@uv run python cli/api_test.py all-tickers
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py all-tickers
 
 api-currencies:
-	@uv run python cli/api_test.py currencies
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currencies
 
 api-currency-pairs:
-	@uv run python cli/api_test.py currency-pairs
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currency-pairs
 
 api-last-public-trades:
-	@uv run python cli/api_test.py last-public-trades
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py last-public-trades
 
 api-order-book:
 	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
 	@DEPTH=$${DEPTH:-20}; \
-	uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
 
 api-open-orders:
 	@ARGS=""; \
 	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
-	uv run python cli/api_test.py open-orders $$ARGS
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py open-orders $$ARGS
 
 api-historical-orders:
 	@LIMIT=$${LIMIT:-20}; \
 	ARGS="--limit $$LIMIT"; \
 	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
-	uv run python cli/api_test.py historical-orders $$ARGS
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py historical-orders $$ARGS
 
 api-trades:
 	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
 	@LIMIT=$${LIMIT:-20}; \
-	uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
+	ENVIRONMENT=$(ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
 
 api-public-trades:
 	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
-	@uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
 
 api-order:
 	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
-	@uv run python cli/api_test.py order --order-id $(ORDER_ID)
+	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
 
 # ============================================================================
 # Code Quality
@@ -498,7 +526,7 @@ restore:
 # Database Management
 # ============================================================================
 
-DB_CMD = @uv run python cli/db_manage.py
+DB_CMD = @ENVIRONMENT=$(ENV) uv run python cli/db_manage.py
 
 db:
 	$(DB_CMD) stats
@@ -523,7 +551,7 @@ db-export-csv:
 	$(DB_CMD) export-csv
 
 db-encrypt-setup:
-	@uv run python -c "from src.utils.db_encryption import setup_database_encryption; setup_database_encryption()"
+	@ENVIRONMENT=$(ENV) uv run python -c "from src.utils.db_encryption import setup_database_encryption; setup_database_encryption()"
 
 db-encrypt-status:
-	@uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled)"
+	@ENVIRONMENT=$(ENV) uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled)"

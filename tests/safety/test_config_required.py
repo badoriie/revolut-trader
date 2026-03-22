@@ -13,6 +13,7 @@ Test strategy: Mock op.get() to simulate 1Password behavior with missing/invalid
 values and verify RuntimeError or ValueError is raised.
 """
 
+import os
 from unittest.mock import patch
 
 import pytest
@@ -251,7 +252,7 @@ class TestValidConfiguration:
             assert settings.paper_initial_capital == 10000.0
 
     def test_valid_live_mode_config_accepted(self):
-        """Valid live mode configuration should be accepted."""
+        """Valid live mode configuration should be accepted (in prod environment only)."""
         config = {
             "TRADING_MODE": "live",
             "RISK_LEVEL": "conservative",
@@ -261,10 +262,11 @@ class TestValidConfiguration:
             "INITIAL_CAPITAL": "10000",
         }
 
-        with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            settings = Settings()
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config)):
+                settings = Settings()
 
-            assert settings.trading_mode == TradingMode.LIVE
+                assert settings.trading_mode == TradingMode.LIVE
 
     def test_valid_moderate_risk_config_accepted(self):
         """Valid moderate risk configuration should be accepted."""

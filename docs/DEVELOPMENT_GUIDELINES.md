@@ -289,14 +289,53 @@ Changes to these areas require extra review:
 
 ______________________________________________________________________
 
+## Environment Stages (dev / int / prod)
+
+The project uses three deployment environments with full isolation:
+
+| Environment | API                  | Trading Mode  | DB File        | 1Password Items                        |
+| ----------- | -------------------- | ------------- | -------------- | -------------------------------------- |
+| `dev`       | Mock (no real calls) | Paper only    | `data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
+| `int`       | Real Revolut X API   | Paper only    | `data/int.db`  | `*-credentials-int` / `*-config-int`   |
+| `prod`      | Real Revolut X API   | Paper or Live | `data/prod.db` | `*-credentials-prod` / `*-config-prod` |
+
+### Key rules
+
+- **`ENVIRONMENT` must be set** before any Python process that imports `src.config`. The Makefile sets it automatically; for manual runs use `--env` or `export ENVIRONMENT=dev`.
+- **`TRADING_MODE=live` is only allowed in `ENVIRONMENT=prod`** — enforced in `Settings.model_post_init`.
+- **Separate API keys per environment** — if a dev key leaks, prod is unaffected.
+- **Tests always run with `ENVIRONMENT=dev`** — set in `conftest.py` before the `Settings` singleton is created.
+
+### Running in each environment
+
+```bash
+make run-dev          # mock API, paper mode
+make run-int          # real API, paper mode
+make run-prod-paper   # real API, paper mode
+make run-prod-live    # real API, live trading (requires confirmation)
+```
+
+### Promotion flow
+
+```
+feature branch → PR → main (dev)
+                         ↓
+                   run-int (paper trade with real API for N hours)
+                         ↓
+                   tag release → run-prod-paper → run-prod-live
+```
+
+______________________________________________________________________
+
 ## Safety Reminders
 
 ### Never Trade in Live Mode Without Testing
 
-1. Test in paper mode FIRST
-1. Verify all safety limits work
-1. Monitor for at least 24 hours
-1. Only then consider live mode
+1. Start in `dev` environment — validate with mock API
+1. Promote to `int` environment — paper trade with real market data
+1. Verify all safety limits work in `int` for at least 24 hours
+1. Only then move to `prod` with `make run-prod-paper` first
+1. After thorough validation, use `make run-prod-live`
 
 ______________________________________________________________________
 
