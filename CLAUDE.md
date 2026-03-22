@@ -65,7 +65,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
 
-**Environments** (`src/config.py`): Three stages — `dev` (mock API, paper), `int` (real API, paper — staging ground), `prod` (real API, live only). The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
+**Environments & Branches** (`src/config.py`): Three stages, each with a dedicated Git branch — `dev` branch (mock API, paper), `int` branch (real API, paper — staging ground), `main` branch = prod (real API, live only). Branch flow: `feature branches → dev → int → main`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. CI maps branches to environments automatically (`dev` → dev, `int` → int, `main` → prod). `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
 **Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`.
 
@@ -92,7 +92,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 - `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager)
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
-- Coverage target: ≥ 91%
+- Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
 
 ## Mandatory Rules
 
