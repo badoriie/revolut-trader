@@ -12,9 +12,9 @@ from decimal import Decimal
 
 from loguru import logger
 
-from src.api.client import RevolutAPIClient
+from src.api import create_api_client
 from src.backtest.engine import BacktestEngine
-from src.config import RiskLevel, StrategyType
+from src.config import RiskLevel, StrategyType, settings
 from src.utils.db_persistence import DatabasePersistence
 
 
@@ -35,7 +35,7 @@ async def run_backtest(args) -> None:
     symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
     initial_capital = Decimal(str(args.capital))
 
-    api_client = RevolutAPIClient()
+    api_client = create_api_client(settings.environment)
     await api_client.initialize()
 
     engine = BacktestEngine(

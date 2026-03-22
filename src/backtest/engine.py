@@ -22,6 +22,7 @@ from typing import Any
 from loguru import logger
 
 from src.api.client import RevolutAPIClient
+from src.api.mock_client import MockRevolutAPIClient
 from src.config import RiskLevel, StrategyType
 from src.models.domain import (
     CandleData,
@@ -204,7 +205,7 @@ class BacktestEngine:
 
     def __init__(
         self,
-        api_client: RevolutAPIClient,
+        api_client: RevolutAPIClient | MockRevolutAPIClient,
         strategy_type: StrategyType,
         risk_level: RiskLevel,
         initial_capital: Decimal = Decimal("10000"),
