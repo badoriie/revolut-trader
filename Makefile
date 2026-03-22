@@ -117,7 +117,7 @@ setup:
 		&& echo "  Vault exists" \
 		|| { op vault create $(OP_VAULT) && echo "  Vault created: $(OP_VAULT)"; }
 	@echo ""
-	@# --- Create credentials + config items for each environment ---
+	@# --- Create credentials + config + Ed25519 keys for each environment ---
 	@for env in dev int prod; do \
 		CREDS="revolut-trader-credentials-$$env"; \
 		CONFIG="revolut-trader-config-$$env"; \
@@ -147,29 +147,29 @@ setup:
 				"INITIAL_CAPITAL[text]=10000" \
 				>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 		fi; \
+		echo "  Checking Ed25519 keys for $$env..."; \
+		if op item get $$CREDS --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
+			echo "  $$env keys: already in 1Password"; \
+		else \
+			echo "  Generating Ed25519 key pair for $$env..."; \
+			TMPDIR=$$(mktemp -d); \
+			openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
+			openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
+			op item edit $$CREDS --vault $(OP_VAULT) \
+				"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
+				"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
+				>/dev/null; \
+			echo "  $$env keys: stored in $$CREDS"; \
+			echo ""; \
+			echo "  ======================================================"; \
+			echo "  Register this $$env public key with Revolut X:"; \
+			echo "  ======================================================"; \
+			cat $$TMPDIR/public.pem; \
+			echo "  ======================================================"; \
+			rm -rf $$TMPDIR; \
+		fi; \
 		echo ""; \
 	done
-	@echo "Checking Ed25519 keys for prod credentials..."
-	@if op item get revolut-trader-credentials-prod --vault $(OP_VAULT) --fields REVOLUT_PRIVATE_KEY >/dev/null 2>&1; then \
-		echo "  Keys already in 1Password"; \
-	else \
-		echo "  Generating new Ed25519 key pair..."; \
-		TMPDIR=$$(mktemp -d); \
-		openssl genpkey -algorithm Ed25519 -out $$TMPDIR/private.pem 2>/dev/null || { echo "Error: openssl required"; exit 1; }; \
-		openssl pkey -in $$TMPDIR/private.pem -pubout -out $$TMPDIR/public.pem 2>/dev/null; \
-		op item edit revolut-trader-credentials-prod --vault $(OP_VAULT) \
-			"REVOLUT_PRIVATE_KEY[concealed]=$$(cat $$TMPDIR/private.pem)" \
-			"REVOLUT_PUBLIC_KEY[concealed]=$$(cat $$TMPDIR/public.pem)" \
-			>/dev/null; \
-		echo "  Keys stored in revolut-trader-credentials-prod"; \
-		echo ""; \
-		echo "  ======================================================"; \
-		echo "  IMPORTANT: Register this public key with Revolut X:"; \
-		echo "  ======================================================"; \
-		cat $$TMPDIR/public.pem; \
-		echo "  ======================================================"; \
-		rm -rf $$TMPDIR; \
-	fi
 	@echo ""
 	@echo "Creating directories..."
 	@mkdir -p data
