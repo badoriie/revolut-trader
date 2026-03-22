@@ -62,8 +62,16 @@ jobs:
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
 
-          # Extract the comparison table (from "====...STRATEGY COMPARISON" to end)
-          TABLE=$(sed -n '/^=.*STRATEGY COMPARISON/,$ p' backtest-output.txt)
+          # Extract the comparison table
+          # The table starts with a "===..." line right before "STRATEGY COMPARISON"
+          # Use grep -n to find the line number, then extract from one line before
+          START=$(grep -n "STRATEGY COMPARISON" backtest-output.txt | head -1 | cut -d: -f1)
+          if [ -n "$START" ]; then
+            START=$((START - 1))
+            TABLE=$(tail -n +"$START" backtest-output.txt)
+          else
+            TABLE="No backtest results found."
+          fi
 
           # Build comment body
           {
