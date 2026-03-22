@@ -46,27 +46,30 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 The project uses three environments with separate API keys, config, and databases:
 
-| Environment | API                  | Trading Mode  | DB File        | Make Target                                  |
-| ----------- | -------------------- | ------------- | -------------- | -------------------------------------------- |
-| **dev**     | Mock (no real calls) | Paper only    | `data/dev.db`  | `make run-dev`                               |
-| **int**     | Real Revolut X API   | Paper only    | `data/int.db`  | `make run-int`                               |
-| **prod**    | Real Revolut X API   | Paper or Live | `data/prod.db` | `make run-prod-paper` / `make run-prod-live` |
+| Environment | API                  | Trading Mode | DB File        | Make Target     |
+| ----------- | -------------------- | ------------ | -------------- | --------------- |
+| **dev**     | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
+| **int**     | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
+| **prod**    | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
 
 Each environment has its own 1Password items:
 
 - `revolut-trader-credentials-{env}` — API keys
 - `revolut-trader-config-{env}` — trading configuration
 
-**Safety**: `TRADING_MODE=live` is only accepted in `ENVIRONMENT=prod`. The bot refuses to start otherwise.
+**Trading mode** is derived from the environment (not configurable separately):
+
+- dev/int → paper (simulated trading)
+- prod → live (real money)
 
 ### Paper Trading
 
 ```bash
-make run-dev     # dev environment (mock API)
-make run-int     # int environment (real API, paper mode)
+make run-dev     # dev environment (mock API, paper mode)
+make run-int     # int environment (real API, paper mode — staging ground)
 
 # Or with options
-ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk moderate --mode paper
+ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk moderate
 ```
 
 ### Live Trading
@@ -74,7 +77,7 @@ ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk mo
 **WARNING**: Uses real money. Only available in prod environment. Test thoroughly in paper mode first!
 
 ```bash
-make run-prod-live   # with safety confirmation
+make run-prod   # with safety confirmation
 ```
 
 ### API Testing

@@ -30,11 +30,10 @@ make pre-commit
 
 # Run the bot (ENV defaults to dev)
 make run-dev                 # dev environment (paper mode, mock API)
-make run-int                 # int environment (paper mode, real API)
-make run-prod-paper          # prod environment (paper mode, real API)
-make run-prod-live           # prod environment (live trading — requires confirmation)
+make run-int                 # int environment (paper mode, real API — staging ground)
+make run-prod                # prod environment (live trading — requires confirmation)
 make run-paper               # alias for run-dev
-make run-live                # alias for run-prod-live
+make run-live                # alias for run-prod
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 ENV=dev
@@ -59,14 +58,14 @@ make ops ENV=dev             # interactively set API key for dev environment
 make opshow ENV=dev          # show stored values for dev (masked)
 make opstatus                # check 1Password CLI status
 make opconfig-show ENV=dev   # show trading configuration for dev
-make opconfig-set KEY=TRADING_MODE VALUE=paper ENV=dev
+make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 ```
 
 ## Architecture
 
 **Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
 
-**Environments** (`src/config.py`): Three stages — `dev`, `int`, `prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE=live` is only allowed in `ENVIRONMENT=prod`. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
+**Environments** (`src/config.py`): Three stages — `dev` (mock API, paper), `int` (real API, paper — staging ground), `prod` (real API, live only). The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
 **Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`.
 
@@ -77,7 +76,7 @@ make opconfig-set KEY=TRADING_MODE VALUE=paper ENV=dev
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
 
-**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). All trading config (mode, strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. Config fails fast with actionable error messages if 1Password fields are missing.
+**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). Config fails fast with actionable error messages if 1Password fields are missing.
 
 **Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv ENV=prod` for on-demand exports.
 
@@ -159,7 +158,12 @@ All monetary columns in the ORM use `Numeric(20, 10)` — never `Float`. Never c
 
 ### Configuration — No Code Defaults
 
-Trading config must come from 1Password exclusively. `ENVIRONMENT` is the one exception — it comes from `os.environ` (set by the Makefile or `--env` CLI arg) because it must be known before 1Password items can be resolved. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
+Trading config must come from 1Password exclusively. Two exceptions:
+
+- `ENVIRONMENT` — comes from `os.environ` (set by the Makefile or `--env` CLI arg) because it must be known before 1Password items can be resolved.
+- `TRADING_MODE` — derived from environment (dev/int → paper, prod → live). Not stored in 1Password.
+
+`INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches the real balance from the API. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
 
 ### Database Encryption — Always On
 

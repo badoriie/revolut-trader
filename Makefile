@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-dev run-int run-prod-paper run-prod-live run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck check run-dev run-int run-prod run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
 # Environment — dev (default), int, prod
@@ -43,36 +43,30 @@ help:
 	@echo "Trading & Analysis:"
 	@echo "  make run-dev           - Run in dev environment (paper mode, mock API)"
 	@echo "  make run-int           - Run in int environment (paper mode, real API)"
-	@echo "  make run-prod-paper    - Run in prod environment (paper mode, real API)"
-	@echo "  make run-prod-live     - Run in prod environment (LIVE - REAL MONEY)"
+	@echo "  make run-prod          - Run in prod environment (LIVE - REAL MONEY)"
 	@echo "  make run-paper         - Alias for run-dev"
-	@echo "  make run-live          - Alias for run-prod-live"
+	@echo "  make run-live          - Alias for run-prod"
 	@echo "  make backtest          - Backtest one strategy (STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=...)"
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
-	@echo "API Testing (uses ENV for credentials):"
-	@echo "  make api-ready                    - Check API permissions (view + trade)"
-	@echo "  make api-test                     - Test authenticated connection"
-	@echo "  make api-balance                  - Account balances"
-	@echo "  make api-ticker SYMBOL=BTC-EUR    - Single ticker (via order book)"
-	@echo "  make api-tickers SYMBOLS=BTC-EUR  - Multiple tickers"
-	@echo "  make api-all-tickers              - All pairs (GET /tickers)"
-	@echo "  make api-currencies               - All currencies (GET /configuration/currencies)"
-	@echo "  make api-currency-pairs           - All pairs config (GET /configuration/pairs)"
-	@echo "  make api-last-public-trades       - Last 100 public trades (unauthenticated)"
-	@echo "  make api-order-book SYMBOL=BTC-EUR            - Raw order book snapshot (authenticated)"
-	@echo "  make api-order-book SYMBOL=BTC-EUR DEPTH=5   - With custom depth (1-20)"
-	@echo "  make api-candles SYMBOL=BTC-EUR                - Candles (60min, last 10)"
-	@echo "  make api-candles SYMBOL=BTC-EUR INTERVAL=15 LIMIT=20"
-	@echo "  make api-open-orders                          - All active orders"
-	@echo "  make api-open-orders SYMBOL=BTC-EUR           - Active orders for one pair"
-	@echo "  make api-historical-orders                    - Completed/cancelled orders"
-	@echo "  make api-historical-orders SYMBOL=BTC-EUR LIMIT=50"
-	@echo "  make api-trades SYMBOL=BTC-EUR                - Private trade history"
-	@echo "  make api-trades SYMBOL=BTC-EUR LIMIT=50"
-	@echo "  make api-public-trades SYMBOL=BTC-EUR         - Public trade history"
-	@echo "  make api-order ORDER_ID=<uuid>                - Single order details"
+	@echo "API Testing (requires ENV=int or ENV=prod — not available in dev):"
+	@echo "  make api-test ENV=int                     - Test authenticated connection"
+	@echo "  make api-ready ENV=int                    - Check API permissions (view + trade)"
+	@echo "  make api-balance ENV=int                  - Account balances"
+	@echo "  make api-ticker SYMBOL=BTC-EUR ENV=int    - Single ticker (via order book)"
+	@echo "  make api-tickers SYMBOLS=BTC-EUR ENV=int  - Multiple tickers"
+	@echo "  make api-all-tickers ENV=int              - All pairs (GET /tickers)"
+	@echo "  make api-currencies ENV=int               - All currencies"
+	@echo "  make api-currency-pairs ENV=int           - All pairs config"
+	@echo "  make api-last-public-trades ENV=int       - Last 100 public trades"
+	@echo "  make api-order-book SYMBOL=BTC-EUR ENV=int   - Order book snapshot"
+	@echo "  make api-candles SYMBOL=BTC-EUR ENV=int      - Candles (60min, last 10)"
+	@echo "  make api-open-orders ENV=int              - All active orders"
+	@echo "  make api-historical-orders ENV=int        - Completed/cancelled orders"
+	@echo "  make api-trades SYMBOL=BTC-EUR ENV=int    - Private trade history"
+	@echo "  make api-public-trades SYMBOL=BTC-EUR ENV=int - Public trade history"
+	@echo "  make api-order ORDER_ID=<uuid> ENV=int    - Single order details"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -94,8 +88,8 @@ help:
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
-	@echo "  2. make ops ENV=dev"
-	@echo "  3. make run-dev"
+	@echo "  2. make run-dev          (mock API — no API key needed)"
+	@echo "  3. make ops ENV=int      (for real API testing)"
 
 # ============================================================================
 # Setup & Installation
@@ -143,17 +137,28 @@ setup:
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
 		else \
-			op item create \
-				--category "Secure Note" \
-				--vault $(OP_VAULT) \
-				--title $$CONFIG \
-				"TRADING_MODE[text]=paper" \
-				"RISK_LEVEL[text]=conservative" \
-				"BASE_CURRENCY[text]=EUR" \
-				"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
-				"DEFAULT_STRATEGY[text]=market_making" \
-				"INITIAL_CAPITAL[text]=10000" \
-				>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
+			if [ "$$env" = "prod" ]; then \
+				op item create \
+					--category "Secure Note" \
+					--vault $(OP_VAULT) \
+					--title $$CONFIG \
+					"RISK_LEVEL[text]=conservative" \
+					"BASE_CURRENCY[text]=EUR" \
+					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+					"DEFAULT_STRATEGY[text]=market_making" \
+					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
+			else \
+				op item create \
+					--category "Secure Note" \
+					--vault $(OP_VAULT) \
+					--title $$CONFIG \
+					"RISK_LEVEL[text]=conservative" \
+					"BASE_CURRENCY[text]=EUR" \
+					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+					"DEFAULT_STRATEGY[text]=market_making" \
+					"INITIAL_CAPITAL[text]=10000" \
+					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
+			fi; \
 		fi; \
 		if [ "$$env" = "dev" ]; then \
 			echo "  $$env: mock API — skipping Ed25519 key generation"; \
@@ -240,32 +245,37 @@ ops:
 	@if [ "$(ENV)" = "dev" ]; then \
 		echo "Dev environment uses mock API — no API credentials needed."; \
 		echo "Run 'make run-dev' to start with the mock API."; \
-		exit 0; \
+	else \
+		echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"; \
+		echo ""; \
+		printf "Revolut API Key: "; read api_key; \
+		if [ -n "$$api_key" ]; then \
+			op item edit $(OP_CREDS) --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=$$api_key" >/dev/null \
+				&& echo "  REVOLUT_API_KEY stored" || echo "  Failed to store REVOLUT_API_KEY"; \
+		fi; \
+		echo ""; \
+		echo "Done. Run 'make opshow' to verify."; \
 	fi
-	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
-	@echo ""
-	@read -p "Revolut API Key: " api_key; \
-	if [ -n "$$api_key" ]; then \
-		op item edit $(OP_CREDS) --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=$$api_key" >/dev/null \
-			&& echo "  REVOLUT_API_KEY stored" || echo "  Failed to store REVOLUT_API_KEY"; \
-	fi
-	@echo ""
-	@echo "Done. Run 'make opshow' to verify."
 
 opshow:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@echo "=== Credentials ($(OP_CREDS)) ==="
-	@for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
-		value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
-		len=$${#value}; \
-		if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
-		elif [ $$len -gt 8 ]; then masked="$${value:0:8}..."; \
-		else masked="$${value:0:4}..."; fi; \
-		printf "  %-25s = %s\n" "$$field" "$$masked"; \
-	done
+	@if [ "$(ENV)" = "dev" ]; then \
+		echo "  (dev uses mock API — no API credentials needed)"; \
+	else \
+		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
+			value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
+			len=$${#value}; \
+			if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
+			elif [ $$len -gt 8 ]; then masked="$${value:0:8}..."; \
+			else masked="$${value:0:4}..."; fi; \
+			printf "  %-25s = %s\n" "$$field" "$$masked"; \
+		done; \
+	fi
 	@echo ""
 	@echo "=== Configuration ($(OP_CONFIG)) ==="
-	@for field in TRADING_MODE RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+	@echo "  TRADING_MODE              = (derived: dev/int → paper, prod → live)"
+	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
 		printf "  %-25s = %s\n" "$$field" "$$value"; \
 	done
@@ -303,24 +313,37 @@ opconfig-init:
 		[ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || (echo "Cancelled" && exit 1); \
 		op item delete $(OP_CONFIG) --vault $(OP_VAULT) >/dev/null; \
 	fi
-	@op item create \
-		--category "Secure Note" \
-		--vault $(OP_VAULT) \
-		--title $(OP_CONFIG) \
-		"TRADING_MODE[text]=paper" \
-		"RISK_LEVEL[text]=conservative" \
-		"BASE_CURRENCY[text]=EUR" \
-		"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
-		"DEFAULT_STRATEGY[text]=market_making" \
-		"INITIAL_CAPITAL[text]=10000" \
-		>/dev/null
-	@echo "Config item created with safe defaults:"
-	@echo "  TRADING_MODE=paper  RISK_LEVEL=conservative  INITIAL_CAPITAL=10000"
+	@if [ "$(ENV)" = "prod" ]; then \
+		op item create \
+			--category "Secure Note" \
+			--vault $(OP_VAULT) \
+			--title $(OP_CONFIG) \
+			"RISK_LEVEL[text]=conservative" \
+			"BASE_CURRENCY[text]=EUR" \
+			"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+			"DEFAULT_STRATEGY[text]=market_making" \
+			>/dev/null; \
+		echo "Config item created (prod — no INITIAL_CAPITAL needed, real balance from API)"; \
+	else \
+		op item create \
+			--category "Secure Note" \
+			--vault $(OP_VAULT) \
+			--title $(OP_CONFIG) \
+			"RISK_LEVEL[text]=conservative" \
+			"BASE_CURRENCY[text]=EUR" \
+			"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
+			"DEFAULT_STRATEGY[text]=market_making" \
+			"INITIAL_CAPITAL[text]=10000" \
+			>/dev/null; \
+		echo "Config item created with safe defaults:"; \
+		echo "  RISK_LEVEL=conservative  INITIAL_CAPITAL=10000"; \
+	fi
+	@echo "  Trading mode: derived from environment (dev/int → paper, prod → live)"
 	@echo "  Use 'make opconfig-set KEY=... VALUE=...' to change values"
 
 opconfig-set:
 	@if [ -z "$(KEY)" ] || [ -z "$(VALUE)" ]; then \
-		echo "Usage: make opconfig-set KEY=TRADING_MODE VALUE=live"; \
+		echo "Usage: make opconfig-set KEY=RISK_LEVEL VALUE=moderate"; \
 		exit 1; \
 	fi
 	@op item edit $(OP_CONFIG) --vault $(OP_VAULT) "$(KEY)[text]=$(VALUE)" >/dev/null \
@@ -329,7 +352,8 @@ opconfig-set:
 
 opconfig-show:
 	@echo "Configuration ($(OP_VAULT)/$(OP_CONFIG)):"
-	@for key in TRADING_MODE RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+	@echo "  TRADING_MODE:            (derived: dev/int → paper, prod → live)"
+	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$key 2>/dev/null || echo "(not set)"); \
 		printf "  %-22s %s\n" "$$key:" "$$value"; \
 	done
@@ -348,27 +372,23 @@ opconfig-delete:
 # ============================================================================
 
 run-dev:
-	@echo "Starting bot in DEV environment (paper mode)"
-	@ENVIRONMENT=dev uv run python cli/run.py --env dev --mode paper --strategy market_making --risk conservative
+	@echo "Starting bot in DEV environment (paper mode, mock API)"
+	@ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy market_making --risk conservative
 
 run-int:
 	@echo "Starting bot in INT environment (paper mode, real API)"
-	@ENVIRONMENT=int uv run python cli/run.py --env int --mode paper --strategy market_making --risk conservative
+	@ENVIRONMENT=int uv run python cli/run.py --env int --strategy market_making --risk conservative
 
-run-prod-paper:
-	@echo "Starting bot in PROD environment (paper mode, real API)"
-	@ENVIRONMENT=prod uv run python cli/run.py --env prod --mode paper --strategy market_making --risk conservative
-
-run-prod-live:
+run-prod:
 	@echo ""
 	@echo "LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK"
 	@echo ""
 	@read -p "Type 'I UNDERSTAND' to continue: " confirm && [ "$$confirm" = "I UNDERSTAND" ] || (echo "Cancelled" && exit 1)
-	@ENVIRONMENT=prod uv run python cli/run.py --env prod --mode live --strategy market_making --risk conservative
+	@ENVIRONMENT=prod uv run python cli/run.py --env prod --strategy market_making --risk conservative
 
 # Backward-compatible aliases
 run-paper: run-dev
-run-live: run-prod-live
+run-live: run-prod
 
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \
@@ -412,71 +432,98 @@ backtest-matrix:
 		--risk-levels conservative,moderate,aggressive
 
 # ============================================================================
-# API Testing
+# API Testing (requires real API — not available in dev)
 # ============================================================================
 
+# Guard: block api-* targets in dev environment (mock API has no real endpoints)
+define require_real_api
+	@if [ "$(ENV)" = "dev" ]; then \
+		echo "Error: API commands require a real API (ENV=int or ENV=prod)."; \
+		echo "Dev environment uses mock API — no real endpoints available."; \
+		echo ""; \
+		echo "Usage: make $(1) ENV=int"; \
+		exit 1; \
+	fi
+endef
+
 api-ready:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py trade-ready
 
 api-test:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py test
 
 api-balance:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py balance
 
 api-ticker:
+	$(call require_real_api,$@)
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
 
 api-tickers:
+	$(call require_real_api,$@)
 	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
 
 api-candles:
+	$(call require_real_api,$@)
 	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	LIMIT=$${LIMIT:-10}; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
 
 api-all-tickers:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py all-tickers
 
 api-currencies:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currencies
 
 api-currency-pairs:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py currency-pairs
 
 api-last-public-trades:
+	$(call require_real_api,$@)
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py last-public-trades
 
 api-order-book:
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
+	$(call require_real_api,$@)
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20] ENV=int"; exit 1; fi
 	@DEPTH=$${DEPTH:-20}; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
 
 api-open-orders:
+	$(call require_real_api,$@)
 	@ARGS=""; \
 	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py open-orders $$ARGS
 
 api-historical-orders:
+	$(call require_real_api,$@)
 	@LIMIT=$${LIMIT:-20}; \
 	ARGS="--limit $$LIMIT"; \
 	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py historical-orders $$ARGS
 
 api-trades:
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
+	$(call require_real_api,$@)
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR ENV=int"; exit 1; fi
 	@LIMIT=$${LIMIT:-20}; \
 	ENVIRONMENT=$(ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
 
 api-public-trades:
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
+	$(call require_real_api,$@)
+	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR ENV=int"; exit 1; fi
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
 
 api-order:
-	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
+	$(call require_real_api,$@)
+	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid> ENV=int"; exit 1; fi
 	@ENVIRONMENT=$(ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
 
 # ============================================================================

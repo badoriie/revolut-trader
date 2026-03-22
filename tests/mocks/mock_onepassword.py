@@ -3,6 +3,10 @@
 Provides a flat dictionary of all test values (credentials + config merged)
 matching the structure of the real _VaultCache singleton.  Supports
 per-environment mock vaults (dev, int, prod).
+
+TRADING_MODE is not stored in 1Password — it is derived from the environment
+(dev/int → paper, prod → live).  INITIAL_CAPITAL is only needed for paper
+mode environments (dev/int).
 """
 
 _MOCK_PRIVATE_KEY = (
@@ -21,18 +25,23 @@ def create_mock_vault(environment: str = "dev") -> dict[str, str]:
     Returns:
         Dict with all required credentials and configuration for tests
     """
-    return {
+    base = {
         # Credentials (revolut-trader-credentials-{env} item)
         "REVOLUT_API_KEY": f"test-api-key-{environment}-64chars-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "REVOLUT_PRIVATE_KEY": _MOCK_PRIVATE_KEY,
         # Config (revolut-trader-config-{env} item)
-        "TRADING_MODE": "paper",
         "RISK_LEVEL": "conservative",
         "BASE_CURRENCY": "EUR",
         "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
         "DEFAULT_STRATEGY": "market_making",
-        "INITIAL_CAPITAL": "10000",
     }
+
+    # INITIAL_CAPITAL — only for paper mode environments (dev/int).
+    # Prod (live mode) fetches real balance from the Revolut API.
+    if environment != "prod":
+        base["INITIAL_CAPITAL"] = "10000"
+
+    return base
 
 
 def create_mock_vault_dev() -> dict[str, str]:
@@ -48,17 +57,18 @@ def create_mock_vault_int() -> dict[str, str]:
 def create_mock_vault_prod() -> dict[str, str]:
     """Return a mock vault for the prod environment.
 
-    Prod is the only environment where TRADING_MODE=live is allowed.
+    Prod is the only environment where TRADING_MODE=live is used.
+    INITIAL_CAPITAL is not needed (real balance from API).
     """
-    vault = create_mock_vault("prod")
-    vault["TRADING_MODE"] = "paper"  # still default to paper for safety
-    return vault
+    return create_mock_vault("prod")
 
 
 def create_valid_config() -> dict[str, str]:
-    """Return the configuration subset of the mock vault (for backwards compatibility)."""
+    """Return the configuration subset of the mock vault (for backwards compatibility).
+
+    Returns paper-mode config (dev/int).
+    """
     return {
-        "TRADING_MODE": "paper",
         "RISK_LEVEL": "conservative",
         "BASE_CURRENCY": "EUR",
         "TRADING_PAIRS": "BTC-EUR,ETH-EUR",

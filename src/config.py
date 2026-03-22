@@ -49,10 +49,10 @@ class Settings(BaseSettings):
     # Environment — resolved from os.environ before any 1Password access.
     environment: Environment = Environment.DEV
 
-    # Trading configuration — loaded from 1Password in model_post_init.
-    # These temporary defaults are required by Pydantic for model construction;
-    # model_post_init overwrites every one of them from 1Password and raises
-    # RuntimeError if any are missing.
+    # Trading configuration — loaded from 1Password in model_post_init (except
+    # trading_mode which is derived from environment).  These temporary defaults
+    # are required by Pydantic for model construction; model_post_init overwrites
+    # every one of them and raises RuntimeError if any are missing.
     trading_mode: TradingMode = TradingMode.PAPER
     default_strategy: StrategyType = StrategyType.MARKET_MAKING
     risk_level: RiskLevel = RiskLevel.CONSERVATIVE
@@ -86,7 +86,7 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "ENVIRONMENT not set. Export it before running:\n"
                 "  export ENVIRONMENT=dev   # or: int, prod\n"
-                "Or use: make run-dev / make run-int / make run-prod-paper"
+                "Or use: make run-dev / make run-int / make run-prod"
             )
         try:
             self.environment = Environment(env_str.lower())
@@ -95,19 +95,12 @@ class Settings(BaseSettings):
                 f"Invalid ENVIRONMENT '{env_str}': must be 'dev', 'int', or 'prod'."
             ) from e
 
-        # TRADING_MODE
-        try:
-            self.trading_mode = TradingMode(op.get("TRADING_MODE").lower())
-        except ValueError as e:
-            raise ValueError("Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'.") from e
-
-        # Safety: TRADING_MODE=live is only allowed in ENVIRONMENT=prod
-        if self.trading_mode == TradingMode.LIVE and self.environment != Environment.PROD:
-            raise ValueError(
-                f"TRADING_MODE=live is only allowed in ENVIRONMENT=prod "
-                f"(current: {self.environment.value}). "
-                f"Use TRADING_MODE=paper for non-production environments."
-            )
+        # TRADING_MODE — derived from environment (not stored in 1Password).
+        # dev/int → paper, prod → live.  This is intentionally non-configurable:
+        # int is the staging ground for paper trading; prod is live-only.
+        self.trading_mode = (
+            TradingMode.LIVE if self.environment == Environment.PROD else TradingMode.PAPER
+        )
 
         # RISK_LEVEL
         try:
@@ -134,13 +127,15 @@ class Settings(BaseSettings):
         pairs_str = op.get("TRADING_PAIRS")
         self.trading_pairs = [p.strip().strip("\"'") for p in pairs_str.split(",")]
 
-        # INITIAL_CAPITAL
-        try:
-            self.paper_initial_capital = float(op.get("INITIAL_CAPITAL"))
-        except ValueError as e:
-            raise ValueError(
-                "Invalid INITIAL_CAPITAL in 1Password: must be a positive number."
-            ) from e
+        # INITIAL_CAPITAL — only required for paper mode (dev/int).
+        # In prod (live mode) the real balance is fetched from the Revolut API.
+        if self.trading_mode == TradingMode.PAPER:
+            try:
+                self.paper_initial_capital = float(op.get("INITIAL_CAPITAL"))
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid INITIAL_CAPITAL in 1Password: must be a positive number."
+                ) from e
 
     # Logging
     log_level: str = Field(default="INFO")

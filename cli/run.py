@@ -25,12 +25,11 @@ async def run_bot(args):
     """Run the trading bot with specified configuration."""
     # Deferred imports so ENVIRONMENT is set before Settings() singleton runs.
     from src.bot import TradingBot
-    from src.config import RiskLevel, StrategyType, TradingMode
+    from src.config import RiskLevel, StrategyType, settings
 
     # Parse arguments
     strategy_type = StrategyType(args.strategy)
     risk_level = RiskLevel(args.risk)
-    trading_mode = TradingMode(args.mode)
     trading_pairs = args.pairs.split(",") if args.pairs else None
 
     env = os.environ.get("ENVIRONMENT", "?")
@@ -40,7 +39,7 @@ async def run_bot(args):
     logger.info(f"Environment: {env}")
     logger.info(f"Strategy: {strategy_type.value}")
     logger.info(f"Risk Level: {risk_level.value}")
-    logger.info(f"Trading Mode: {trading_mode.value}")
+    logger.info(f"Trading Mode: {settings.trading_mode.value} (derived from environment)")
     logger.info(f"Interval: {args.interval}s")
     logger.info("=" * 60)
 
@@ -48,7 +47,6 @@ async def run_bot(args):
     bot = TradingBot(
         strategy_type=strategy_type,
         risk_level=risk_level,
-        trading_mode=trading_mode,
         trading_pairs=trading_pairs,
     )
 
@@ -70,20 +68,24 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run in dev environment (mock API, paper only)
-  python run.py --env dev --strategy market_making --mode paper
+  # Run in dev environment (mock API, paper mode)
+  python run.py --env dev --strategy market_making
 
-  # Run in int environment (real API, paper only)
-  python run.py --env int --strategy momentum --mode paper
+  # Run in int environment (real API, paper mode — staging ground)
+  python run.py --env int --strategy momentum
 
-  # Run in prod environment with live trading
-  python run.py --env prod --strategy momentum --risk moderate --mode live
+  # Run in prod environment (live trading — real money)
+  python run.py --env prod --strategy momentum --risk moderate
 
   # Run multi-strategy with custom pairs
   python run.py --env dev --strategy multi_strategy --pairs BTC-EUR,ETH-EUR,SOL-EUR
 
   # Run with faster update interval (30 seconds)
   python run.py --env dev --strategy momentum --interval 30
+
+Trading mode is derived from environment:
+  dev/int → paper (simulated)
+  prod    → live  (real money)
         """,
     )
 
@@ -112,15 +114,6 @@ Examples:
         choices=["conservative", "moderate", "aggressive"],
         default="conservative",
         help="Risk management level (default: conservative)",
-    )
-
-    parser.add_argument(
-        "--mode",
-        "-m",
-        type=str,
-        choices=["paper", "live"],
-        default="paper",
-        help="Trading mode: paper (simulated) or live (real money) (default: paper)",
     )
 
     parser.add_argument(
@@ -163,11 +156,8 @@ Examples:
     env = os.environ["ENVIRONMENT"]
     logger.info(f"Environment: {env}")
 
-    # Warn if using live mode
-    if args.mode == "live":
-        if env != "prod":
-            logger.error(f"TRADING_MODE=live is only allowed in ENVIRONMENT=prod (current: {env})")
-            sys.exit(1)
+    # Safety confirmation for prod (live trading)
+    if env == "prod":
         logger.warning("⚠️  LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK ⚠️")
         response = input("Are you sure you want to trade with real money? (yes/no): ")
         if response.lower() != "yes":
