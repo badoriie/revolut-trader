@@ -17,12 +17,25 @@
 - **Dev setup no longer requires API credentials** — `make setup` skips API key placeholder and Ed25519 key generation for dev environment. Only `DATABASE_ENCRYPTION_KEY` (auto-generated) is needed in the dev credentials item.
 - **`make ops ENV=dev`** now exits early with a message that dev uses mock API
 
+### Changed - Trading mode derived from environment
+
+- **`TRADING_MODE` is no longer stored in 1Password** — derived from environment: dev/int → paper, prod → live
+- **`INITIAL_CAPITAL` only required for dev/int** (paper mode) — prod fetches real balance from the Revolut API
+- **Removed `--mode` CLI argument** from `cli/run.py` — trading mode is determined by environment
+- **Removed `TRADING_MODE` from `make setup`** and `make opconfig-init` config items
+- **Prod config item has 4 fields** (not 6) — `RISK_LEVEL`, `BASE_CURRENCY`, `TRADING_PAIRS`, `DEFAULT_STRATEGY`
+- **Dev/int config item has 5 fields** — same as prod plus `INITIAL_CAPITAL`
+- **`make opshow`** and **`make opconfig-show`** now show derived trading mode
+- **Removed `make run-prod-paper`** — replaced by `make run-prod` (live only, with safety confirmation)
+- **`make run-prod-live` renamed to `make run-prod`** — `make run-live` alias updated accordingly
+- **Int environment is the staging ground** — use `make run-int` for paper trading with the real API before going live in prod
+
 ### Added - Environment Stages (dev / int / prod)
 
 - **Three deployment environments** with full isolation of credentials, config, and data
   - `dev` — local development with mock API (no real HTTP calls), paper mode only
-  - `int` — integration testing with real Revolut X API, paper mode only
-  - `prod` — production with real API, paper or live trading
+  - `int` — integration/staging with real Revolut X API, paper mode only
+  - `prod` — production with real API, live trading only
 - **Separate API keys per environment** stored in 1Password
   - `revolut-trader-credentials-dev`, `revolut-trader-credentials-int`, `revolut-trader-credentials-prod`
   - `revolut-trader-config-dev`, `revolut-trader-config-int`, `revolut-trader-config-prod`
@@ -30,7 +43,7 @@
 - **Safety enforcement**: `TRADING_MODE=live` is rejected unless `ENVIRONMENT=prod`
 - **New `Environment` enum** in `src/config.py` (dev, int, prod)
 - **New CLI argument**: `--env dev|int|prod` in `cli/run.py`
-- **New Makefile targets**: `run-dev`, `run-int`, `run-prod-paper`, `run-prod-live`
+- **New Makefile targets**: `run-dev`, `run-int`, `run-prod`
   - `run-paper` and `run-live` kept as backward-compatible aliases
   - All targets (`ops`, `opshow`, `opconfig-*`, `db-*`, `api-*`, `backtest`) accept `ENV=dev|int|prod`
 - **Environment-aware 1Password**: `get_credentials_item(env)` / `get_config_item(env)` functions

@@ -81,21 +81,24 @@ The bot uses two 1Password items per environment in the `revolut-trader` vault.
 
 > **Dev uses mock API** — no Revolut API key or Ed25519 keys are required. Only the database encryption key (auto-generated) is stored in the dev credentials item.
 
-### Trading Configuration (`revolut-trader-config`)
+### Trading Configuration (`revolut-trader-config-{env}`)
 
-| Field              | Type | Default           | Valid Values                                                                                   |
-| ------------------ | ---- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| `TRADING_MODE`     | text | `paper`           | `paper`, `live`                                                                                |
-| `DEFAULT_STRATEGY` | text | `market_making`   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion` |
-| `RISK_LEVEL`       | text | `conservative`    | `conservative`, `moderate`, `aggressive`                                                       |
-| `BASE_CURRENCY`    | text | `EUR`             | `EUR`, `USD`, `GBP`                                                                            |
-| `TRADING_PAIRS`    | text | `BTC-EUR,ETH-EUR` | Comma-separated symbols                                                                        |
-| `INITIAL_CAPITAL`  | text | `10000`           | Any positive number                                                                            |
+| Field              | Type | Default           | dev / int | prod       | Valid Values                                                                                   |
+| ------------------ | ---- | ----------------- | --------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| `DEFAULT_STRATEGY` | text | `market_making`   | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion` |
+| `RISK_LEVEL`       | text | `conservative`    | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                       |
+| `BASE_CURRENCY`    | text | `EUR`             | Required  | Required   | `EUR`, `USD`, `GBP`                                                                            |
+| `TRADING_PAIRS`    | text | `BTC-EUR,ETH-EUR` | Required  | Required   | Comma-separated symbols                                                                        |
+| `INITIAL_CAPITAL`  | text | `10000`           | Required  | Not needed | Any positive number                                                                            |
 
-All six config fields are **required**. If any field is missing, the bot refuses to start with an actionable error:
+> **TRADING_MODE is not stored in 1Password.** It is derived from the environment: dev/int → paper, prod → live. This is intentionally non-configurable.
+>
+> **INITIAL_CAPITAL** is only needed for paper mode (dev/int). In prod the real balance is fetched from the Revolut API.
+
+If any required field is missing, the bot refuses to start with an actionable error:
 
 ```
-RuntimeError: TRADING_MODE not found in 1Password config.
+RuntimeError: RISK_LEVEL not found in 1Password config.
 Run: make opconfig-init
 ```
 
@@ -118,19 +121,18 @@ ______________________________________________________________________
 
 ```bash
 # Set a single config value
-op item edit revolut-trader-config \
+op item edit revolut-trader-config-int \
   --vault revolut-trader \
-  TRADING_MODE[text]="live"
+  RISK_LEVEL[text]="moderate"
 
 # Set multiple values at once
-op item edit revolut-trader-config \
+op item edit revolut-trader-config-int \
   --vault revolut-trader \
-  TRADING_MODE[text]="live" \
   RISK_LEVEL[text]="moderate" \
   TRADING_PAIRS[text]="BTC-EUR,ETH-EUR,SOL-EUR"
 
 # Rotate API key
-op item edit revolut-trader-credentials \
+op item edit revolut-trader-credentials-int \
   --vault revolut-trader \
   REVOLUT_API_KEY[concealed]="new-api-key"
 ```

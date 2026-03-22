@@ -236,15 +236,17 @@ ______________________________________________________________________
 
 All trading config MUST be in 1Password. No code defaults.
 
+**Exception:** `TRADING_MODE` is derived from the environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int).
+
 ```python
 # WRONG - has code default
-trading_mode: TradingMode = TradingMode.PAPER  # Risky!
+risk_level: RiskLevel = RiskLevel.CONSERVATIVE  # Risky!
 
 # RIGHT - fails if not in 1Password
-trading_mode_str = get_config("TRADING_MODE", None)
-if not trading_mode_str:
+risk_level_str = get_config("RISK_LEVEL", None)
+if not risk_level_str:
     raise RuntimeError(
-        "TRADING_MODE not found in 1Password config.\n" "Run: make opconfig-init"
+        "RISK_LEVEL not found in 1Password config.\n" "Run: make opconfig-init"
     )
 ```
 
@@ -293,16 +295,17 @@ ______________________________________________________________________
 
 The project uses three deployment environments with full isolation:
 
-| Environment | API                  | Trading Mode  | DB File        | 1Password Items                        |
-| ----------- | -------------------- | ------------- | -------------- | -------------------------------------- |
-| `dev`       | Mock (no real calls) | Paper only    | `data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
-| `int`       | Real Revolut X API   | Paper only    | `data/int.db`  | `*-credentials-int` / `*-config-int`   |
-| `prod`      | Real Revolut X API   | Paper or Live | `data/prod.db` | `*-credentials-prod` / `*-config-prod` |
+| Environment | API                  | Trading Mode | DB File        | 1Password Items                        |
+| ----------- | -------------------- | ------------ | -------------- | -------------------------------------- |
+| `dev`       | Mock (no real calls) | Paper only   | `data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
+| `int`       | Real Revolut X API   | Paper only   | `data/int.db`  | `*-credentials-int` / `*-config-int`   |
+| `prod`      | Real Revolut X API   | Live only    | `data/prod.db` | `*-credentials-prod` / `*-config-prod` |
 
 ### Key rules
 
 - **`ENVIRONMENT` must be set** before any Python process that imports `src.config`. The Makefile sets it automatically; for manual runs use `--env` or `export ENVIRONMENT=dev`.
-- **`TRADING_MODE=live` is only allowed in `ENVIRONMENT=prod`** — enforced in `Settings.model_post_init`.
+- **`TRADING_MODE` is derived from the environment** — dev/int → paper, prod → live. Not stored in 1Password.
+- **`INITIAL_CAPITAL` is only for paper mode** (dev/int). Prod fetches real balance from the API.
 - **Separate API keys per environment** — if a dev key leaks, prod is unaffected.
 - **Tests always run with `ENVIRONMENT=dev`** — set in `conftest.py` before the `Settings` singleton is created.
 
@@ -310,9 +313,8 @@ The project uses three deployment environments with full isolation:
 
 ```bash
 make run-dev          # mock API, paper mode
-make run-int          # real API, paper mode
-make run-prod-paper   # real API, paper mode
-make run-prod-live    # real API, live trading (requires confirmation)
+make run-int          # real API, paper mode (staging ground)
+make run-prod         # real API, live trading (requires confirmation)
 ```
 
 ### Promotion flow
@@ -322,7 +324,7 @@ feature branch → PR → main (dev)
                          ↓
                    run-int (paper trade with real API for N hours)
                          ↓
-                   tag release → run-prod-paper → run-prod-live
+                   tag release → run-prod (live)
 ```
 
 ______________________________________________________________________
@@ -334,8 +336,7 @@ ______________________________________________________________________
 1. Start in `dev` environment — validate with mock API
 1. Promote to `int` environment — paper trade with real market data
 1. Verify all safety limits work in `int` for at least 24 hours
-1. Only then move to `prod` with `make run-prod-paper` first
-1. After thorough validation, use `make run-prod-live`
+1. After thorough validation in int, go live with `make run-prod`
 
 ______________________________________________________________________
 

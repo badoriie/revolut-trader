@@ -27,7 +27,6 @@ def bot(monkeypatch, mock_persistence):
     return TradingBot(
         strategy_type=StrategyType.MOMENTUM,
         risk_level=RiskLevel.MODERATE,
-        trading_mode=TradingMode.PAPER,
         trading_pairs=["BTC-EUR", "ETH-EUR"],
     )
 

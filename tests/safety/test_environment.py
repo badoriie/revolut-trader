@@ -2,9 +2,9 @@
 
 These tests verify that:
 1. ENVIRONMENT must be set before the bot starts
-2. TRADING_MODE=live is ONLY allowed when ENVIRONMENT=prod
-3. Paper mode is allowed in all environments
-4. Invalid environment values are rejected
+2. TRADING_MODE is derived from environment (dev/int → paper, prod → live)
+3. Invalid environment values are rejected
+4. INITIAL_CAPITAL is only required for paper mode (dev/int), not prod
 
 Critical because: Running live trading outside production could use wrong
 API keys, wrong database, and bypass safety controls.
@@ -34,13 +34,21 @@ def mock_get(config_dict):
     return get_impl
 
 
-VALID_CONFIG = {
-    "TRADING_MODE": "paper",
+# Valid config for paper mode environments (dev/int) — no TRADING_MODE field.
+VALID_PAPER_CONFIG = {
     "RISK_LEVEL": "conservative",
     "BASE_CURRENCY": "EUR",
     "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
     "DEFAULT_STRATEGY": "market_making",
     "INITIAL_CAPITAL": "10000",
+}
+
+# Valid config for prod — no TRADING_MODE, no INITIAL_CAPITAL.
+VALID_PROD_CONFIG = {
+    "RISK_LEVEL": "conservative",
+    "BASE_CURRENCY": "EUR",
+    "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
+    "DEFAULT_STRATEGY": "market_making",
 }
 
 
@@ -58,66 +66,98 @@ class TestEnvironmentRequired:
         env.pop("ENVIRONMENT", None)
 
         with patch.dict(os.environ, env, clear=True):
-            with patch(PATCH_TARGET, side_effect=mock_get(VALID_CONFIG)):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
                 with pytest.raises(RuntimeError, match="ENVIRONMENT"):
                     Settings()
 
     def test_invalid_environment_raises_error(self):
         """CRITICAL: Only dev, int, prod are valid environment values."""
         with patch.dict(os.environ, {"ENVIRONMENT": "staging"}):
-            with patch(PATCH_TARGET, side_effect=mock_get(VALID_CONFIG)):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
                 with pytest.raises(ValueError, match="(?i)invalid.*environment|staging"):
                     Settings()
 
 
-class TestLiveModeEnvironmentRestriction:
-    """Tests that TRADING_MODE=live is only allowed in ENVIRONMENT=prod."""
+class TestTradingModeDerivedFromEnvironment:
+    """Tests that TRADING_MODE is automatically derived from environment.
 
-    def test_live_mode_rejected_in_dev(self):
-        """CRITICAL: TRADING_MODE=live MUST be rejected in dev environment.
+    TRADING_MODE is not stored in 1Password.  It is determined by the
+    environment: dev/int → paper, prod → live.
+    """
+
+    def test_dev_environment_is_paper_mode(self):
+        """CRITICAL: Dev environment MUST use paper mode."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
+                settings = Settings()
+                assert settings.trading_mode == TradingMode.PAPER
+                assert settings.environment == Environment.DEV
+
+    def test_int_environment_is_paper_mode(self):
+        """CRITICAL: Int environment MUST use paper mode."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "int"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
+                settings = Settings()
+                assert settings.trading_mode == TradingMode.PAPER
+                assert settings.environment == Environment.INT
+
+    def test_prod_environment_is_live_mode(self):
+        """CRITICAL: Prod environment MUST use live mode.
 
         Context: Safety requirement ENV-02
-        Critical because: Dev uses mock/test API keys — live trading would fail
-        or use wrong credentials.
+        Critical because: Prod is for real money only. Use int for paper
+        trading with the real API.
         """
-        live_config = {**VALID_CONFIG, "TRADING_MODE": "live"}
-
-        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
-            with patch(PATCH_TARGET, side_effect=mock_get(live_config)):
-                with pytest.raises(ValueError, match="(?i)live.*only.*prod"):
-                    Settings()
-
-    def test_live_mode_rejected_in_int(self):
-        """CRITICAL: TRADING_MODE=live MUST be rejected in int environment.
-
-        Context: Safety requirement ENV-03
-        Critical because: Int uses integration API keys — not for real money.
-        """
-        live_config = {**VALID_CONFIG, "TRADING_MODE": "live"}
-
-        with patch.dict(os.environ, {"ENVIRONMENT": "int"}):
-            with patch(PATCH_TARGET, side_effect=mock_get(live_config)):
-                with pytest.raises(ValueError, match="(?i)live.*only.*prod"):
-                    Settings()
-
-    def test_live_mode_accepted_in_prod(self):
-        """TRADING_MODE=live MUST be accepted in prod environment."""
-        live_config = {**VALID_CONFIG, "TRADING_MODE": "live"}
-
         with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
-            with patch(PATCH_TARGET, side_effect=mock_get(live_config)):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PROD_CONFIG)):
                 settings = Settings()
                 assert settings.trading_mode == TradingMode.LIVE
                 assert settings.environment == Environment.PROD
 
-    def test_paper_mode_accepted_in_all_environments(self):
-        """TRADING_MODE=paper MUST be accepted in all environments."""
-        for env in ["dev", "int", "prod"]:
-            with patch.dict(os.environ, {"ENVIRONMENT": env}):
-                with patch(PATCH_TARGET, side_effect=mock_get(VALID_CONFIG)):
-                    settings = Settings()
-                    assert settings.trading_mode == TradingMode.PAPER
-                    assert settings.environment == Environment(env)
+    def test_trading_mode_not_read_from_1password(self):
+        """Trading mode should NOT be read from 1Password, even if present."""
+        config_with_trading_mode = {**VALID_PAPER_CONFIG, "TRADING_MODE": "live"}
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_with_trading_mode)):
+                settings = Settings()
+                # Should still be paper because dev → paper, regardless of 1Password
+                assert settings.trading_mode == TradingMode.PAPER
+
+
+class TestInitialCapitalByEnvironment:
+    """Tests that INITIAL_CAPITAL is only required for paper mode (dev/int)."""
+
+    def test_initial_capital_required_for_dev(self):
+        """CRITICAL: Dev environment requires INITIAL_CAPITAL for paper trading."""
+        config_without_capital = {
+            k: v for k, v in VALID_PAPER_CONFIG.items() if k != "INITIAL_CAPITAL"
+        }
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_without_capital)):
+                with pytest.raises(RuntimeError, match="INITIAL_CAPITAL"):
+                    Settings()
+
+    def test_initial_capital_required_for_int(self):
+        """CRITICAL: Int environment requires INITIAL_CAPITAL for paper trading."""
+        config_without_capital = {
+            k: v for k, v in VALID_PAPER_CONFIG.items() if k != "INITIAL_CAPITAL"
+        }
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "int"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_without_capital)):
+                with pytest.raises(RuntimeError, match="INITIAL_CAPITAL"):
+                    Settings()
+
+    def test_initial_capital_not_required_for_prod(self):
+        """Prod does NOT need INITIAL_CAPITAL — real balance from API."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PROD_CONFIG)):
+                settings = Settings()
+                assert settings.trading_mode == TradingMode.LIVE
+                # paper_initial_capital stays at pydantic default (unused in live)
+                assert settings.paper_initial_capital == 10000.0
 
 
 class TestEnvironmentEnum:
@@ -134,6 +174,6 @@ class TestEnvironmentEnum:
         """ENVIRONMENT should accept various cases."""
         for env_str in ["dev", "DEV", "Dev"]:
             with patch.dict(os.environ, {"ENVIRONMENT": env_str}):
-                with patch(PATCH_TARGET, side_effect=mock_get(VALID_CONFIG)):
+                with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
                     settings = Settings()
                     assert settings.environment == Environment.DEV
