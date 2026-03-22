@@ -5,12 +5,10 @@ Revolut Trader: Professional Algorithmic Trading Bot for Revolut Crypto
 
 import argparse
 import asyncio
+import os
 import sys
 
 from loguru import logger
-
-from src.bot import TradingBot
-from src.config import RiskLevel, StrategyType, TradingMode
 
 
 def setup_logging(log_level: str) -> None:
@@ -25,6 +23,9 @@ def setup_logging(log_level: str) -> None:
 
 async def run_bot(args):
     """Run the trading bot with specified configuration."""
+    # Deferred imports so ENVIRONMENT is set before Settings() singleton runs.
+    from src.bot import TradingBot
+    from src.config import RiskLevel, StrategyType, TradingMode
 
     # Parse arguments
     strategy_type = StrategyType(args.strategy)
@@ -32,9 +33,11 @@ async def run_bot(args):
     trading_mode = TradingMode(args.mode)
     trading_pairs = args.pairs.split(",") if args.pairs else None
 
+    env = os.environ.get("ENVIRONMENT", "?")
     logger.info("=" * 60)
     logger.info("REVOLUT TRADER - Algorithmic Trading Bot")
     logger.info("=" * 60)
+    logger.info(f"Environment: {env}")
     logger.info(f"Strategy: {strategy_type.value}")
     logger.info(f"Risk Level: {risk_level.value}")
     logger.info(f"Trading Mode: {trading_mode.value}")
@@ -67,18 +70,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with market making strategy in paper mode (safe for testing)
-  python run.py --strategy market_making --mode paper
+  # Run in dev environment (mock API, paper only)
+  python run.py --env dev --strategy market_making --mode paper
 
-  # Run with momentum strategy, moderate risk, live trading
-  python run.py --strategy momentum --risk moderate --mode live
+  # Run in int environment (real API, paper only)
+  python run.py --env int --strategy momentum --mode paper
+
+  # Run in prod environment with live trading
+  python run.py --env prod --strategy momentum --risk moderate --mode live
 
   # Run multi-strategy with custom pairs
-  python run.py --strategy multi_strategy --pairs BTC-USD,ETH-USD,SOL-USD
+  python run.py --env dev --strategy multi_strategy --pairs BTC-EUR,ETH-EUR,SOL-EUR
 
   # Run with faster update interval (30 seconds)
-  python run.py --strategy momentum --interval 30
+  python run.py --env dev --strategy momentum --interval 30
         """,
+    )
+
+    parser.add_argument(
+        "--env",
+        "-e",
+        type=str,
+        choices=["dev", "int", "prod"],
+        default=None,
+        help="Environment (dev, int, prod). Overrides ENVIRONMENT env var.",
     )
 
     parser.add_argument(
@@ -134,12 +149,26 @@ Examples:
 
     args = parser.parse_args()
 
+    # Set ENVIRONMENT early — before any import of src.config (which creates
+    # the Settings singleton).  CLI --env takes priority over the env var.
+    if args.env:
+        os.environ["ENVIRONMENT"] = args.env
+    elif "ENVIRONMENT" not in os.environ:
+        logger.error("ENVIRONMENT not set. Use --env or export ENVIRONMENT=dev|int|prod")
+        sys.exit(1)
+
     # Setup logging
     setup_logging(args.log_level)
 
+    env = os.environ["ENVIRONMENT"]
+    logger.info(f"Environment: {env}")
+
     # Warn if using live mode
     if args.mode == "live":
-        logger.warning("⚠️  LIVE TRADING MODE - REAL MONEY AT RISK ⚠️")
+        if env != "prod":
+            logger.error(f"TRADING_MODE=live is only allowed in ENVIRONMENT=prod (current: {env})")
+            sys.exit(1)
+        logger.warning("⚠️  LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK ⚠️")
         response = input("Are you sure you want to trade with real money? (yes/no): ")
         if response.lower() != "yes":
             logger.info("Aborting live trading")

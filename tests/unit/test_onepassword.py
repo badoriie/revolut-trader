@@ -1,12 +1,35 @@
 """Unit tests for 1Password integration utilities.
 
-Tests _VaultCache, _run_op, and _fetch_item_fields directly
-without relying on the real 1Password CLI.
+Tests _VaultCache, _run_op, _fetch_item_fields, and environment-aware
+item name resolution without relying on the real 1Password CLI.
 """
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Environment-aware item names
+# ---------------------------------------------------------------------------
+
+
+class TestEnvironmentItemNames:
+    """Tests that 1Password item names are suffixed with the environment."""
+
+    def test_credentials_item_name_per_env(self):
+        from src.utils.onepassword import get_credentials_item
+
+        assert get_credentials_item("dev") == "revolut-trader-credentials-dev"
+        assert get_credentials_item("int") == "revolut-trader-credentials-int"
+        assert get_credentials_item("prod") == "revolut-trader-credentials-prod"
+
+    def test_config_item_name_per_env(self):
+        from src.utils.onepassword import get_config_item
+
+        assert get_config_item("dev") == "revolut-trader-config-dev"
+        assert get_config_item("int") == "revolut-trader-config-int"
+        assert get_config_item("prod") == "revolut-trader-config-prod"
+
 
 # ---------------------------------------------------------------------------
 # _run_op

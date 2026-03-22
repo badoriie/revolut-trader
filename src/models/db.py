@@ -15,6 +15,7 @@ Design notes
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -202,7 +203,23 @@ class LogEntryDB(Base):
 # Engine / session factory
 # ---------------------------------------------------------------------------
 
-DB_URL = "sqlite:///data/trading.db"
+
+def get_db_url(env: str | None = None) -> str:
+    """Return the SQLite URL for the given environment.
+
+    Args:
+        env: Environment name (dev, int, prod).  Falls back to
+             ``os.environ["ENVIRONMENT"]`` if not provided.
+
+    Returns:
+        SQLite URL, e.g. ``"sqlite:///data/dev.db"``.
+    """
+    if env is None:
+        env = os.environ.get("ENVIRONMENT", "dev")
+    return f"sqlite:///data/{env}.db"
+
+
+DB_URL = get_db_url()
 
 
 def create_db_engine(url: str = DB_URL):

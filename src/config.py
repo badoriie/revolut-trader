@@ -1,7 +1,16 @@
+import os
 from enum import Enum
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(str, Enum):
+    """Deployment environment — determines which 1Password items and DB to use."""
+
+    DEV = "dev"
+    INT = "int"
+    PROD = "prod"
 
 
 class TradingMode(str, Enum):
@@ -37,6 +46,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Environment — resolved from os.environ before any 1Password access.
+    environment: Environment = Environment.DEV
+
     # Trading configuration — loaded from 1Password in model_post_init.
     # These temporary defaults are required by Pydantic for model construction;
     # model_post_init overwrites every one of them from 1Password and raises
@@ -46,6 +58,14 @@ class Settings(BaseSettings):
     risk_level: RiskLevel = RiskLevel.CONSERVATIVE
     base_currency: str = "EUR"
     trading_pairs: list[str] = Field(default_factory=list)
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def normalize_environment(cls, v):
+        """Accept ENVIRONMENT in any case (DEV, Dev, dev → dev)."""
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
     @field_validator("trading_pairs", mode="before")
     @classmethod
@@ -58,11 +78,36 @@ class Settings(BaseSettings):
         """Load ALL configuration from 1Password. Raises if anything required is missing."""
         import src.utils.onepassword as op
 
+        # ENVIRONMENT — must be resolved first (determines which 1Password items to use).
+        # Pydantic reads it from os.environ["ENVIRONMENT"] automatically via SettingsConfigDict.
+        # If it's still the pydantic default (DEV), check if os.environ actually has it set.
+        env_str = os.environ.get("ENVIRONMENT")
+        if not env_str:
+            raise RuntimeError(
+                "ENVIRONMENT not set. Export it before running:\n"
+                "  export ENVIRONMENT=dev   # or: int, prod\n"
+                "Or use: make run-dev / make run-int / make run-prod-paper"
+            )
+        try:
+            self.environment = Environment(env_str.lower())
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid ENVIRONMENT '{env_str}': must be 'dev', 'int', or 'prod'."
+            ) from e
+
         # TRADING_MODE
         try:
             self.trading_mode = TradingMode(op.get("TRADING_MODE").lower())
         except ValueError as e:
             raise ValueError("Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'.") from e
+
+        # Safety: TRADING_MODE=live is only allowed in ENVIRONMENT=prod
+        if self.trading_mode == TradingMode.LIVE and self.environment != Environment.PROD:
+            raise ValueError(
+                f"TRADING_MODE=live is only allowed in ENVIRONMENT=prod "
+                f"(current: {self.environment.value}). "
+                f"Use TRADING_MODE=paper for non-production environments."
+            )
 
         # RISK_LEVEL
         try:
