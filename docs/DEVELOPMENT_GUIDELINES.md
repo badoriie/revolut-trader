@@ -317,15 +317,25 @@ make run-int          # real API, paper mode (staging ground)
 make run-prod         # real API, live trading (requires confirmation)
 ```
 
-### Promotion flow
+### Branches & promotion flow
+
+Each environment has a dedicated Git branch:
+
+| Branch | Environment | CI sets `ENVIRONMENT` to |
+| ------ | ----------- | ------------------------ |
+| `dev`  | dev         | `dev`                    |
+| `int`  | int         | `int`                    |
+| `main` | prod        | `prod`                   |
 
 ```
-feature branch → PR → main (dev)
-                         ↓
-                   run-int (paper trade with real API for N hours)
-                         ↓
-                   tag release → run-prod (live)
+feature branch → PR to dev → PR to int → PR to main (prod)
 ```
+
+- Direct commits to `dev`, `int`, and `main` are blocked by pre-commit hooks.
+- When `dev` is pushed, a promotion PR to `int` is auto-created.
+- When `int` is pushed, a promotion PR to `main` is auto-created.
+- PRs targeting `main` trigger a **backtest matrix** across all 6 strategies using real market data from Revolut X API (int environment) — results are posted as a PR comment.
+- Dependabot PRs target `dev` so updates flow through the full promotion chain.
 
 ______________________________________________________________________
 
