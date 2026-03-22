@@ -12,8 +12,11 @@
   - Tests with coverage as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
   - All jobs run in parallel using `uv` with dependency caching
   - `ENVIRONMENT` automatically mapped from branch (`dev` → dev, `int` → int, `main` → prod)
+- **Backtest matrix** (`.github/workflows/backtest.yml`) — runs all 6 strategies against real market data (int API) on PRs to `main`, posts results as PR comment
+- **Promotion workflow** (`.github/workflows/promote.yml`) — auto-creates PRs: `dev → int` and `int → main`
+- **CI backtest runner** (`cli/backtest_ci.py`) — outputs JSON for CI consumption (no terminal noise)
 - **Direct commit protection** — pre-commit hook blocks direct commits to `dev`, `int`, and `main`
-- **Dependabot** (`.github/dependabot.yml`) — weekly PRs for Python and GitHub Actions dependencies
+- **Dependabot** (`.github/dependabot.yml`) — targets `dev` branch, updates flow through promotion chain
 - **PR template** (`.github/PULL_REQUEST_TEMPLATE.md`) — includes target branch checklist
 - **Issue templates** (`.github/ISSUE_TEMPLATE/`) — bug report and feature request forms with environment dropdown
 
