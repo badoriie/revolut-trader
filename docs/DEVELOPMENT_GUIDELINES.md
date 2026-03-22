@@ -332,8 +332,7 @@ feature branch → PR to dev → PR to int → PR to main (prod)
 ```
 
 - Direct commits to `dev`, `int`, and `main` are blocked by pre-commit hooks.
-- When `dev` is pushed, a promotion PR to `int` is auto-created.
-- When `int` is pushed, a promotion PR to `main` is auto-created.
+- Create PRs manually to promote: `dev → int` and `int → main`.
 - PRs targeting `main` trigger a **backtest matrix** across all 6 strategies using real market data from Revolut X API (int environment) — results are posted as a PR comment.
 - Dependabot PRs target `dev` so updates flow through the full promotion chain.
 
