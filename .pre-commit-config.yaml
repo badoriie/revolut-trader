@@ -19,17 +19,23 @@ repos:
       - id: detect-private-key
         exclude: ^(tests/mocks/|docs/)
 
-  # Ruff — linting and formatting (same config as pyproject.toml, same scope as Makefile)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.5
+  # Ruff — uses the same local installation as `make format` and `make lint`
+  - repo: local
     hooks:
-      # Linter — auto-fix, same as `make format`
-      - id: ruff
-        args: [--fix]
-        files: ^(src|tests|cli)/
-      # Formatter — same as `make format`
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        args: [src/, tests/, cli/]
+        language: system
+        types: [python]
+        pass_filenames: false
       - id: ruff-format
-        files: ^(src|tests|cli)/
+        name: ruff format
+        entry: uv run ruff format
+        args: [src/, tests/, cli/]
+        language: system
+        types: [python]
+        pass_filenames: false
 
   # Type checking — same as `make typecheck`
   - repo: local
@@ -43,12 +49,14 @@ repos:
         pass_filenames: false
 
   # Security — same as `make lint` (bandit reads config from pyproject.toml)
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.0
+  - repo: local
     hooks:
       - id: bandit
+        name: bandit
+        entry: uv run bandit
         args: ['-c', 'pyproject.toml', '-r', 'src/', 'cli/']
-        additional_dependencies: ['bandit[toml]']
+        language: system
+        types: [python]
         pass_filenames: false
 
   # Markdown formatting
