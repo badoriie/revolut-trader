@@ -30,7 +30,7 @@
   - API client balance calculations now use configurable base currency
   - Dynamic currency symbol display (€ for EUR, $ for USD, £ for GBP)
   - All CLI tools and examples updated to EUR pairs
-  - All output updated: backtest results, bot logs, Telegram notifications
+  - All output updated: backtest results, bot logs
   - All documentation updated with EUR examples
   - Supports multiple base currencies via configuration
   - USD/USDC/USDT balances automatically converted to EUR (approximate conversion)
@@ -177,7 +177,6 @@
   - Thread-safe implementation with asyncio.Lock
 - **Live Trading Safety**: Critical error handling for live mode
   - Bot halts immediately if balance fetch fails in LIVE mode
-  - Telegram alert sent on critical failures
   - Paper mode continues with default balance (warning only)
 - **Thread Safety**: Asyncio locks for position tracking
   - Prevents race conditions in concurrent operations
@@ -313,7 +312,6 @@
 - Live trading mode with Revolut X API
 - Ed25519 signature-based API authentication
 - Comprehensive risk management system
-- Telegram notifications and alerts
 - Real-time position monitoring
 
 #### Technical Stack

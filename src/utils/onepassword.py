@@ -247,10 +247,10 @@ def get_optional(key: str) -> str | None:
     """Get an optional credential or configuration value from 1Password.
 
     Returns ``None`` instead of raising if the key is not found.
-    Use this for optional features (e.g., Telegram notifications).
+    Use this for optional features.
 
     Args:
-        key: Field name (e.g., ``"TELEGRAM_BOT_TOKEN"``).
+        key: Field name.
 
     Returns:
         The field value, or ``None`` if not found.

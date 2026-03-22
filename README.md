@@ -10,7 +10,7 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 - **3 Trading Modes**: Backtesting, Paper Trading, Live Trading
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
-- **Monitoring**: Telegram notifications, database analytics, CSV export
+- **Monitoring**: Database analytics, CSV export
 
 ## Quick Start
 
@@ -168,8 +168,6 @@ make api-test   # test API connectivity
 ```
 
 **No signals generated:** Strategies need warmup time to collect data. Check logs and verify trading pairs.
-
-**Telegram not working:** Verify credentials with `make opshow`, update with `make ops`.
 
 ## Documentation
 

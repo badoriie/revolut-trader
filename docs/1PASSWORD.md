@@ -73,8 +73,6 @@ The bot uses two 1Password items in the `revolut-trader` vault:
 | ------------------------- | --------- | -------------- |
 | `REVOLUT_API_KEY`         | concealed | Yes            |
 | `REVOLUT_PRIVATE_KEY`     | concealed | Yes            |
-| `TELEGRAM_BOT_TOKEN`      | concealed | No             |
-| `TELEGRAM_CHAT_ID`        | concealed | No             |
 | `DATABASE_ENCRYPTION_KEY` | concealed | Auto-generated |
 
 ### Trading Configuration (`revolut-trader-config`)
@@ -102,7 +100,7 @@ ______________________________________________________________________
 | Command                           | Description                                      |
 | --------------------------------- | ------------------------------------------------ |
 | `make setup`                      | Full first-time setup (vault, items, keys, deps) |
-| `make ops`                        | Store API key and Telegram credentials           |
+| `make ops`                        | Store API key credentials                        |
 | `make opshow`                     | Show all stored values (masked)                  |
 | `make opstatus`                   | Check 1Password authentication and vault status  |
 | `make opdelete`                   | Delete credentials item (requires confirmation)  |
@@ -147,7 +145,6 @@ import src.utils.onepassword as op
 
 if op.is_available():
     api_key = op.get("REVOLUT_API_KEY")  # raises if missing
-    token = op.get_optional("TELEGRAM_BOT_TOKEN")  # returns None if missing
     op.invalidate_cache()  # force refresh
 ```
 
