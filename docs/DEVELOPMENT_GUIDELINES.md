@@ -317,24 +317,25 @@ make run-int          # real API, paper mode (staging ground)
 make run-prod         # real API, live trading (requires confirmation)
 ```
 
-### Branches & promotion flow
+### Branches & CI flow
 
-Each environment has a dedicated Git branch:
+Single `main` branch — CI selects the environment based on the trigger:
 
-| Branch | Environment | CI sets `ENVIRONMENT` to |
-| ------ | ----------- | ------------------------ |
-| `dev`  | dev         | `dev`                    |
-| `int`  | int         | `int`                    |
-| `main` | prod        | `prod`                   |
+| CI Trigger              | Environment | CI sets `ENVIRONMENT` to |
+| ----------------------- | ----------- | ------------------------ |
+| Push to feature branch  | dev         | `dev`                    |
+| PR to `main`            | int         | `int`                    |
+| Manual release workflow | prod        | `prod`                   |
 
 ```
-feature branch → PR to dev → PR to int → PR to main (prod)
+feature branch → PR to main
 ```
 
-- Direct commits to `dev`, `int`, and `main` are blocked by pre-commit hooks.
-- Create PRs manually to promote: `dev → int` and `int → main`.
-- PRs targeting `main` trigger a **backtest matrix** across all 6 strategies using real market data from Revolut X API (int environment) — results are posted as a PR comment.
-- Dependabot PRs target `dev` so updates flow through the full promotion chain.
+- Push to any feature branch triggers dev CI (lint, typecheck, security, tests).
+- PR to `main` triggers int CI (same checks, `ENVIRONMENT=int`).
+- **Backtest matrix** — manual `workflow_dispatch` with configurable parameters via Actions console.
+- **Release workflow** — manual `workflow_dispatch` for production validation (requires "I UNDERSTAND" confirmation).
+- Dependabot PRs target `main` — dependency updates trigger int CI automatically.
 
 ______________________________________________________________________
 

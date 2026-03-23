@@ -1,21 +1,84 @@
 name: Backtest Matrix
 
-# Runs the full strategy × risk level matrix (identical to `make backtest-matrix`)
-# when a PR targets main (int → prod promotion).
+# Manual workflow — configure parameters from the Actions console.
 # Uses ENVIRONMENT=int with real Revolut X API for actual market data.
-# Posts the comparison table as a PR comment.
 #
 # Required GitHub secret:
 #   OP_SERVICE_ACCOUNT_TOKEN — 1Password service account token with read access
 #                              to the revolut-trader vault (int credentials).
 
 on:
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      strategies:
+        description: "Strategies to compare (comma-separated, or 'all')"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - market_making
+          - momentum
+          - mean_reversion
+          - multi_strategy
+          - breakout
+          - range_reversion
+      risk_levels:
+        description: "Risk levels to test"
+        required: false
+        default: "conservative,moderate,aggressive"
+        type: choice
+        options:
+          - conservative,moderate,aggressive
+          - conservative
+          - moderate
+          - aggressive
+      days:
+        description: "Days of historical data"
+        required: false
+        default: "30"
+        type: choice
+        options:
+          - "7"
+          - "14"
+          - "30"
+          - "60"
+          - "90"
+      interval:
+        description: "Candle interval (minutes)"
+        required: false
+        default: "60"
+        type: choice
+        options:
+          - "5"
+          - "15"
+          - "30"
+          - "60"
+          - "240"
+          - "1440"
+      pairs:
+        description: "Trading pairs (comma-separated)"
+        required: false
+        default: "BTC-EUR,ETH-EUR"
+        type: string
+      capital:
+        description: "Initial capital in EUR"
+        required: false
+        default: "10000"
+        type: string
+      log_level:
+        description: "Logging level"
+        required: false
+        default: "WARNING"
+        type: choice
+        options:
+          - DEBUG
+          - INFO
+          - WARNING
+          - ERROR
 
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   ENVIRONMENT: int
@@ -44,27 +107,33 @@ jobs:
 
       - run: uv sync --extra dev
 
+      - name: Build strategy arguments
+        id: args
+        run: |
+          STRATEGIES="${{ inputs.strategies }}"
+          if [ "$STRATEGIES" = "all" ] || [ -z "$STRATEGIES" ]; then
+            echo "strategies_arg=" >> "$GITHUB_OUTPUT"
+          else
+            echo "strategies_arg=--strategies $STRATEGIES" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run backtest matrix
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
         run: |
           uv run python cli/backtest_compare.py \
-            --days 30 --interval 60 \
-            --pairs BTC-EUR,ETH-EUR \
-            --capital 10000 \
-            --risk-levels conservative,moderate,aggressive \
-            --log-level WARNING 2>&1 | tee backtest-output.txt
+            ${{ steps.args.outputs.strategies_arg }} \
+            --days ${{ inputs.days || '30' }} \
+            --interval ${{ inputs.interval || '60' }} \
+            --pairs ${{ inputs.pairs || 'BTC-EUR,ETH-EUR' }} \
+            --capital ${{ inputs.capital || '10000' }} \
+            --risk-levels ${{ inputs.risk_levels || 'conservative,moderate,aggressive' }} \
+            --log-level ${{ inputs.log_level || 'WARNING' }} 2>&1 | tee backtest-output.txt
 
-      - name: Post results as PR comment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Post results to job summary
+        if: always()
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          REPO=${{ github.repository }}
-
           # Extract the comparison table
-          # The table starts with a "===..." line right before "STRATEGY COMPARISON"
-          # Use grep -n to find the line number, then extract from one line before
           START=$(grep -n "STRATEGY COMPARISON" backtest-output.txt | head -1 | cut -d: -f1)
           if [ -n "$START" ]; then
             START=$((START - 1))
@@ -73,24 +142,22 @@ jobs:
             TABLE="No backtest results found."
           fi
 
-          # Build comment body
           {
             echo "## Backtest Matrix Report"
+            echo ""
+            echo "**Parameters:** strategies=${{ inputs.strategies || 'all' }} · days=${{ inputs.days || '30' }} · interval=${{ inputs.interval || '60' }}min · pairs=${{ inputs.pairs || 'BTC-EUR,ETH-EUR' }} · capital=€${{ inputs.capital || '10000' }} · risk=${{ inputs.risk_levels || 'conservative,moderate,aggressive' }}"
             echo ""
             echo '```'
             echo "$TABLE"
             echo '```'
             echo ""
-            echo "*Real market data via Revolut X API (int) · 30 days · 60 min candles · €10,000 capital*"
-          } > report.md
+            echo "*Real market data via Revolut X API (int environment)*"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          # Delete previous backtest comment if it exists
-          COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
-            --jq '.[] | select(.body | startswith("## Backtest Matrix Report")) | .id' | head -1)
-
-          if [ -n "$COMMENT_ID" ]; then
-            gh api -X DELETE "repos/$REPO/issues/comments/$COMMENT_ID"
-          fi
-
-          # Post new comment
-          gh pr comment "$PR_NUMBER" --body-file report.md
+      - name: Upload backtest output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backtest-results
+          path: backtest-output.txt
+          retention-days: 30

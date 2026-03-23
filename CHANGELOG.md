@@ -2,19 +2,23 @@
 
 ## [Unreleased]
 
+### Changed - Simplified Branch Strategy
+
+- **Single `main` branch** — replaced three-branch (`dev`/`int`/`main`) promotion flow with a single `main` branch
+- **CI workflow** (`.github/workflows/ci.yml`) — push to feature branches triggers dev CI, PR to `main` triggers int CI
+  - `ENVIRONMENT` mapped from trigger: push → dev, pull_request → int
+- **Backtest matrix** (`.github/workflows/backtest.yml`) — now a manual `workflow_dispatch` with configurable parameters via Actions console (strategies, risk levels, days, interval, pairs, capital, log level)
+- **Release workflow** (`.github/workflows/release.yml`) — new manual workflow for production validation from `main` (requires "I UNDERSTAND" confirmation), runs full CI suite with `ENVIRONMENT=prod`
+- **Dependabot** targets `main` — dependency PRs trigger int CI automatically
+
 ### Added - GitHub Actions CI & Branch Strategy
 
-- **Three environment branches** — `dev`, `int`, `main` (prod) with promotion flow: `feature → dev → int → main`
-- **CI workflow** (`.github/workflows/ci.yml`) — runs on push/PR to all three branches
+- **CI workflow** (`.github/workflows/ci.yml`) — runs on push to feature branches and PRs to `main`
   - Lint & format check (ruff)
   - Type check (pyright)
   - Security scan (bandit)
   - Tests with coverage as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
   - All jobs run in parallel using `uv` with dependency caching
-  - `ENVIRONMENT` automatically mapped from branch (`dev` → dev, `int` → int, `main` → prod)
-- **Backtest matrix** (`.github/workflows/backtest.yml`) — runs all 6 strategies against real market data (int API) on PRs to `main`, posts results as PR comment
-- **Direct commit protection** — pre-commit hook blocks direct commits to `dev`, `int`, and `main`
-- **Dependabot** (`.github/dependabot.yml`) — targets `dev` branch, updates flow through promotion chain
 
 ### Added - Mock API for Dev Environment
 
