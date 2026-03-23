@@ -1,0 +1,149 @@
+name: Release (Prod)
+
+# Manual workflow to validate and release a production version from main.
+# Runs the full CI suite with ENVIRONMENT=prod to ensure everything passes
+# before deploying to production.
+#
+# Required GitHub secret:
+#   OP_SERVICE_ACCOUNT_TOKEN — 1Password service account token with read access
+#                              to the revolut-trader vault (prod credentials).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'I UNDERSTAND' to confirm production release"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-prod
+  cancel-in-progress: false
+
+env:
+  ENVIRONMENT: prod
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  validate-confirmation:
+    name: Validate Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        if: inputs.confirm != 'I UNDERSTAND'
+        run: |
+          echo "::error::You must type 'I UNDERSTAND' to confirm production release."
+          exit 1
+
+  lint:
+    name: Lint & Format
+    needs: validate-confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Ruff check
+        run: uv run ruff check src/ tests/ cli/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/ cli/
+
+  typecheck:
+    name: Type Check
+    needs: validate-confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Pyright
+        run: uv run pyright src/ cli/
+
+  security:
+    name: Security Scan
+    needs: validate-confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Bandit
+        run: uv run bandit -c pyproject.toml -r src/ cli/
+
+  test:
+    name: Tests (prod)
+    needs: validate-confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Run tests with coverage
+        run: >
+          uv run pytest
+          --cov=src
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-fail-under=97
+          -q
+
+  release:
+    name: Release
+    needs: [lint, typecheck, security, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Post release summary
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          {
+            echo "## Production Release"
+            echo ""
+            echo "**Commit:** \`$COMMIT_SHA\` — $COMMIT_MSG"
+            echo ""
+            echo "All checks passed:"
+            echo "- Lint & Format"
+            echo "- Type Check"
+            echo "- Security Scan"
+            echo "- Tests (prod, ≥97% coverage)"
+            echo ""
+            echo "*Ready for production deployment.*"
+          } >> "$GITHUB_STEP_SUMMARY"

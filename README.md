@@ -46,26 +46,23 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 ## Environments & Branches
 
-The project uses three environments, each with its own Git branch, API keys, config, and database:
+The project uses three environments with a single `main` branch. CI selects the environment based on the trigger:
 
-| Environment | Branch | API                  | Trading Mode | DB File        | Make Target     |
-| ----------- | ------ | -------------------- | ------------ | -------------- | --------------- |
-| **dev**     | `dev`  | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
-| **int**     | `int`  | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
-| **prod**    | `main` | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
+| Environment | CI Trigger              | API                  | Trading Mode | DB File        | Make Target     |
+| ----------- | ----------------------- | -------------------- | ------------ | -------------- | --------------- |
+| **dev**     | Push to feature branch  | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
+| **int**     | PR to `main`            | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
+| **prod**    | Manual release workflow | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
 
 ### Branch Flow
 
 ```
-feature branches → dev → int → main (prod)
+feature branches → PR to main
 ```
 
-- **Feature branches** — all development happens here, PRs target `dev`
-- **`dev`** — integration of features, tested with mock API
-- **`int`** — staging ground, tested with real API in paper mode
-- **`main`** — production, live trading with real money
-
-CI runs on all three branches. Direct commits to `dev`, `int`, and `main` are blocked by pre-commit hooks.
+- **Feature branches** — all development happens here, pushes trigger dev CI
+- **PR to `main`** — integration testing with int environment (real API, paper mode)
+- **Manual release** — production validation via Actions console (requires "I UNDERSTAND" confirmation)
 
 Each environment has its own 1Password items:
 
@@ -129,7 +126,10 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 ```
 revolut-trader/
 ├── .github/
-│   ├── workflows/ci.yml  # CI pipeline (lint, typecheck, security, tests)
+│   ├── workflows/
+│   │   ├── ci.yml        # CI pipeline (lint, typecheck, security, tests)
+│   │   ├── backtest.yml  # Manual backtest matrix (configurable via Actions console)
+│   │   └── release.yml   # Manual production release workflow
 │   ├── dependabot.yml    # Automated dependency updates
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── ISSUE_TEMPLATE/   # Bug report & feature request forms
@@ -178,17 +178,17 @@ make pre-commit       # run all pre-commit hooks
 
 ### CI Pipeline
 
-GitHub Actions runs on every push to `dev`, `int`, and `main`, and on PRs targeting these branches:
+GitHub Actions workflows:
 
-- **Lint & Format** — ruff check + format verification
-- **Type Check** — pyright strict checking on `src/` and `cli/`
-- **Security Scan** — bandit static analysis
-- **Tests** — pytest with coverage as high as possible (currently ≥ 97%)
-- **Backtest Matrix** (PRs to `main` only) — runs all 6 strategies against real market data via Revolut X API and posts results as a PR comment
+- **CI** (`.github/workflows/ci.yml`) — runs on push to feature branches (dev) and PRs to `main` (int):
+  - Lint & Format — ruff check + format verification
+  - Type Check — pyright strict checking on `src/` and `cli/`
+  - Security Scan — bandit static analysis
+  - Tests — pytest with coverage as high as possible (currently ≥ 97%)
+- **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
+- **Release** (`.github/workflows/release.yml`) — manual workflow for production validation from `main` (requires "I UNDERSTAND" confirmation)
 
-The `ENVIRONMENT` variable is automatically set based on the target branch (`dev` → dev, `int` → int, `main` → prod).
-
-Dependabot targets `dev` so dependency updates flow through the full promotion chain (`dev → int → main`).
+Dependabot targets `main` — dependency PRs trigger int CI automatically.
 
 #### Required GitHub Secret
 

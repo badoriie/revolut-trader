@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches-ignore: [main]
   pull_request:
-    branches: [dev, int, main]
+    branches: [main]
 
 permissions:
   contents: read
@@ -12,12 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Map branch to environment: dev→dev, int→int, main→prod
-  # For PRs, use the target branch; for pushes, use the current branch.
+  # Push to feature branch → dev (unit tests with mock API)
+  # PR to main → int (integration checks before merge)
   ENVIRONMENT: >-
     ${{
-      (github.base_ref || github.ref_name) == 'main' && 'prod' ||
-      (github.base_ref || github.ref_name) == 'int' && 'int' ||
+      github.event_name == 'pull_request' && 'int' ||
       'dev'
     }}
   PYTHON_VERSION: "3.11"
@@ -78,7 +79,7 @@ jobs:
         run: uv run bandit -c pyproject.toml -r src/ cli/
 
   test:
-    name: Tests (${{ github.base_ref || github.ref_name }})
+    name: Tests (${{ github.event_name == 'pull_request' && 'int' || 'dev' }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
