@@ -113,7 +113,7 @@ jobs:
 
   ci-passed:
     name: CI Passed
-    if: always()
+    if: always() && github.event_name == 'pull_request'
     needs: [lint, typecheck, security, test]
     runs-on: ubuntu-latest
     steps:
