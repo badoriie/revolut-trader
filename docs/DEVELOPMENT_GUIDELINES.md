@@ -138,9 +138,8 @@ raise RuntimeError("Invalid config")
 
 # GOOD
 raise RuntimeError(
-    "TRADING_MODE not found in 1Password config.\n"
-    "Run: make opconfig-init\n"
-    "Or manually set: make opconfig-set KEY=TRADING_MODE VALUE=paper"
+    "RISK_LEVEL not found in 1Password config.\n"
+    "Run: make opconfig-set KEY=RISK_LEVEL VALUE=conservative ENV=dev"
 )
 ```
 
@@ -319,23 +318,24 @@ make run-prod         # real API, live trading (requires confirmation)
 
 ### Branches & CI flow
 
-Single `main` branch — CI selects the environment based on the trigger:
+Single `main` branch. Pre-commit hooks handle dev checks locally; CI runs on PRs to `main`:
 
-| CI Trigger              | Environment | CI sets `ENVIRONMENT` to |
-| ----------------------- | ----------- | ------------------------ |
-| Push to feature branch  | dev         | `dev`                    |
-| PR to `main`            | int         | `int`                    |
-| Manual release workflow | prod        | `prod`                   |
+| Stage                   | Environment | Checks                                                        |
+| ----------------------- | ----------- | ------------------------------------------------------------- |
+| Pre-commit (local)      | dev         | Lint, typecheck, security, tests (before each commit)         |
+| PR to `main`            | int         | CI: same checks, `ENVIRONMENT=int`, merge blocked until green |
+| Manual release workflow | prod        | CI: same checks, `ENVIRONMENT=prod`, creates semver tag       |
 
 ```
 feature branch → PR to main
 ```
 
-- Push to any feature branch triggers dev CI (lint, typecheck, security, tests).
-- PR to `main` triggers int CI (same checks, `ENVIRONMENT=int`).
+- **Pre-commit hooks** run lint, typecheck, security, and tests locally before each commit.
+- PR to `main` triggers CI with `ENVIRONMENT=int` — merge is blocked until all checks pass.
 - **Backtest matrix** — manual `workflow_dispatch` with configurable parameters via Actions console.
-- **Release workflow** — manual `workflow_dispatch` for production validation (requires "I UNDERSTAND" confirmation).
+- **Release workflow** — manual `workflow_dispatch` for production release. Requires semver version (e.g. `1.0.0`) and "I UNDERSTAND" confirmation. Creates a git tag (`v1.0.0`), GitHub Release with auto-generated changelog, and updates `CHANGELOG.md`.
 - Dependabot PRs target `main` — dependency updates trigger int CI automatically.
+- **CHANGELOG.md** is auto-generated from GitHub Releases — do not edit manually.
 
 ______________________________________________________________________
 

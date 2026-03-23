@@ -130,6 +130,13 @@ jobs:
             --risk-levels ${{ inputs.risk_levels || 'conservative,moderate,aggressive' }} \
             --log-level ${{ inputs.log_level || 'WARNING' }} 2>&1 | tee backtest-output.txt
 
+      - name: Generate timestamped filename
+        id: filename
+        run: echo "name=backtest-$(date -u +'%Y-%m-%d_%H-%M-%S').txt" >> "$GITHUB_OUTPUT"
+
+      - name: Rename output with timestamp
+        run: cp backtest-output.txt "${{ steps.filename.outputs.name }}"
+
       - name: Post results to job summary
         if: always()
         run: |
@@ -159,5 +166,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backtest-results
-          path: backtest-output.txt
+          path: ${{ steps.filename.outputs.name }}
           retention-days: 30

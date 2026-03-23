@@ -14,5 +14,5 @@
 | File                               | Description                                   |
 | ---------------------------------- | --------------------------------------------- |
 | [../README.md](../README.md)       | Project overview, quick start, usage examples |
-| [../CHANGELOG.md](../CHANGELOG.md) | Version history and release notes             |
+| [../CHANGELOG.md](../CHANGELOG.md) | Auto-generated from GitHub Releases           |
 | [../CLAUDE.md](../CLAUDE.md)       | Claude Code agent instructions                |

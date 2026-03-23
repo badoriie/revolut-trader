@@ -65,7 +65,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
 
-**Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. CI maps triggers to environments automatically: push to feature branch → `dev`, PR to `main` → `int`, manual release workflow → `prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
+**Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. Dev checks are handled by pre-commit hooks locally. CI runs on PRs to `main` with `ENVIRONMENT=int`. Production release is a manual workflow with `ENVIRONMENT=prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
 **Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`.
 
@@ -184,7 +184,7 @@ Every public function needs type annotations on all parameters and return value,
 Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
 
 - `README.md` — feature additions, configuration changes, usage instructions
-- `CHANGELOG.md` — bug fixes, new features, breaking changes
+- `CHANGELOG.md` — auto-generated from GitHub Releases by the release workflow (do not edit manually)
 - Inline docstrings — logic changes, new functions, modified behavior
 - `CLAUDE.md` — architectural changes, new components, workflow changes
 - `docs/` files — API changes, strategy changes, development guidelines

@@ -135,7 +135,7 @@ def _print_comparison_table(
 
         # Format with sign included, then right-align the whole token
         ret_str = f"{return_pct:+.2f}%"
-        pnl_str = f"{'+' if pnl >= 0 else ''}{sym}{pnl:,.2f}"
+        pnl_str = f"{'+' if pnl >= 0 else '-'}{sym}{abs(pnl):,.2f}"
 
         line = (
             f"{i:<3} {r['strategy']:<18} {r['risk_level']:<14} "
