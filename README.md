@@ -139,28 +139,42 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 revolut-trader/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml        # CI pipeline (lint, typecheck, security, tests)
-│   │   ├── backtest.yml  # Manual backtest matrix (configurable via Actions console)
-│   │   └── release.yml   # Manual production release workflow
-│   ├── dependabot.yml    # Automated dependency updates
+│   │   ├── ci.yml            # CI pipeline (lint, typecheck, security, tests)
+│   │   ├── sonarcloud.yml    # SonarCloud code scanning
+│   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
+│   │   └── release.yml       # Manual production release workflow
+│   ├── dependabot.yml        # Automated dependency updates
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── ISSUE_TEMPLATE/   # Bug report & feature request forms
+│   └── ISSUE_TEMPLATE/       # Bug report & feature request forms
 ├── src/
-│   ├── api/              # Revolut API client (Ed25519 auth)
-│   ├── strategies/       # 6 trading strategies
-│   ├── risk_management/  # Risk controls and position sizing
-│   ├── execution/        # Order execution and position management
-│   ├── backtest/         # Backtesting engine
-│   ├── models/           # Domain models + SQLAlchemy ORM
-│   ├── utils/            # 1Password, indicators, persistence, encryption
-│   ├── config.py         # Pydantic config (loaded from 1Password)
-│   └── bot.py            # Main orchestrator
-├── cli/                  # CLI entry points (run, backtest, api_test, db_manage)
+│   ├── api/                  # Revolut API client (Ed25519 auth) + mock client
+│   ├── strategies/           # 6 trading strategies (base + implementations)
+│   ├── risk_management/      # Risk controls and position sizing
+│   ├── execution/            # Order execution and position management
+│   ├── backtest/             # Backtesting engine
+│   ├── models/               # Domain models (domain.py) + SQLAlchemy ORM (db.py)
+│   ├── utils/                # 1Password, indicators, persistence, encryption, rate limiter
+│   ├── config.py             # Pydantic config (loaded from 1Password)
+│   └── bot.py                # Main orchestrator
+├── cli/                      # CLI entry points
+│   ├── run.py                # Bot runner (--env, --strategy, --risk)
+│   ├── backtest.py           # Single strategy backtest
+│   ├── backtest_compare.py   # Multi-strategy comparison + matrix
+│   ├── api_test.py           # API connectivity and endpoint testing
+│   └── db_manage.py          # Database management and export
 ├── tests/
-│   ├── safety/           # Safety-critical tests
-│   └── unit/             # Component unit tests
-├── docs/                 # Documentation (see docs/README.md for index)
-└── Makefile              # All project commands
+│   ├── conftest.py           # Fixtures, ENVIRONMENT=dev setup
+│   ├── safety/               # Safety-critical tests (order limits, position sizing)
+│   ├── unit/                 # Component unit tests
+│   └── mocks/                # Mock 1Password for testing
+├── docs/                     # Documentation
+│   ├── ARCHITECTURE.md       # Component details and data flow
+│   ├── BACKTESTING.md        # Backtesting guide
+│   ├── DEVELOPMENT_GUIDELINES.md  # TDD, coding standards, contribution rules
+│   ├── 1PASSWORD.md          # Credential and config setup
+│   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
+│   └── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
+└── Makefile                  # All project commands
 ```
 
 ## Database & Monitoring
@@ -196,7 +210,8 @@ GitHub Actions workflows:
   - Lint & Format — ruff check + format verification
   - Type Check — pyright strict checking on `src/` and `cli/`
   - Security Scan — bandit static analysis
-  - Tests — pytest with coverage as high as possible (currently ≥ 97%)
+  - Tests — pytest with coverage (≥ 97%)
+- **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
 - **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Creates a semver tag (`v1.0.0`), GitHub Release with auto-generated changelog from merged PRs, and updates `CHANGELOG.md` automatically
 
@@ -214,6 +229,10 @@ Dependabot targets `main` — dependency PRs trigger int CI automatically.
 # Personal access token (release workflow — push CHANGELOG.md past branch protection):
 #   Name:  RELEASE_PAT
 #   Value: github_pat_xxxx... (fine-grained PAT with Contents: Read and write)
+
+# SonarCloud token (code scanning):
+#   Name:  SONAR_TOKEN
+#   Value: (generate at sonarcloud.io → My Account → Security)
 ```
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
@@ -232,7 +251,14 @@ make api-test   # test API connectivity
 
 ## Documentation
 
-See [docs/README.md](docs/README.md) for the full documentation index.
+| Document                                                   | Purpose                                            |
+| ---------------------------------------------------------- | -------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)                       | Component details and data flow                    |
+| [Backtesting Guide](docs/BACKTESTING.md)                   | Metrics, interpretation, best practices            |
+| [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, contribution rules |
+| [1Password Setup](docs/1PASSWORD.md)                       | Credential and configuration management            |
+| [Raspberry Pi Deployment](docs/RASPBERRY_PI_DEPLOYMENT.md) | Running on Raspberry Pi                            |
+| [Revolut X API Docs](docs/revolut-x-api-docs.md)           | API reference (source of truth for all API code)   |
 
 ## Warnings
 
