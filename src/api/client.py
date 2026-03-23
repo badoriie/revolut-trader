@@ -276,7 +276,8 @@ class RevolutAPIClient:
             trade_ok = True
         except RevolutAPIError as e:
             trade_ok = e.status_code not in (401, 403)
-        except Exception:  # nosec B110 — network errors leave trade_ok=False (safe default)
+        except Exception:  # nosec B110
+            # network errors leave trade_ok=False (safe default)
             pass
 
         return {"view": view_ok, "trade": trade_ok, "view_error": view_error}
@@ -333,7 +334,8 @@ class RevolutAPIClient:
                 rate = Decimal(str(ticker.get("last", "0")))
                 if rate > 0:
                     total_base += amount * rate
-            except Exception:  # nosec B110 — currency has no pair, FX contribution is zero
+            except Exception:  # nosec B110
+                # currency has no pair, FX contribution is zero
                 pass
 
         return {

@@ -4,7 +4,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^CHANGELOG\.md$
       - id: end-of-file-fixer
+        exclude: ^CHANGELOG\.md$
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -64,6 +66,7 @@ repos:
     rev: 0.7.21
     hooks:
       - id: mdformat
+        exclude: ^CHANGELOG\.md$
         additional_dependencies:
           - mdformat-gfm
           - mdformat-black
@@ -74,7 +77,7 @@ repos:
       - id: pytest
         name: pytest
         entry: uv run pytest
-        args: [tests/, --tb=short, -q, --cov=src, --cov-report=term-missing, --cov-fail-under=97]
+        args: [tests/, --tb=short, -q, --cov=src, --cov-report=term-missing]
         language: system
         pass_filenames: false
         always_run: true

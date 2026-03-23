@@ -48,6 +48,7 @@ def db_persistence(tmp_path, monkeypatch):
 
     db = DatabasePersistence()
     yield db
+    db.engine.pool.dispose()
     db.engine.dispose()
 
 

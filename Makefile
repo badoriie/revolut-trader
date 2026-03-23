@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck check run-dev run-int run-prod run-paper run-live backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
 # Environment — dev (default), int, prod
@@ -41,11 +41,9 @@ help:
 	@echo "  make opconfig-delete   - Remove a config key (KEY=...)"
 	@echo ""
 	@echo "Trading & Analysis:"
-	@echo "  make run-dev           - Run in dev environment (paper mode, mock API)"
-	@echo "  make run-int           - Run in int environment (paper mode, real API)"
-	@echo "  make run-prod          - Run in prod environment (LIVE - REAL MONEY)"
-	@echo "  make run-paper         - Alias for run-dev"
-	@echo "  make run-live          - Alias for run-prod"
+	@echo "  make run-mock          - Run with mock API (dev env, no credentials needed)"
+	@echo "  make run-paper         - Run paper trading (int env, real API, no real trades)"
+	@echo "  make run-live          - Run live trading (prod env, REAL MONEY)"
 	@echo "  make backtest          - Backtest one strategy (STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=...)"
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
@@ -88,7 +86,7 @@ help:
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
-	@echo "  2. make run-dev          (mock API — no API key needed)"
+	@echo "  2. make run-mock         (mock API — no API key needed)"
 	@echo "  3. make ops ENV=int      (for real API testing)"
 
 # ============================================================================
@@ -202,7 +200,7 @@ setup:
 	@echo "=== Setup complete! ==="
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Run in dev mode:     make run-dev  (uses mock API — no API key needed)"
+	@echo "  1. Run in mock mode:    make run-mock  (uses mock API — no API key needed)"
 	@echo "  2. Add API keys for int/prod: make ops ENV=int  (and ENV=prod)"
 	@echo "  3. View configuration:  make opconfig-show ENV=dev"
 
@@ -244,7 +242,7 @@ ops:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
 	@if [ "$(ENV)" = "dev" ]; then \
 		echo "Dev environment uses mock API — no API credentials needed."; \
-		echo "Run 'make run-dev' to start with the mock API."; \
+		echo "Run 'make run-mock' to start with the mock API."; \
 	else \
 		echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"; \
 		echo ""; \
@@ -371,15 +369,15 @@ opconfig-delete:
 # Trading Bot
 # ============================================================================
 
-run-dev:
-	@echo "Starting bot in DEV environment (paper mode, mock API)"
+run-mock:
+	@echo "Starting bot in DEV environment (mock API, no credentials needed)"
 	@ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy market_making --risk conservative
 
-run-int:
-	@echo "Starting bot in INT environment (paper mode, real API)"
+run-paper:
+	@echo "Starting bot in INT environment (paper trading, real API)"
 	@ENVIRONMENT=int uv run python cli/run.py --env int --strategy market_making --risk conservative
 
-run-prod:
+run-live:
 	@echo ""
 	@echo "LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK"
 	@echo ""
@@ -387,8 +385,9 @@ run-prod:
 	@ENVIRONMENT=prod uv run python cli/run.py --env prod --strategy market_making --risk conservative
 
 # Backward-compatible aliases
-run-paper: run-dev
-run-live: run-prod
+run-dev: run-mock
+run-int: run-paper
+run-prod: run-live
 
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \
@@ -555,7 +554,10 @@ format:
 typecheck:
 	@uv run pyright src/ cli/
 
-check: lint format typecheck test
+security:
+	@uv run bandit -c pyproject.toml -r src/ cli/
+
+check: lint format typecheck security test
 	@echo "All quality checks passed"
 
 # ============================================================================

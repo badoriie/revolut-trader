@@ -28,12 +28,10 @@ make check                   # all of the above + tests
 # Run pre-commit hooks on all files
 make pre-commit
 
-# Run the bot (ENV defaults to dev)
-make run-dev                 # dev environment (paper mode, mock API)
-make run-int                 # int environment (paper mode, real API — staging ground)
-make run-prod                # prod environment (live trading — requires confirmation)
-make run-paper               # alias for run-dev
-make run-live                # alias for run-prod
+# Run the bot
+make run-mock                # mock API (dev env, no credentials needed)
+make run-paper               # paper trading (int env, real API, no real trades)
+make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 ENV=dev
@@ -67,7 +65,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. Dev checks are handled by pre-commit hooks locally. CI runs on PRs to `main` with `ENVIRONMENT=int`. Production release is a manual workflow with `ENVIRONMENT=prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
-**Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`.
+**Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`. The API client uses `RateLimiter` (`src/utils/rate_limiter.py`) to respect API rate limits.
 
 **Component hierarchy:**
 
@@ -86,13 +84,20 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
+**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, and position management via the API client.
+
 **Tests** (`tests/`):
 
+- `tests/conftest.py` — shared fixtures, sets `ENVIRONMENT=dev` before `Settings` singleton is created
 - `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions)
 - `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager)
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
+
+**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export).
+
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `release.yml` (manual production release with semver tag and auto-generated changelog).
 
 ## Mandatory Rules
 
@@ -195,16 +200,24 @@ Claude Code must handle this proactively without being asked.
 
 | File                                  | Purpose                                                         |
 | ------------------------------------- | --------------------------------------------------------------- |
-| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)         |
 | `src/bot.py`                          | Main orchestrator — start here to understand flow               |
 | `src/config.py`                       | Pydantic config + 1Password loading                             |
+| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                 |
+| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)         |
 | `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)       |
 | `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)   |
 | `src/risk_management/risk_manager.py` | Risk validation and position sizing                             |
+| `src/execution/executor.py`           | Order execution and position management                         |
 | `src/strategies/base_strategy.py`     | Abstract base all strategies implement                          |
 | `src/utils/onepassword.py`            | 1Password CLI wrapper (environment-aware item names)            |
 | `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export |
 | `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password              |
+| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)           |
+| `src/utils/rate_limiter.py`           | API rate limiting                                               |
 | `src/backtest/engine.py`              | Backtest engine with pagination, slippage, fees, Sharpe ratio   |
+| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                          |
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                     |
-| `docs/DEVELOPMENT_GUIDELINES.md`      | Detailed development guidelines                                 |
+| `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)      |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules              |
+| `docs/ARCHITECTURE.md`                | Component details and data flow                                 |
+| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                      |

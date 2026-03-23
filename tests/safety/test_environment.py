@@ -74,7 +74,7 @@ class TestEnvironmentRequired:
         """CRITICAL: Only dev, int, prod are valid environment values."""
         with patch.dict(os.environ, {"ENVIRONMENT": "staging"}):
             with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
-                with pytest.raises(ValueError, match="(?i)invalid.*environment|staging"):
+                with pytest.raises(ValueError, match=r"(?i)invalid.*environment|staging"):
                     Settings()
 
 
