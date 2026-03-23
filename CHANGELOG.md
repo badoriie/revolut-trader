@@ -2,6 +2,16 @@
 
 Auto-generated from [GitHub Releases](../../releases).
 
+## [v0.0.3] - 2026-03-23
+
+## What's Changed
+* Bump cryptography from 46.0.3 to 46.0.5 by @dependabot[bot] in https://github.com/badoriie/revolut-trader/pull/90
+* Bump virtualenv from 20.35.4 to 20.36.1 by @dependabot[bot] in https://github.com/badoriie/revolut-trader/pull/91
+* Bump filelock from 3.20.1 to 3.20.3 by @dependabot[bot] in https://github.com/badoriie/revolut-trader/pull/92
+
+
+**Full Changelog**: https://github.com/badoriie/revolut-trader/compare/v0.0.1...v0.0.3
+
 ## [v0.0.2] - 2026-03-23
 
 ## What's Changed
