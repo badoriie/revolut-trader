@@ -46,13 +46,13 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 ## Environments & Branches
 
-The project uses three environments with a single `main` branch. CI selects the environment based on the trigger:
+The project uses three environments with a single `main` branch:
 
-| Environment | CI Trigger              | API                  | Trading Mode | DB File        | Make Target     |
-| ----------- | ----------------------- | -------------------- | ------------ | -------------- | --------------- |
-| **dev**     | Push to feature branch  | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
-| **int**     | PR to `main`            | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
-| **prod**    | Manual release workflow | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
+| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target     |
+| ----------- | ------------------------ | -------------------- | ------------ | -------------- | --------------- |
+| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
+| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
+| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
 
 ### Branch Flow
 
@@ -60,9 +60,9 @@ The project uses three environments with a single `main` branch. CI selects the 
 feature branches → PR to main
 ```
 
-- **Feature branches** — all development happens here, pushes trigger dev CI
-- **PR to `main`** — integration testing with int environment (real API, paper mode)
-- **Manual release** — production validation via Actions console (requires "I UNDERSTAND" confirmation)
+- **Feature branches** — all development happens here, pre-commit hooks run lint, typecheck, security, and tests locally
+- **PR to `main`** — CI runs all checks with `ENVIRONMENT=int`, merge blocked until all pass
+- **Manual release** — production validation via Actions console (requires semver version + "I UNDERSTAND" confirmation)
 
 Each environment has its own 1Password items:
 
@@ -180,7 +180,7 @@ make pre-commit       # run all pre-commit hooks
 
 GitHub Actions workflows:
 
-- **CI** (`.github/workflows/ci.yml`) — runs on push to feature branches (dev) and PRs to `main` (int):
+- **CI** (`.github/workflows/ci.yml`) — runs on PRs to `main` (`ENVIRONMENT=int`), merge blocked until all pass:
   - Lint & Format — ruff check + format verification
   - Type Check — pyright strict checking on `src/` and `cli/`
   - Security Scan — bandit static analysis

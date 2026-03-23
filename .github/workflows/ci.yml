@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches-ignore: [main]
   pull_request:
     branches: [main]
 
@@ -10,19 +8,11 @@ permissions:
   contents: read
 
 concurrency:
-  # Use branch name (not ref) so push and pull_request for the same branch
-  # share a concurrency group — the PR run cancels the redundant push run.
-  group: ci-${{ github.head_ref || github.ref_name }}
+  group: ci-${{ github.head_ref }}
   cancel-in-progress: true
 
 env:
-  # Push to feature branch → dev (unit tests with mock API)
-  # PR to main → int (integration checks before merge)
-  ENVIRONMENT: >-
-    ${{
-      github.event_name == 'pull_request' && 'int' ||
-      'dev'
-    }}
+  ENVIRONMENT: int
   PYTHON_VERSION: "3.11"
 
 jobs:
@@ -81,7 +71,7 @@ jobs:
         run: uv run bandit -c pyproject.toml -r src/ cli/
 
   test:
-    name: Tests (${{ github.event_name == 'pull_request' && 'int' || 'dev' }})
+    name: Tests (int)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -119,10 +109,6 @@ jobs:
     steps:
       - name: Check all jobs
         run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "Push event — gate not required."
-            exit 0
-          fi
           if [[ "${{ needs.lint.result }}" != "success" ||
                 "${{ needs.typecheck.result }}" != "success" ||
                 "${{ needs.security.result }}" != "success" ||
