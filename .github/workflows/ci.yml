@@ -113,12 +113,16 @@ jobs:
 
   ci-passed:
     name: CI Passed
-    if: always() && github.event_name == 'pull_request'
+    if: always()
     needs: [lint, typecheck, security, test]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "Push event — gate not required."
+            exit 0
+          fi
           if [[ "${{ needs.lint.result }}" != "success" ||
                 "${{ needs.typecheck.result }}" != "success" ||
                 "${{ needs.security.result }}" != "success" ||
