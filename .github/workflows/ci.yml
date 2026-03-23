@@ -10,7 +10,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Use branch name (not ref) so push and pull_request for the same branch
+  # share a concurrency group — the PR run cancels the redundant push run.
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
