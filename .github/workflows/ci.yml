@@ -108,3 +108,19 @@ jobs:
           name: coverage-report
           path: coverage.xml
           retention-days: 30
+
+  ci-passed:
+    name: CI Passed
+    if: always()
+    needs: [lint, typecheck, security, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ||
+                "${{ needs.typecheck.result }}" != "success" ||
+                "${{ needs.security.result }}" != "success" ||
+                "${{ needs.test.result }}" != "success" ]]; then
+            echo "::error::One or more CI jobs failed."
+            exit 1
+          fi
