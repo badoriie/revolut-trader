@@ -188,13 +188,17 @@ jobs:
             done
           } > CHANGELOG.md
 
-      - name: Commit updated CHANGELOG.md
+      - name: Update version in pyproject.toml
+        run: |
+          sed -i "s/^version = \".*\"/version = \"${{ inputs.version }}\"/" pyproject.toml
+
+      - name: Commit updated CHANGELOG.md and pyproject.toml
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md
+          git add CHANGELOG.md pyproject.toml
           git diff --cached --quiet && exit 0
-          git commit -m "docs: update CHANGELOG.md for v${{ inputs.version }}"
+          git commit -m "release: v${{ inputs.version }}"
           git push origin main
 
       - name: Post release summary
