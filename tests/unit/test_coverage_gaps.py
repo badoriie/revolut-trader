@@ -552,7 +552,7 @@ class TestRiskManagerEdgeCases:
             quantity=Decimal("1"),
             price=Decimal("0"),
         )
-        is_valid, reason = rm.validate_order(order, Decimal("10000"), [])
+        is_valid, _reason = rm.validate_order(order, Decimal("10000"), [])
         assert is_valid is False
 
     def test_validate_order_zero_quantity(self):
@@ -566,7 +566,7 @@ class TestRiskManagerEdgeCases:
             quantity=Decimal("0"),
             price=Decimal("50000"),
         )
-        is_valid, reason = rm.validate_order(order, Decimal("10000"), [])
+        is_valid, _reason = rm.validate_order(order, Decimal("10000"), [])
         assert is_valid is False
 
 

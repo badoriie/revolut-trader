@@ -174,7 +174,7 @@ class TestDatabaseEncryptionErrors:
 
     def test_raises_when_stored_key_is_invalid(self):
         with patch("src.utils.onepassword.get_optional", return_value="not-a-valid-fernet-key"):
-            with pytest.raises(RuntimeError, match="DATABASE_ENCRYPTION_KEY.*invalid"):
+            with pytest.raises(RuntimeError, match=r"DATABASE_ENCRYPTION_KEY.*invalid"):
                 DatabaseEncryption()
 
 

@@ -28,12 +28,10 @@ make check                   # all of the above + tests
 # Run pre-commit hooks on all files
 make pre-commit
 
-# Run the bot (ENV defaults to dev)
-make run-dev                 # dev environment (paper mode, mock API)
-make run-int                 # int environment (paper mode, real API — staging ground)
-make run-prod                # prod environment (live trading — requires confirmation)
-make run-paper               # alias for run-dev
-make run-live                # alias for run-prod
+# Run the bot
+make run-mock                # mock API (dev env, no credentials needed)
+make run-paper               # paper trading (int env, real API, no real trades)
+make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 ENV=dev

@@ -7,7 +7,7 @@ Quick commands to test API connectivity and fetch common data
 import argparse
 import asyncio
 import sys
-from datetime import UTC
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -83,8 +83,6 @@ async def get_candles(
     api_client: RevolutAPIClient, symbol: str, interval: int = 60, limit: int = 10
 ) -> None:
     """Get and display recent candles."""
-    from datetime import datetime
-
     print(f"\n📈 Recent Candles: {symbol} ({interval}min)")
     print("=" * 50)
 
@@ -101,7 +99,7 @@ async def get_candles(
         display_candles = candles[-limit:] if len(candles) > limit else candles
         for candle in reversed(display_candles):
             # Convert Unix timestamp (milliseconds) to datetime
-            timestamp = datetime.fromtimestamp(int(candle["start"]) / 1000).strftime(
+            timestamp = datetime.fromtimestamp(int(candle["start"]) / 1000, tz=UTC).strftime(
                 "%Y-%m-%d %H:%M"
             )
             # Convert string values to float
@@ -238,8 +236,6 @@ async def get_multiple_tickers(api_client: RevolutAPIClient, symbols: list[str])
 
 def _parse_timestamp(ts: str | int | None) -> str:
     """Parse a timestamp that may be Unix ms (int) or ISO 8601 (str)."""
-    from datetime import datetime
-
     if ts is None:
         return ""
     try:
@@ -727,7 +723,7 @@ Examples:
         print("\n\nCancelled by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Command failed: {str(e)}", exc_info=True)
+        logger.error(f"Command failed: {e!s}", exc_info=True)
         print(f"\n❌ Error: {e}")
         sys.exit(1)
 

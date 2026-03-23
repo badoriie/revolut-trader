@@ -321,7 +321,7 @@ class TradingBot:
                             self.cash_balance += order_value
 
         except Exception as e:
-            logger.error(f"Error processing {symbol}: {str(e)}", exc_info=True)
+            logger.error(f"Error processing {symbol}: {e!s}", exc_info=True)
 
     async def _fetch_market_data(self, symbol: str) -> MarketData | None:
         """Fetch current market data for a symbol.
@@ -346,7 +346,7 @@ class TradingBot:
             )
 
         except Exception as e:
-            logger.error(f"Failed to fetch market data for {symbol}: {str(e)}")
+            logger.error(f"Failed to fetch market data for {symbol}: {e!s}")
             return None
 
     async def _update_portfolio(self):

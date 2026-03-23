@@ -56,7 +56,7 @@ async def run_bot(args):
     except KeyboardInterrupt:
         logger.info("\n👋 Shutting down gracefully...")
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}", exc_info=True)
+        logger.error(f"Fatal error: {e!s}", exc_info=True)
     finally:
         await bot.stop()
 
@@ -170,7 +170,7 @@ Trading mode is derived from environment:
     except KeyboardInterrupt:
         logger.info("Goodbye! 👋")
     except Exception as e:
-        logger.error(f"Failed to start bot: {str(e)}", exc_info=True)
+        logger.error(f"Failed to start bot: {e!s}", exc_info=True)
         sys.exit(1)
 
 

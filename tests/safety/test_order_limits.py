@@ -196,7 +196,7 @@ class TestDailyLossLimits:
         # Should still allow trading
         # Conservative limit: 1.5% of 10000 = 150 EUR max position
         # 0.002 BTC * 50000 EUR = 100 EUR < 150 EUR limit
-        is_valid, reason = conservative_risk_manager.can_open_position(
+        is_valid, _reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
             side=OrderSide.BUY,
             quantity=Decimal("0.002"),

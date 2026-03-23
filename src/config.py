@@ -86,7 +86,7 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "ENVIRONMENT not set. Export it before running:\n"
                 "  export ENVIRONMENT=dev   # or: int, prod\n"
-                "Or use: make run-dev / make run-int / make run-prod"
+                "Or use: make run-mock / make run-paper / make run-live"
             )
         try:
             self.environment = Environment(env_str.lower())

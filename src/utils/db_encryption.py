@@ -83,7 +83,7 @@ class DatabaseEncryption:
             return data
         encrypted_data = data.copy()
         for field in fields:
-            if field in encrypted_data and encrypted_data[field]:
+            if encrypted_data.get(field):
                 encrypted_data[field] = self.encrypt(str(encrypted_data[field]))
         return encrypted_data
 
@@ -93,7 +93,7 @@ class DatabaseEncryption:
             return data
         decrypted_data = data.copy()
         for field in fields:
-            if field in decrypted_data and decrypted_data[field]:
+            if decrypted_data.get(field):
                 decrypted_data[field] = self.decrypt(str(decrypted_data[field]))
         return decrypted_data
 

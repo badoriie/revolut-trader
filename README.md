@@ -20,13 +20,13 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 # 1. Complete setup (creates 1Password items for dev/int/prod)
 make setup
 
-# 2. Run in dev environment (paper mode, mock API — no API key needed)
-make run-dev
+# 2. Run with mock API (no credentials needed)
+make run-mock
 
-# For int/prod (real API):
+# For real API:
 make ops ENV=int          # store your Revolut API credentials
 make opshow ENV=int       # verify stored values
-make run-int              # run with real API in paper mode
+make run-paper            # run with real API in paper mode
 ```
 
 See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
@@ -48,11 +48,11 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 The project uses three environments with a single `main` branch:
 
-| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target     |
-| ----------- | ------------------------ | -------------------- | ------------ | -------------- | --------------- |
-| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-dev`  |
-| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-int`  |
-| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run-prod` |
+| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target      |
+| ----------- | ------------------------ | -------------------- | ------------ | -------------- | ---------------- |
+| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-mock`  |
+| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-paper` |
+| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run-live`  |
 
 ### Branch Flow
 
@@ -74,14 +74,19 @@ Each environment has its own 1Password items:
 - dev/int → paper (simulated trading)
 - prod → live (real money)
 
+### Mock Trading
+
+```bash
+make run-mock    # mock API, no credentials needed
+```
+
 ### Paper Trading
 
 ```bash
-make run-dev     # dev environment (mock API, paper mode)
-make run-int     # int environment (real API, paper mode — staging ground)
+make run-paper   # real API, paper mode (no real trades)
 
 # Or with options
-ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk moderate
+ENVIRONMENT=int uv run python cli/run.py --env int --strategy momentum --risk moderate
 ```
 
 ### Live Trading
@@ -89,7 +94,7 @@ ENVIRONMENT=dev uv run python cli/run.py --env dev --strategy momentum --risk mo
 **WARNING**: Uses real money. Only available in prod environment. Test thoroughly in paper mode first!
 
 ```bash
-make run-prod   # with safety confirmation
+make run-live    # with safety confirmation
 ```
 
 ### API Testing

@@ -166,7 +166,7 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError, match="(?i)invalid.*risk_level|extreme"):
+            with pytest.raises(ValueError, match=r"(?i)invalid.*risk_level|extreme"):
                 Settings()
 
     def test_invalid_default_strategy_raises_error(self):
@@ -180,7 +180,7 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError, match="(?i)invalid.*default_strategy|invalid_strategy"):
+            with pytest.raises(ValueError, match=r"(?i)invalid.*default_strategy|invalid_strategy"):
                 Settings()
 
     def test_invalid_initial_capital_raises_error(self):
@@ -194,7 +194,7 @@ class TestConfigurationValidation:
         }
 
         with patch(PATCH_TARGET, side_effect=mock_get(config)):
-            with pytest.raises(ValueError, match="(?i)invalid.*initial_capital|not_a_number"):
+            with pytest.raises(ValueError, match=r"(?i)invalid.*initial_capital|not_a_number"):
                 Settings()
 
 
