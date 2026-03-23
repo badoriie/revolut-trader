@@ -138,9 +138,8 @@ raise RuntimeError("Invalid config")
 
 # GOOD
 raise RuntimeError(
-    "TRADING_MODE not found in 1Password config.\n"
-    "Run: make opconfig-init\n"
-    "Or manually set: make opconfig-set KEY=TRADING_MODE VALUE=paper"
+    "RISK_LEVEL not found in 1Password config.\n"
+    "Run: make opconfig-set KEY=RISK_LEVEL VALUE=conservative ENV=dev"
 )
 ```
 
@@ -334,8 +333,9 @@ feature branch → PR to main
 - Push to any feature branch triggers dev CI (lint, typecheck, security, tests).
 - PR to `main` triggers int CI (same checks, `ENVIRONMENT=int`).
 - **Backtest matrix** — manual `workflow_dispatch` with configurable parameters via Actions console.
-- **Release workflow** — manual `workflow_dispatch` for production validation (requires "I UNDERSTAND" confirmation).
+- **Release workflow** — manual `workflow_dispatch` for production release. Requires semver version (e.g. `1.0.0`) and "I UNDERSTAND" confirmation. Creates a git tag (`v1.0.0`), GitHub Release with auto-generated changelog, and updates `CHANGELOG.md`.
 - Dependabot PRs target `main` — dependency updates trigger int CI automatically.
+- **CHANGELOG.md** is auto-generated from GitHub Releases — do not edit manually.
 
 ______________________________________________________________________
 

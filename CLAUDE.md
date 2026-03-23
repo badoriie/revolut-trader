@@ -184,7 +184,7 @@ Every public function needs type annotations on all parameters and return value,
 Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
 
 - `README.md` — feature additions, configuration changes, usage instructions
-- `CHANGELOG.md` — bug fixes, new features, breaking changes
+- `CHANGELOG.md` — auto-generated from GitHub Releases by the release workflow (do not edit manually)
 - Inline docstrings — logic changes, new functions, modified behavior
 - `CLAUDE.md` — architectural changes, new components, workflow changes
 - `docs/` files — API changes, strategy changes, development guidelines

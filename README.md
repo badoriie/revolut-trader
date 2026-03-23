@@ -8,8 +8,8 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 
 - **6 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy, Breakout, Range Reversion
 - **3 Risk Levels**: Conservative, Moderate, Aggressive — with position limits, stop-loss, daily loss limits
-- **3 Environments**: Dev (mock API), Int (real API, paper only), Prod (real API, paper or live)
-- **3 Trading Modes**: Backtesting, Paper Trading, Live Trading
+- **3 Environments**: Dev (mock API, paper), Int (real API, paper), Prod (real API, live)
+- **Backtesting**: Strategy comparison with real historical data, configurable via Actions console
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
 - **Monitoring**: Database analytics, CSV export
@@ -186,18 +186,22 @@ GitHub Actions workflows:
   - Security Scan — bandit static analysis
   - Tests — pytest with coverage as high as possible (currently ≥ 97%)
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
-- **Release** (`.github/workflows/release.yml`) — manual workflow for production validation from `main` (requires "I UNDERSTAND" confirmation)
+- **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Creates a semver tag (`v1.0.0`), GitHub Release with auto-generated changelog from merged PRs, and updates `CHANGELOG.md` automatically
 
 Dependabot targets `main` — dependency PRs trigger int CI automatically.
 
-#### Required GitHub Secret
-
-The backtest matrix workflow requires a 1Password service account token to fetch real market data:
+#### Required GitHub Secrets
 
 ```bash
 # Add to GitHub repo → Settings → Secrets and variables → Actions:
+
+# 1Password service account token (backtest workflow — real market data):
 #   Name:  OP_SERVICE_ACCOUNT_TOKEN
-#   Value: ops_xxxx... (1Password service account token with read access to revolut-trader vault)
+#   Value: ops_xxxx...
+
+# Personal access token (release workflow — push CHANGELOG.md past branch protection):
+#   Name:  RELEASE_PAT
+#   Value: github_pat_xxxx... (fine-grained PAT with Contents: Read and write)
 ```
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.

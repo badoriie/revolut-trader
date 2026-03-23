@@ -1,23 +1,26 @@
 name: Release (Prod)
 
 # Manual workflow to validate and release a production version from main.
-# Runs the full CI suite with ENVIRONMENT=prod to ensure everything passes
-# before deploying to production.
+# Runs the full CI suite with ENVIRONMENT=prod, then creates a semver tag
+# and a GitHub Release with auto-generated changelog from merged PRs/commits.
 #
-# Required GitHub secret:
-#   OP_SERVICE_ACCOUNT_TOKEN — 1Password service account token with read access
-#                              to the revolut-trader vault (prod credentials).
+# After the release, CHANGELOG.md is updated automatically from all GitHub
+# Releases and committed back to main.
 
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: "Version (semver, e.g. 1.0.0 — without 'v' prefix)"
+        required: true
+        type: string
       confirm:
         description: "Type 'I UNDERSTAND' to confirm production release"
         required: true
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-prod
@@ -28,8 +31,8 @@ env:
   PYTHON_VERSION: "3.11"
 
 jobs:
-  validate-confirmation:
-    name: Validate Confirmation
+  validate-inputs:
+    name: Validate Inputs
     runs-on: ubuntu-latest
     steps:
       - name: Check confirmation
@@ -38,9 +41,28 @@ jobs:
           echo "::error::You must type 'I UNDERSTAND' to confirm production release."
           exit 1
 
+      - name: Validate semver format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version '$VERSION'. Must be semver (e.g. 1.0.0, 1.2.3-beta.1)."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check tag does not exist
+        run: |
+          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ inputs.version }} already exists."
+            exit 1
+          fi
+
   lint:
     name: Lint & Format
-    needs: validate-confirmation
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -61,7 +83,7 @@ jobs:
 
   typecheck:
     name: Type Check
-    needs: validate-confirmation
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -79,7 +101,7 @@ jobs:
 
   security:
     name: Security Scan
-    needs: validate-confirmation
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -97,7 +119,7 @@ jobs:
 
   test:
     name: Tests (prod)
-    needs: validate-confirmation
+    needs: validate-inputs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -120,24 +142,65 @@ jobs:
           -q
 
   release:
-    name: Release
+    name: Create Release
     needs: [lint, typecheck, security, test]
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          VERSION="v${{ inputs.version }}"
+
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --generate-notes \
+            --latest
+
+      - name: Generate CHANGELOG.md from releases
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          {
+            echo "# Changelog"
+            echo ""
+            echo "Auto-generated from [GitHub Releases](../../releases)."
+            echo ""
+
+            gh release list --limit 100 --json tagName,publishedAt,name \
+              --jq '.[] | .tagName' | while read -r TAG; do
+
+              RELEASE_DATE=$(gh release view "$TAG" --json publishedAt --jq '.publishedAt[:10]')
+              RELEASE_BODY=$(gh release view "$TAG" --json body --jq '.body')
+
+              echo "## [$TAG] - $RELEASE_DATE"
+              echo ""
+              echo "$RELEASE_BODY"
+              echo ""
+            done
+          } > CHANGELOG.md
+
+      - name: Commit updated CHANGELOG.md
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --cached --quiet && exit 0
+          git commit -m "docs: update CHANGELOG.md for v${{ inputs.version }}"
+          git push origin main
 
       - name: Post release summary
         run: |
-          COMMIT_SHA=$(git rev-parse --short HEAD)
-          COMMIT_MSG=$(git log -1 --pretty=%s)
           {
-            echo "## Production Release"
-            echo ""
-            echo "**Commit:** \`$COMMIT_SHA\` — $COMMIT_MSG"
+            echo "## Production Release v${{ inputs.version }}"
             echo ""
             echo "All checks passed:"
             echo "- Lint & Format"
@@ -145,5 +208,6 @@ jobs:
             echo "- Security Scan"
             echo "- Tests (prod, ≥97% coverage)"
             echo ""
-            echo "*Ready for production deployment.*"
+            echo "**Tag:** \`v${{ inputs.version }}\`"
+            echo "**Release:** [v${{ inputs.version }}](../../releases/tag/v${{ inputs.version }})"
           } >> "$GITHUB_STEP_SUMMARY"
