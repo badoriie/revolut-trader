@@ -1,6 +1,13 @@
 # Revolut Trader: Algorithmic Trading Bot
 
 [![CI](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=badoriie_revolut-trader&metric=alert_status&token=88e993a3010057e454d15b0ab129bdf4f710e675)](https://sonarcloud.io/summary/new_code?id=badoriie_revolut-trader)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=badoriie_revolut-trader&metric=coverage&token=88e993a3010057e454d15b0ab129bdf4f710e675)](https://sonarcloud.io/summary/new_code?id=badoriie_revolut-trader)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=badoriie_revolut-trader&metric=security_rating&token=88e993a3010057e454d15b0ab129bdf4f710e675)](https://sonarcloud.io/summary/new_code?id=badoriie_revolut-trader)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A production-ready algorithmic trading bot for Revolut X Crypto API with multiple strategies, robust risk management, and comprehensive monitoring.
 

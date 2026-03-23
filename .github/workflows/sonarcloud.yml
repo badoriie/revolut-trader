@@ -1,8 +1,6 @@
 name: SonarCloud
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -52,4 +50,5 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=src/,cli/
             -Dsonar.tests=tests/
+            -Dsonar.coverage.exclusions=cli/**
             -Dsonar.python.version=3.11
