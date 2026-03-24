@@ -116,7 +116,7 @@ class OrderExecutor:
 
         return executed_order
 
-    async def _execute_paper_order(self, order: Order) -> Order:  # NOSONAR(python:S7503)
+    async def _execute_paper_order(self, order: Order) -> Order:  # NOSONAR
         """Simulate an order fill in paper trading mode."""
         logger.info(
             f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}"

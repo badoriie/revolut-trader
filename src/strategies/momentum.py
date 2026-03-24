@@ -54,32 +54,42 @@ class MomentumStrategy(BaseStrategy):
         Returns:
             ``(signal_type, strength, reason)`` tuple.
         """
+        is_bullish = fast_ma > slow_ma and rsi < self.rsi_overbought
+        is_bearish = fast_ma < slow_ma and rsi > self.rsi_oversold
+        can_buy = not existing_position or existing_position.side == OrderSide.SELL
+        can_sell = not existing_position or existing_position.side == OrderSide.BUY
+
         # Bullish: Fast MA crosses above Slow MA and RSI not overbought
-        if fast_ma > slow_ma and rsi < self.rsi_overbought:
-            if not existing_position or existing_position.side == OrderSide.SELL:
-                ma_diff = (fast_ma - slow_ma) / slow_ma
-                return (
-                    "BUY",
-                    min(1.0, float(ma_diff) * 10),
-                    f"Bullish momentum: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-                )
+        if is_bullish and can_buy:
+            ma_diff = (fast_ma - slow_ma) / slow_ma
+            return (
+                "BUY",
+                min(1.0, float(ma_diff) * 10),
+                f"Bullish momentum: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+            )
 
         # Bearish: Fast MA crosses below Slow MA and RSI not oversold
-        elif fast_ma < slow_ma and rsi > self.rsi_oversold:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                ma_diff = (slow_ma - fast_ma) / slow_ma
-                return (
-                    "SELL",
-                    min(1.0, float(ma_diff) * 10),
-                    f"Bearish momentum: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-                )
+        if is_bearish and can_sell:
+            ma_diff = (slow_ma - fast_ma) / slow_ma
+            return (
+                "SELL",
+                min(1.0, float(ma_diff) * 10),
+                f"Bearish momentum: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+            )
 
         # Exit signals based on RSI extremes
-        elif existing_position:
-            if existing_position.side == OrderSide.BUY and rsi > self.rsi_overbought:
-                return "SELL", 0.8, f"RSI overbought exit: {rsi:.1f} > {self.rsi_overbought}"
-            if existing_position.side == OrderSide.SELL and rsi < self.rsi_oversold:
-                return "BUY", 0.8, f"RSI oversold exit: {rsi:.1f} < {self.rsi_oversold}"
+        if (
+            existing_position
+            and existing_position.side == OrderSide.BUY
+            and rsi > self.rsi_overbought
+        ):
+            return "SELL", 0.8, f"RSI overbought exit: {rsi:.1f} > {self.rsi_overbought}"
+        if (
+            existing_position
+            and existing_position.side == OrderSide.SELL
+            and rsi < self.rsi_oversold
+        ):
+            return "BUY", 0.8, f"RSI oversold exit: {rsi:.1f} < {self.rsi_oversold}"
 
         return "HOLD", 0.0, ""
 

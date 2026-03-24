@@ -50,42 +50,54 @@ class MeanReversionStrategy(BaseStrategy):
         Returns:
             ``(signal_type, strength, reason)`` tuple.
         """
+        abs_deviation = abs(deviation)
+        sufficient_deviation = abs_deviation >= self.min_deviation
+        is_oversold = current_price <= lower_band and sufficient_deviation
+        is_overbought = current_price >= upper_band and sufficient_deviation
+        can_buy = not existing_position or existing_position.side == OrderSide.SELL
+        can_sell = not existing_position or existing_position.side == OrderSide.BUY
+
         # Price below lower band — oversold, buy signal
-        if current_price <= lower_band and abs(deviation) >= self.min_deviation:
-            if not existing_position or existing_position.side == OrderSide.SELL:
-                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
-                return (
-                    "BUY",
-                    strength,
-                    f"Price {current_price:.2f} below lower band {lower_band:.2f}, "
-                    f"deviation {deviation:.2%}",
-                )
+        if is_oversold and can_buy:
+            strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
+            return (
+                "BUY",
+                strength,
+                f"Price {current_price:.2f} below lower band {lower_band:.2f}, "
+                f"deviation {deviation:.2%}",
+            )
 
         # Price above upper band — overbought, sell signal
-        elif current_price >= upper_band and abs(deviation) >= self.min_deviation:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
-                return (
-                    "SELL",
-                    strength,
-                    f"Price {current_price:.2f} above upper band {upper_band:.2f}, "
-                    f"deviation {deviation:.2%}",
-                )
+        if is_overbought and can_sell:
+            strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
+            return (
+                "SELL",
+                strength,
+                f"Price {current_price:.2f} above upper band {upper_band:.2f}, "
+                f"deviation {deviation:.2%}",
+            )
 
         # Exit signal: price returns to mean
-        elif existing_position:
-            if existing_position.side == OrderSide.BUY and current_price >= mean_price:
-                return (
-                    "SELL",
-                    0.7,
-                    f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
-                )
-            if existing_position.side == OrderSide.SELL and current_price <= mean_price:
-                return (
-                    "BUY",
-                    0.7,
-                    f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
-                )
+        if (
+            existing_position
+            and existing_position.side == OrderSide.BUY
+            and current_price >= mean_price
+        ):
+            return (
+                "SELL",
+                0.7,
+                f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
+            )
+        if (
+            existing_position
+            and existing_position.side == OrderSide.SELL
+            and current_price <= mean_price
+        ):
+            return (
+                "BUY",
+                0.7,
+                f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
+            )
 
         return "HOLD", 0.0, ""
 

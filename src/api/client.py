@@ -66,7 +66,7 @@ class RevolutAPIClient:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.close()
 
-    async def initialize(self) -> None:  # NOSONAR(python:S7503)
+    async def initialize(self) -> None:  # NOSONAR
         """Load the Ed25519 private key from 1Password.
 
         Raises:

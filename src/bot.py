@@ -249,6 +249,42 @@ class TradingBot:
 
         self._check_risk_limits()
 
+    def _handle_loop_exception(self, error: Exception, interval: int) -> tuple[bool, int]:
+        """Classify a trading-loop exception into a retry decision.
+
+        Args:
+            error:    The exception raised during the iteration.
+            interval: Default sleep interval in seconds.
+
+        Returns:
+            ``(should_continue, sleep_seconds)`` — *should_continue* is ``False``
+            when the loop must stop.
+        """
+        if isinstance(error, httpx.TimeoutException):
+            logger.warning(f"⏱️  API timeout in trading loop: {error}")
+            logger.info("Retrying next iteration...")
+            return True, interval
+
+        if isinstance(error, httpx.HTTPStatusError):
+            delay = self._handle_http_error(error)
+            if delay is None:
+                return False, 0
+            return True, interval if delay == -1 else delay
+
+        if isinstance(error, ValueError):
+            logger.error(f"📊 Data validation error: {error}")
+            logger.info("Likely malformed market data, continuing...")
+            return True, interval
+
+        if isinstance(error, RuntimeError):
+            logger.critical(f"Runtime error: {error}")
+            return False, 0
+
+        logger.critical(
+            f"Unexpected error in trading loop: {type(error).__name__}: {error}", exc_info=True
+        )
+        return True, interval
+
     async def run_trading_loop(self, interval: int = 60):
         """Main trading loop.
 
@@ -266,27 +302,11 @@ class TradingBot:
             except KeyboardInterrupt:
                 logger.info("Received shutdown signal")
                 break
-            except httpx.TimeoutException as e:
-                logger.warning(f"⏱️  API timeout in trading loop: {e}")
-                logger.info("Retrying next iteration...")
-                await asyncio.sleep(interval)
-            except httpx.HTTPStatusError as e:
-                delay = self._handle_http_error(e)
-                if delay is None:
-                    break
-                await asyncio.sleep(interval if delay == -1 else delay)
-            except ValueError as e:
-                logger.error(f"📊 Data validation error: {e}")
-                logger.info("Likely malformed market data, continuing...")
-                await asyncio.sleep(interval)
-            except RuntimeError as e:
-                logger.critical(f"Runtime error: {e}")
-                break
             except Exception as e:
-                logger.critical(
-                    f"Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True
-                )
-                await asyncio.sleep(interval)
+                should_continue, sleep_time = self._handle_loop_exception(e, interval)
+                if not should_continue:
+                    break
+                await asyncio.sleep(sleep_time)
 
     def _process_filled_order(self, order: Order) -> None:
         """Persist a filled order and update the cash balance.
