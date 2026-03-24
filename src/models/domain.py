@@ -171,15 +171,18 @@ class ShutdownSummary(BaseModel):
     Returned by ``OrderExecutor.graceful_shutdown()`` so the bot can log
     what happened and update its cash balance for any closed positions.
 
+    Guarantee: after ``graceful_shutdown()`` returns, ALL bot-opened positions
+    are closed.  ``positions_closed`` equals ``positions_evaluated``.
+
     All monetary fields use ``Decimal`` — never ``float``.
     """
 
     orders_cancelled: int
     positions_evaluated: int
-    positions_closed: int
-    positions_kept: int
-    closed_positions_pnl: Decimal = Decimal("0")
-    kept_positions_pnl: Decimal = Decimal("0")
+    positions_closed: int  # always == positions_evaluated after shutdown
+    positions_trailing_stopped: int  # subset of positions_closed: closed via trailing stop
+    closed_positions_pnl: Decimal = Decimal("0")  # immediate closes (losers)
+    trailing_stopped_pnl: Decimal = Decimal("0")  # trailing-stop closes (winners/breakeven)
     filled_close_orders: list["Order"] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 

@@ -232,3 +232,104 @@ class TestMaxCapitalEnforcement:
 
         assert bot.cash_balance == Decimal("5000.25")
         assert isinstance(bot.cash_balance, Decimal)
+
+
+# ===========================================================================
+# Shutdown Config Validation
+# ===========================================================================
+
+
+class TestShutdownConfigLoading:
+    """Tests that SHUTDOWN_TRAILING_STOP_PCT and SHUTDOWN_MAX_WAIT_SECONDS load correctly."""
+
+    def test_shutdown_trailing_stop_pct_loaded_when_set(self) -> None:
+        """SHUTDOWN_TRAILING_STOP_PCT should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_TRAILING_STOP_PCT": "0.5"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.shutdown_trailing_stop_pct == 0.5
+
+    def test_shutdown_trailing_stop_pct_none_when_not_set(self) -> None:
+        """SHUTDOWN_TRAILING_STOP_PCT should be None when not in 1Password."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.shutdown_trailing_stop_pct is None
+
+    def test_invalid_shutdown_trailing_stop_pct_rejected(self) -> None:
+        """Non-numeric SHUTDOWN_TRAILING_STOP_PCT MUST be rejected."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_TRAILING_STOP_PCT": "not_a_number"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)shutdown_trailing_stop_pct"):
+                Settings()
+
+    def test_zero_shutdown_trailing_stop_pct_rejected(self) -> None:
+        """SHUTDOWN_TRAILING_STOP_PCT=0 MUST be rejected (zero-width stop is invalid)."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_TRAILING_STOP_PCT": "0"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)shutdown_trailing_stop_pct"):
+                Settings()
+
+    def test_shutdown_max_wait_seconds_loaded_when_set(self) -> None:
+        """SHUTDOWN_MAX_WAIT_SECONDS should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_MAX_WAIT_SECONDS": "120"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.shutdown_max_wait_seconds == 120
+
+    def test_shutdown_max_wait_seconds_none_when_not_set(self) -> None:
+        """SHUTDOWN_MAX_WAIT_SECONDS should be None when not in 1Password."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.shutdown_max_wait_seconds is None
+
+    def test_invalid_shutdown_max_wait_seconds_rejected(self) -> None:
+        """Non-integer SHUTDOWN_MAX_WAIT_SECONDS MUST be rejected."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_MAX_WAIT_SECONDS": "not_an_int"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)shutdown_max_wait_seconds"):
+                Settings()
+
+    def test_zero_shutdown_max_wait_seconds_rejected(self) -> None:
+        """SHUTDOWN_MAX_WAIT_SECONDS=0 MUST be rejected (zero timeout forces immediate close)."""
+        config = {**_BASE_CONFIG, "SHUTDOWN_MAX_WAIT_SECONDS": "0"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)shutdown_max_wait_seconds"):
+                Settings()

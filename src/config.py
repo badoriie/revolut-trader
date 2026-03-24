@@ -127,6 +127,21 @@ class Settings(BaseSettings):
         pairs_str = op.get("TRADING_PAIRS")
         self.trading_pairs = [p.strip().strip("\"'") for p in pairs_str.split(",")]
 
+        # Validate that every trading pair's quote currency matches BASE_CURRENCY.
+        # A mismatch causes wrong position sizing (portfolio in currency A, prices in
+        # currency B) and API-rejected orders (account doesn't hold the quote currency).
+        mismatched = [
+            p for p in self.trading_pairs if not p.upper().endswith(f"-{self.base_currency}")
+        ]
+        if mismatched:
+            msg = (
+                f"Trading pair(s) {mismatched} do not match BASE_CURRENCY '{self.base_currency}'.\n"  # nosec B608
+                f"All pairs must end with '-{self.base_currency}' (e.g. BTC-{self.base_currency}).\n"
+                f"Fix with: make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-{self.base_currency} ENV=<env>\n"
+                f"Or update BASE_CURRENCY: make opconfig-set KEY=BASE_CURRENCY VALUE=<currency> ENV=<env>"
+            )
+            raise ValueError(msg)
+
         # INITIAL_CAPITAL — only required for paper mode (dev/int).
         # In prod (live mode) the real balance is fetched from the Revolut API.
         if self.trading_mode == TradingMode.PAPER:
@@ -153,6 +168,38 @@ class Settings(BaseSettings):
                     "Set it with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"
                 ) from e
 
+        # SHUTDOWN_TRAILING_STOP_PCT — optional.
+        # Trailing stop percentage for profitable positions on shutdown.
+        trailing_str = op.get_optional("SHUTDOWN_TRAILING_STOP_PCT")
+        if trailing_str is not None:
+            try:
+                trailing_val = float(trailing_str)
+                if trailing_val <= 0:
+                    raise ValueError("must be a positive number")
+                self.shutdown_trailing_stop_pct = trailing_val
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid SHUTDOWN_TRAILING_STOP_PCT in 1Password: must be a positive number "
+                    "(e.g. 0.5 for 0.5%).\n"
+                    "Set it with: make opconfig-set KEY=SHUTDOWN_TRAILING_STOP_PCT VALUE=0.5 ENV=dev"
+                ) from e
+
+        # SHUTDOWN_MAX_WAIT_SECONDS — optional.
+        # Hard timeout before force-closing a profitable position on shutdown.
+        max_wait_str = op.get_optional("SHUTDOWN_MAX_WAIT_SECONDS")
+        if max_wait_str is not None:
+            try:
+                max_wait_val = int(max_wait_str)
+                if max_wait_val <= 0:
+                    raise ValueError("must be a positive integer")
+                self.shutdown_max_wait_seconds = max_wait_val
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid SHUTDOWN_MAX_WAIT_SECONDS in 1Password: must be a positive integer "
+                    "(e.g. 120 for 2 minutes).\n"
+                    "Set it with: make opconfig-set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=120 ENV=dev"
+                ) from e
+
     # Logging
     log_level: str = Field(default="INFO")
 
@@ -164,6 +211,18 @@ class Settings(BaseSettings):
     # never consider more than this amount as available capital, even if the
     # account holds more.  None means "use the full available balance".
     max_capital: float | None = Field(default=None)
+
+    # Shutdown trailing stop percentage (optional).
+    # When the bot shuts down, profitable positions are held open with a trailing
+    # stop this many percent below the running high-watermark price.  The position
+    # is closed when the price falls back to the stop, or when shutdown_max_wait_seconds
+    # expires — whichever comes first.  None disables trailing stop (immediate close).
+    # Example: 0.5 = 0.5% trailing stop.
+    shutdown_trailing_stop_pct: float | None = Field(default=None)
+
+    # Maximum seconds to wait for a profitable position's trailing stop to trigger
+    # before force-closing at market price.  None means "use system default of 120s".
+    shutdown_max_wait_seconds: int | None = Field(default=None)
 
 
 settings = Settings()

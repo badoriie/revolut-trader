@@ -182,13 +182,23 @@ class TradingBot:
         logger.info("Stopping trading bot...")
         self.is_running = False
 
-        # Graceful shutdown: cancel orders, close losing positions, keep winners
+        # Graceful shutdown: cancel orders, close ALL positions.
+        # Profitable positions wait for a trailing stop (if configured) before closing.
         if self.executor:
-            shutdown_summary = await self.executor.graceful_shutdown()
+            trailing_pct = (
+                Decimal(str(settings.shutdown_trailing_stop_pct))
+                if settings.shutdown_trailing_stop_pct is not None
+                else None
+            )
+            shutdown_summary = await self.executor.graceful_shutdown(
+                trailing_stop_pct=trailing_pct,
+                max_wait_seconds=settings.shutdown_max_wait_seconds,
+            )
             logger.info(
                 f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
-                f"{shutdown_summary.positions_closed} losing positions closed, "
-                f"{shutdown_summary.positions_kept} profitable positions kept"
+                f"{shutdown_summary.positions_closed}/{shutdown_summary.positions_evaluated} "
+                f"positions closed "
+                f"({shutdown_summary.positions_trailing_stopped} via trailing stop)"
             )
 
             # Update cash balance for positions closed during shutdown

@@ -85,6 +85,25 @@ class OrderExecutor:
             )
             return None
 
+        # SAFETY: Never sell a symbol the bot did not open a position in.
+        # The Revolut API fills sells from total account holdings — a stray SELL
+        # would liquidate the user's pre-existing crypto, not just bot-bought crypto.
+        if signal.signal_type == "SELL" and signal.symbol not in self.positions:
+            logger.warning(
+                f"SELL signal for {signal.symbol} rejected: bot has no open position "
+                "for this symbol. Pre-existing crypto is protected."
+            )
+            rejected = Order(
+                symbol=signal.symbol,
+                side=OrderSide.SELL,
+                order_type=OrderType.LIMIT,
+                quantity=Decimal("0"),
+                price=signal.price,
+                strategy=signal.strategy,
+            )
+            rejected.status = OrderStatus.REJECTED
+            return rejected
+
         side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
 
         quantity = self.risk_manager.calculate_position_size(
@@ -300,22 +319,33 @@ class OrderExecutor:
         if close_order.status == OrderStatus.FILLED:
             await self._update_positions(close_order)
 
-    async def graceful_shutdown(self) -> ShutdownSummary:
-        """Cancel all pending orders and close losing positions on shutdown.
+    async def graceful_shutdown(
+        self,
+        trailing_stop_pct: Decimal | None = None,
+        max_wait_seconds: int | None = None,
+    ) -> ShutdownSummary:
+        """Cancel all orders and close ALL positions on shutdown.
 
         Shutdown procedure:
           1. Cancel all pending/open orders (they will be unmonitored).
-          2. Evaluate each open position's unrealized PnL.
-          3. Close positions with ``unrealized_pnl < 0`` via market orders.
-          4. Leave positions with ``unrealized_pnl >= 0`` open (profitable).
-          5. Return a summary of all actions taken.
+          2. Close positions with ``unrealized_pnl < 0`` immediately via market orders.
+          3. Close positions with ``unrealized_pnl >= 0`` via trailing stop (smart exit)
+             or immediately if ``trailing_stop_pct`` is None.
 
-        This method is fault-tolerant: individual failures are logged and
-        recorded in the summary but do not prevent other shutdown actions.
+        Guarantee: ``self.positions`` is empty when this method returns.
+
+        Args:
+            trailing_stop_pct: Trailing stop as a percentage (e.g. ``Decimal("0.5")``
+                for 0.5%).  If None, profitable positions are closed immediately.
+            max_wait_seconds:  Hard timeout before force-closing a profitable
+                position whose trailing stop has not yet triggered.  If None,
+                the system default of 120 s is used.
 
         Returns:
             ShutdownSummary describing what happened during shutdown.
         """
+        effective_max_wait = max_wait_seconds if max_wait_seconds is not None else 120
+
         errors: list[str] = []
         filled_close_orders: list[Order] = []
 
@@ -339,10 +369,9 @@ class OrderExecutor:
                 self.open_orders.clear()
 
         # ------------------------------------------------------------------
-        # Phase 2: Evaluate positions — close losers, keep winners
+        # Phase 2 & 3: Close ALL positions — losers immediately, winners via
+        # trailing stop (or immediately if no trailing stop configured).
         # ------------------------------------------------------------------
-        # Snapshot positions under lock, then iterate without holding the lock
-        # to avoid deadlock with _close_position → _update_positions.
         async with self._position_lock:
             position_snapshot: list[tuple[str, Position]] = [
                 (symbol, pos) for symbol, pos in self.positions.items()
@@ -350,45 +379,170 @@ class OrderExecutor:
 
         positions_evaluated = len(position_snapshot)
         positions_closed = 0
-        positions_kept = 0
+        positions_trailing_stopped = 0
         closed_positions_pnl = Decimal("0")
-        kept_positions_pnl = Decimal("0")
+        trailing_stopped_pnl = Decimal("0")
 
         for symbol, position in position_snapshot:
-            if position.unrealized_pnl < Decimal("0"):
-                # Losing position → close it
-                try:
+            try:
+                if position.unrealized_pnl < Decimal("0"):
+                    # Losing position — close immediately.
                     close_order = await self._close_position_for_shutdown(symbol, position)
                     if close_order and close_order.status == OrderStatus.FILLED:
                         filled_close_orders.append(close_order)
                     positions_closed += 1
                     closed_positions_pnl += position.unrealized_pnl
                     logger.info(f"Closed losing position {symbol}: PnL={position.unrealized_pnl}")
-                except Exception as exc:
-                    error_msg = f"Failed to close position {symbol}: {exc}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-            else:
-                # Profitable or breakeven → keep it
-                positions_kept += 1
-                kept_positions_pnl += position.unrealized_pnl
-                logger.info(f"Keeping profitable position {symbol}: PnL={position.unrealized_pnl}")
+                else:
+                    # Profitable or breakeven — use trailing stop if configured,
+                    # otherwise close immediately.
+                    if trailing_stop_pct is not None:
+                        close_order = await self._wait_and_close_profitable(
+                            symbol, position, trailing_stop_pct, effective_max_wait
+                        )
+                    else:
+                        close_order = await self._close_position_for_shutdown(symbol, position)
+                    if close_order and close_order.status == OrderStatus.FILLED:
+                        filled_close_orders.append(close_order)
+                    positions_closed += 1
+                    positions_trailing_stopped += 1
+                    trailing_stopped_pnl += position.unrealized_pnl
+                    logger.info(
+                        f"Closed profitable position {symbol}: PnL={position.unrealized_pnl}"
+                    )
+            except Exception as exc:
+                error_msg = f"Failed to close position {symbol}: {exc}"
+                logger.error(error_msg)
+                errors.append(error_msg)
 
         logger.info(
             f"Graceful shutdown complete: {orders_cancelled} orders cancelled, "
-            f"{positions_closed} positions closed, {positions_kept} positions kept"
+            f"{positions_closed}/{positions_evaluated} positions closed"
         )
 
         return ShutdownSummary(
             orders_cancelled=orders_cancelled,
             positions_evaluated=positions_evaluated,
             positions_closed=positions_closed,
-            positions_kept=positions_kept,
+            positions_trailing_stopped=positions_trailing_stopped,
             closed_positions_pnl=closed_positions_pnl,
-            kept_positions_pnl=kept_positions_pnl,
+            trailing_stopped_pnl=trailing_stopped_pnl,
             filled_close_orders=filled_close_orders,
             errors=errors,
         )
+
+    async def _wait_and_close_profitable(
+        self,
+        symbol: str,
+        position: Position,
+        trailing_stop_pct: Decimal,
+        max_wait_seconds: int,
+        poll_interval_seconds: int = 2,
+    ) -> Order | None:
+        """Wait for the best exit price on a profitable position using a trailing stop.
+
+        The trailing stop starts ``trailing_stop_pct``% below the current price and
+        follows the price upward.  The position is closed when the price falls back
+        to the trailing stop level, or when ``max_wait_seconds`` expires.
+
+        Args:
+            symbol:               Trading pair to close.
+            position:             The profitable position to manage.
+            trailing_stop_pct:    How far (in %) below the high-watermark to set the stop.
+            max_wait_seconds:     Hard timeout; force-close if stop never triggers.
+            poll_interval_seconds: How often to poll the market price.
+
+        Returns:
+            The filled close Order.
+        """
+        import time
+
+        stop_multiplier = Decimal("1") - trailing_stop_pct / Decimal("100")
+
+        high_watermark = position.current_price
+        low_watermark = position.current_price
+        if position.side == OrderSide.BUY:
+            trailing_stop_price = high_watermark * stop_multiplier
+        else:
+            # Short position: profitable when price falls.  Trailing stop rises.
+            trailing_stop_price = low_watermark * (Decimal("2") - stop_multiplier)
+
+        logger.info(
+            f"Trailing stop shutdown for {symbol}: "
+            f"PnL={position.unrealized_pnl}, "
+            f"stop={trailing_stop_pct}%, "
+            f"max_wait={max_wait_seconds}s"
+        )
+
+        start = time.monotonic()
+        current_price = position.current_price
+
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed >= max_wait_seconds:
+                logger.info(f"Shutdown timeout reached for {symbol}, force-closing at market")
+                break
+
+            try:
+                ticker = await self.api_client.get_ticker(symbol)
+                current_price = Decimal(str(ticker.get("last", str(position.current_price))))
+            except Exception as exc:
+                logger.warning(f"Failed to get ticker for {symbol} during shutdown: {exc}")
+                break
+
+            if position.side == OrderSide.BUY:
+                if current_price > high_watermark:
+                    high_watermark = current_price
+                    trailing_stop_price = high_watermark * stop_multiplier
+                    logger.debug(f"Trailing stop updated for {symbol}: {trailing_stop_price}")
+                if current_price <= trailing_stop_price:
+                    logger.info(
+                        f"Trailing stop triggered for {symbol} at {current_price} "
+                        f"(stop={trailing_stop_price})"
+                    )
+                    break
+            else:
+                # Short: stop triggers when price rises back above watermark + pct
+                if current_price < low_watermark:
+                    low_watermark = current_price
+                    trailing_stop_price = low_watermark * (Decimal("2") - stop_multiplier)
+                if current_price >= trailing_stop_price:
+                    logger.info(
+                        f"Trailing stop triggered for {symbol} at {current_price} "
+                        f"(stop={trailing_stop_price})"
+                    )
+                    break
+
+            await asyncio.sleep(poll_interval_seconds)
+
+        # Update position price to the latest known market price before closing
+        position.update_price(current_price)
+
+        # Build close order with trailing-stop label
+        close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
+        close_order = Order(
+            symbol=symbol,
+            side=close_side,
+            order_type=OrderType.MARKET,
+            quantity=position.quantity,
+            price=current_price,
+            strategy="close_trailing_stop_shutdown",
+        )
+
+        if self.trading_mode == TradingMode.PAPER:
+            await self._execute_paper_order(close_order)
+        else:
+            await self._execute_live_order(close_order)
+
+        if close_order.status == OrderStatus.FILLED:
+            # Live orders come back with filled_quantity=0 (not yet polled).
+            # For shutdown close orders we treat the full quantity as filled so
+            # _update_positions correctly removes the position from the dict.
+            if close_order.filled_quantity == Decimal("0"):
+                close_order.filled_quantity = close_order.quantity
+            await self._update_positions(close_order)
+
+        return close_order
 
     async def _close_position_for_shutdown(self, symbol: str, position: Position) -> Order | None:
         """Build and execute a market close order during graceful shutdown.
@@ -425,6 +579,11 @@ class OrderExecutor:
             await self._execute_live_order(close_order)
 
         if close_order.status == OrderStatus.FILLED:
+            # Live orders come back with filled_quantity=0 (not yet polled).
+            # For shutdown close orders we treat the full quantity as filled so
+            # _update_positions correctly removes the position from the dict.
+            if close_order.filled_quantity == Decimal("0"):
+                close_order.filled_quantity = close_order.quantity
             await self._update_positions(close_order)
 
         return close_order

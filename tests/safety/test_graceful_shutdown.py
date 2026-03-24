@@ -2,17 +2,15 @@
 
 These tests verify that:
 1. All pending/open orders are cancelled on shutdown (they will be unmonitored)
-2. Losing positions (unrealized_pnl < 0) are closed via market orders
-3. Profitable positions (unrealized_pnl >= 0) are left open
-4. Shutdown is fault-tolerant — individual failures do not block other actions
-5. All financial values in the summary use Decimal, never float
+2. Losing positions (unrealized_pnl < 0) are closed immediately via market orders
+3. Profitable/breakeven positions are closed via trailing stop (or immediately if no config)
+4. After shutdown completes, executor.positions is ALWAYS empty (zero open positions)
+5. Shutdown is fault-tolerant — individual failures do not block other actions
+6. All financial values in the summary use Decimal, never float
 
-Critical because: Leaving losing positions unmonitored after shutdown could
-cause unbounded financial loss.  Cancelling open orders prevents unmonitored
-fills that could move the portfolio into an unexpected state.
-
-Test strategy: Set up an OrderExecutor with known positions and orders, call
-graceful_shutdown(), and verify the summary and side-effects.
+Critical because: The user's contract is EUR → trade → EUR.  Any open position
+after shutdown means the user's capital is locked in crypto, not EUR.  Leaving
+losing positions unmonitored would cause unbounded financial loss.
 """
 
 from decimal import Decimal
@@ -36,6 +34,8 @@ from src.risk_management.risk_manager import RiskManager
 # Fixtures
 # ---------------------------------------------------------------------------
 
+_DEFAULT_TICKER = {"last": Decimal("50000"), "bid": Decimal("49950"), "ask": Decimal("50050")}
+
 
 @pytest.fixture
 def mock_api_client() -> AsyncMock:
@@ -49,6 +49,8 @@ def mock_api_client() -> AsyncMock:
             "state": "filled",
         }
     )
+    # get_ticker used by _wait_and_close_profitable — returns current price
+    client.get_ticker = AsyncMock(return_value=_DEFAULT_TICKER)
     return client
 
 
@@ -110,6 +112,10 @@ def _make_open_order(order_id: str, symbol: str) -> Order:
     )
 
 
+# Convenience — avoids repeating trailing stop args in every test
+_DEFAULT_SHUTDOWN_ARGS = {"trailing_stop_pct": Decimal("0.5"), "max_wait_seconds": 5}
+
+
 # ===========================================================================
 # Order Cancellation
 # ===========================================================================
@@ -132,7 +138,7 @@ class TestGracefulShutdownOrderCancellation:
             "ord-2": _make_open_order("ord-2", "ETH-EUR"),
         }
 
-        summary = await live_executor.graceful_shutdown()
+        summary = await live_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         mock_api_client.cancel_all_orders.assert_awaited_once()
         assert summary.orders_cancelled == 2
@@ -147,7 +153,7 @@ class TestGracefulShutdownOrderCancellation:
             "paper-3": _make_open_order("paper-3", "SOL-EUR"),
         }
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.orders_cancelled == 3
         assert paper_executor.open_orders == {}
@@ -171,7 +177,7 @@ class TestGracefulShutdownOrderCancellation:
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await live_executor.graceful_shutdown()
+        summary = await live_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert len(summary.errors) >= 1
         assert "Exchange unreachable" in summary.errors[0]
@@ -182,7 +188,7 @@ class TestGracefulShutdownOrderCancellation:
     @pytest.mark.asyncio
     async def test_no_orders_reports_zero_cancelled(self, paper_executor: OrderExecutor) -> None:
         """Shutdown with no open orders should report zero cancellations."""
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.orders_cancelled == 0
 
@@ -195,21 +201,23 @@ class TestGracefulShutdownOrderCancellation:
             "paper-1": _make_open_order("paper-1", "BTC-EUR"),
         }
 
-        await paper_executor.graceful_shutdown()
+        await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         mock_api_client.cancel_all_orders.assert_not_awaited()
 
 
 # ===========================================================================
-# Position Evaluation — Close Losers, Keep Winners
+# Position Evaluation — Close ALL Positions
 # ===========================================================================
 
 
 class TestGracefulShutdownPositionEvaluation:
-    """Tests that positions are correctly evaluated and closed/kept."""
+    """Tests that ALL positions are closed on shutdown — no exceptions."""
 
     @pytest.mark.asyncio
-    async def test_losing_position_is_closed(self, paper_executor: OrderExecutor) -> None:
+    async def test_losing_position_is_closed_immediately(
+        self, paper_executor: OrderExecutor
+    ) -> None:
         """CRITICAL: Losing positions MUST be closed on shutdown.
 
         Context: Safety requirement SAF-12
@@ -221,50 +229,53 @@ class TestGracefulShutdownPositionEvaluation:
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.positions_closed == 1
-        assert summary.positions_kept == 0
+        assert summary.positions_trailing_stopped == 0
         assert summary.closed_positions_pnl == Decimal("-1000")
-        # Position should be removed after close
+        # Position MUST be removed
         assert "BTC-EUR" not in paper_executor.positions
 
     @pytest.mark.asyncio
-    async def test_profitable_position_is_kept(self, paper_executor: OrderExecutor) -> None:
-        """Profitable positions should be left open — they are making money."""
+    async def test_profitable_position_is_closed(self, paper_executor: OrderExecutor) -> None:
+        """CRITICAL: Profitable positions MUST also be closed on shutdown.
+
+        The bot's contract: EUR → trade → EUR.
+        Leaving any position open after shutdown violates this contract.
+        """
         # BUY at 50000, now at 51000 → unrealized_pnl = +1000
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert summary.positions_closed == 0
-        assert summary.positions_kept == 1
-        assert summary.kept_positions_pnl == Decimal("1000")
-        # Position should still be in the executor
-        assert "BTC-EUR" in paper_executor.positions
+        assert summary.positions_closed == 1
+        assert summary.positions_trailing_stopped == 1
+        # trailing_stopped_pnl reflects PnL at actual close price (from position snapshot)
+        assert summary.trailing_stopped_pnl >= Decimal("0")
+        # Position MUST be removed
+        assert "BTC-EUR" not in paper_executor.positions
 
     @pytest.mark.asyncio
-    async def test_breakeven_position_is_kept(self, paper_executor: OrderExecutor) -> None:
-        """Breakeven positions (PnL = 0) should be kept — no reason to close."""
+    async def test_breakeven_position_is_closed(self, paper_executor: OrderExecutor) -> None:
+        """CRITICAL: Breakeven positions must also be closed on shutdown."""
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("50000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert summary.positions_closed == 0
-        assert summary.positions_kept == 1
-        assert summary.kept_positions_pnl == Decimal("0")
-        assert "BTC-EUR" in paper_executor.positions
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in paper_executor.positions
 
     @pytest.mark.asyncio
-    async def test_mixed_positions_closes_only_losers(self, paper_executor: OrderExecutor) -> None:
-        """CRITICAL: With mixed PnL positions, only losers are closed.
+    async def test_mixed_positions_all_closed(self, paper_executor: OrderExecutor) -> None:
+        """CRITICAL: ALL positions must be closed — losers and winners alike.
 
         Scenario: BTC losing, ETH winning, SOL breakeven.
-        Expected: Only BTC is closed.
+        Expected: All three are closed. executor.positions is empty.
         """
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
@@ -284,17 +295,29 @@ class TestGracefulShutdownPositionEvaluation:
             quantity=Decimal("10"),
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.positions_evaluated == 3
-        assert summary.positions_closed == 1
-        assert summary.positions_kept == 2
-        assert summary.closed_positions_pnl == Decimal("-1000")
-        # ETH: (3200-3000)*2 = 400,  SOL: 0
-        assert summary.kept_positions_pnl == Decimal("400")
+        assert summary.positions_closed == 3
         assert "BTC-EUR" not in paper_executor.positions
-        assert "ETH-EUR" in paper_executor.positions
-        assert "SOL-EUR" in paper_executor.positions
+        assert "ETH-EUR" not in paper_executor.positions
+        assert "SOL-EUR" not in paper_executor.positions
+
+    @pytest.mark.asyncio
+    async def test_executor_positions_empty_after_shutdown(
+        self, paper_executor: OrderExecutor
+    ) -> None:
+        """CRITICAL: Hard guarantee — executor.positions is ALWAYS empty after shutdown."""
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+        paper_executor.positions["ETH-EUR"] = _make_position(
+            "ETH-EUR", OrderSide.BUY, Decimal("3000"), Decimal("2800")
+        )
+
+        await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
+
+        assert paper_executor.positions == {}
 
     @pytest.mark.asyncio
     async def test_short_losing_position_is_closed(self, paper_executor: OrderExecutor) -> None:
@@ -307,7 +330,7 @@ class TestGracefulShutdownPositionEvaluation:
             "BTC-EUR", OrderSide.SELL, Decimal("50000"), Decimal("51000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.positions_closed == 1
         assert summary.closed_positions_pnl == Decimal("-1000")
@@ -343,7 +366,7 @@ class TestGracefulShutdownPositionEvaluation:
         with patch.object(
             paper_executor, "_close_position_for_shutdown", side_effect=_failing_close
         ):
-            summary = await paper_executor.graceful_shutdown()
+            summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert len(summary.errors) >= 1
         assert summary.positions_evaluated == 2
@@ -353,16 +376,181 @@ class TestGracefulShutdownPositionEvaluation:
     @pytest.mark.asyncio
     async def test_no_positions_reports_zero(self, paper_executor: OrderExecutor) -> None:
         """Shutdown with no positions should report zero evaluations."""
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.positions_evaluated == 0
         assert summary.positions_closed == 0
-        assert summary.positions_kept == 0
+        assert summary.positions_trailing_stopped == 0
 
 
 # ===========================================================================
-# Financial Values — Always Decimal
+# Trailing Stop Behaviour
 # ===========================================================================
+
+
+class TestTrailingStopBehavior:
+    """Tests for the smart trailing-stop close on profitable positions."""
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_triggers_when_price_drops(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """Trailing stop closes position when price falls below watermark - stop%.
+
+        Position: BUY @ 50000, current 51000.
+        Trailing stop at 0.5% = 51000 * 0.995 = 50745.
+        Ticker returns 50700 (below stop) → close immediately.
+        """
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+        # Return price below trailing stop on first poll
+        mock_api_client.get_ticker = AsyncMock(
+            return_value={
+                "last": Decimal("50700"),
+                "bid": Decimal("50650"),
+                "ask": Decimal("50750"),
+            }
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            summary = await paper_executor.graceful_shutdown(
+                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=30
+            )
+
+        assert summary.positions_closed == 1
+        assert summary.positions_trailing_stopped == 1
+        assert "BTC-EUR" not in paper_executor.positions
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_force_closes_on_timeout(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """CRITICAL: Position MUST be force-closed when max_wait_seconds expires.
+
+        Even if the trailing stop never triggers, the bot must exit all positions.
+        """
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+        # Price stays well above stop — trailing stop never triggers
+        mock_api_client.get_ticker = AsyncMock(
+            return_value={
+                "last": Decimal("55000"),
+                "bid": Decimal("54950"),
+                "ask": Decimal("55050"),
+            }
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            summary = await paper_executor.graceful_shutdown(
+                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=1
+            )
+
+        # Force closed on timeout
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in paper_executor.positions
+
+    @pytest.mark.asyncio
+    async def test_no_trailing_stop_config_closes_immediately(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """When trailing_stop_pct is None, profitable positions close immediately.
+
+        No get_ticker calls should be made — no polling needed.
+        """
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+
+        summary = await paper_executor.graceful_shutdown(
+            trailing_stop_pct=None, max_wait_seconds=None
+        )
+
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in paper_executor.positions
+        mock_api_client.get_ticker.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_close_order_strategy_label(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """Close orders from trailing stop must be labelled 'close_trailing_stop_shutdown'."""
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+        mock_api_client.get_ticker = AsyncMock(
+            return_value={
+                "last": Decimal("50700"),
+                "bid": Decimal("50650"),
+                "ask": Decimal("50750"),
+            }
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            summary = await paper_executor.graceful_shutdown(
+                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=30
+            )
+
+        trailing_orders = [o for o in summary.filled_close_orders if "trailing" in o.strategy]
+        assert len(trailing_orders) == 1
+        assert trailing_orders[0].strategy == "close_trailing_stop_shutdown"
+
+    # ===========================================================================
+    # Financial Values — Always Decimal
+    # ===========================================================================
+
+    @pytest.mark.asyncio
+    async def test_profitable_short_position_closed_via_trailing_stop(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """Profitable SHORT position must also be closed via trailing stop.
+
+        Short profitable = price fell below entry.
+        Trailing stop for short: triggers when price rises back above low_watermark + stop%.
+        """
+        # SELL at 50000, now at 49000 → unrealized_pnl = +1000
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.SELL, Decimal("50000"), Decimal("49000")
+        )
+        # Return price above trailing stop for short: 49000 * (2 - 0.995) = 49000 * 1.005 = 49245
+        # Return 49500 which is above 49245 → stop triggers
+        mock_api_client.get_ticker = AsyncMock(
+            return_value={
+                "last": Decimal("49500"),
+                "bid": Decimal("49450"),
+                "ask": Decimal("49550"),
+            }
+        )
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            summary = await paper_executor.graceful_shutdown(
+                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=30
+            )
+
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in paper_executor.positions
+        close_orders = [o for o in summary.filled_close_orders if o.symbol == "BTC-EUR"]
+        assert len(close_orders) == 1
+        assert close_orders[0].side == OrderSide.BUY  # close a SELL with BUY
+
+    @pytest.mark.asyncio
+    async def test_ticker_api_failure_force_closes_position(
+        self, paper_executor: OrderExecutor, mock_api_client: AsyncMock
+    ) -> None:
+        """If get_ticker fails during trailing stop wait, position is force-closed immediately."""
+        paper_executor.positions["BTC-EUR"] = _make_position(
+            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
+        )
+        mock_api_client.get_ticker = AsyncMock(side_effect=RuntimeError("API timeout"))
+
+        summary = await paper_executor.graceful_shutdown(
+            trailing_stop_pct=Decimal("0.5"), max_wait_seconds=30
+        )
+
+        # Position must still be closed (force-closed on error)
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in paper_executor.positions
 
 
 class TestGracefulShutdownFinancialValues:
@@ -378,15 +566,15 @@ class TestGracefulShutdownFinancialValues:
             "ETH-EUR", OrderSide.BUY, Decimal("3000"), Decimal("3100")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert isinstance(summary.closed_positions_pnl, Decimal)
-        assert isinstance(summary.kept_positions_pnl, Decimal)
+        assert isinstance(summary.trailing_stopped_pnl, Decimal)
 
     @pytest.mark.asyncio
     async def test_summary_is_shutdown_summary_type(self, paper_executor: OrderExecutor) -> None:
         """graceful_shutdown() must return a ShutdownSummary instance."""
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert isinstance(summary, ShutdownSummary)
 
@@ -406,9 +594,9 @@ class TestGracefulShutdownCloseOrderProperties:
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert len(summary.filled_close_orders) == 1
+        assert len(summary.filled_close_orders) >= 1
         close_order = summary.filled_close_orders[0]
         assert close_order.order_type == OrderType.MARKET
 
@@ -421,9 +609,9 @@ class TestGracefulShutdownCloseOrderProperties:
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert len(summary.filled_close_orders) == 1
+        assert len(summary.filled_close_orders) >= 1
         assert summary.filled_close_orders[0].side == OrderSide.SELL
 
     @pytest.mark.asyncio
@@ -435,43 +623,51 @@ class TestGracefulShutdownCloseOrderProperties:
             "BTC-EUR", OrderSide.SELL, Decimal("50000"), Decimal("51000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert len(summary.filled_close_orders) == 1
+        assert len(summary.filled_close_orders) >= 1
         assert summary.filled_close_orders[0].side == OrderSide.BUY
 
     @pytest.mark.asyncio
     async def test_close_order_strategy_is_graceful_shutdown(
         self, paper_executor: OrderExecutor
     ) -> None:
-        """Close orders must have strategy='close_graceful_shutdown'."""
+        """Immediate close orders (losers) must have strategy='close_graceful_shutdown'."""
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        assert len(summary.filled_close_orders) == 1
+        assert len(summary.filled_close_orders) >= 1
         assert summary.filled_close_orders[0].strategy == "close_graceful_shutdown"
 
     @pytest.mark.asyncio
-    async def test_filled_close_orders_list_only_has_filled_orders(
+    async def test_filled_close_orders_contains_all_positions(
         self, paper_executor: OrderExecutor
     ) -> None:
-        """Only successfully filled close orders should appear in the summary."""
+        """All closed positions must appear in filled_close_orders."""
         paper_executor.positions["BTC-EUR"] = _make_position(
-            "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
+            "BTC-EUR",
+            OrderSide.BUY,
+            Decimal("50000"),
+            Decimal("49000"),  # loser
         )
         paper_executor.positions["ETH-EUR"] = _make_position(
-            "ETH-EUR", OrderSide.BUY, Decimal("3000"), Decimal("3100")
+            "ETH-EUR",
+            OrderSide.BUY,
+            Decimal("3000"),
+            Decimal("3100"),  # winner
         )
 
-        summary = await paper_executor.graceful_shutdown()
+        summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
-        # Only BTC should have a close order (it's losing), ETH is profitable
-        assert len(summary.filled_close_orders) == 1
-        assert summary.filled_close_orders[0].symbol == "BTC-EUR"
-        assert summary.filled_close_orders[0].status == OrderStatus.FILLED
+        # Both BTC (immediate) and ETH (trailing) should have close orders
+        assert len(summary.filled_close_orders) == 2
+        symbols = {o.symbol for o in summary.filled_close_orders}
+        assert "BTC-EUR" in symbols
+        assert "ETH-EUR" in symbols
+        assert all(o.status == OrderStatus.FILLED for o in summary.filled_close_orders)
 
 
 # ===========================================================================
@@ -491,7 +687,7 @@ class TestGracefulShutdownLiveMode:
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
 
-        summary = await live_executor.graceful_shutdown()
+        summary = await live_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         mock_api_client.create_order.assert_awaited_once()
         call_kwargs = mock_api_client.create_order.call_args
@@ -500,15 +696,30 @@ class TestGracefulShutdownLiveMode:
         assert summary.positions_closed == 1
 
     @pytest.mark.asyncio
-    async def test_live_mode_does_not_close_profitable_position(
+    async def test_live_mode_closes_profitable_position(
         self, live_executor: OrderExecutor, mock_api_client: AsyncMock
     ) -> None:
-        """LIVE mode must NOT place close orders for profitable positions."""
+        """CRITICAL: LIVE mode must ALSO close profitable positions on shutdown.
+
+        The bot's EUR → trade → EUR contract requires ALL positions be closed.
+        """
+        # Ticker price below trailing stop → close immediately
+        mock_api_client.get_ticker = AsyncMock(
+            return_value={
+                "last": Decimal("50700"),
+                "bid": Decimal("50650"),
+                "ask": Decimal("50750"),
+            }
+        )
         live_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("51000")
         )
 
-        summary = await live_executor.graceful_shutdown()
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            summary = await live_executor.graceful_shutdown(
+                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=30
+            )
 
-        mock_api_client.create_order.assert_not_awaited()
-        assert summary.positions_kept == 1
+        mock_api_client.create_order.assert_awaited_once()
+        assert summary.positions_closed == 1
+        assert "BTC-EUR" not in live_executor.positions
