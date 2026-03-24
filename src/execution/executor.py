@@ -319,6 +319,64 @@ class OrderExecutor:
         if close_order.status == OrderStatus.FILLED:
             await self._update_positions(close_order)
 
+    async def _shutdown_cancel_orders(self) -> tuple[int, list[str]]:
+        """Phase 1 of graceful shutdown: cancel all pending/open orders.
+
+        In LIVE mode the exchange API is called to cancel server-side orders.
+        In PAPER mode the in-memory dict is cleared without an API call.
+
+        Returns:
+            Tuple of (orders_cancelled, errors).
+        """
+        errors: list[str] = []
+        async with self._order_lock:
+            orders_cancelled = len(self.open_orders)
+
+        if orders_cancelled > 0:
+            if self.trading_mode == TradingMode.LIVE:
+                try:
+                    await self.api_client.cancel_all_orders()
+                    logger.info(f"Cancelled {orders_cancelled} open orders via API")
+                except Exception as exc:
+                    error_msg = f"Failed to cancel orders: {exc}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+
+            async with self._order_lock:
+                self.open_orders.clear()
+
+        return orders_cancelled, errors
+
+    async def _shutdown_close_one(
+        self,
+        symbol: str,
+        position: Position,
+        trailing_stop_pct: Decimal | None,
+        max_wait: int,
+    ) -> tuple[Order | None, bool]:
+        """Close a single position during graceful shutdown.
+
+        Losing positions (unrealized_pnl < 0) and positions when no trailing stop
+        is configured are closed immediately.  Profitable/breakeven positions with
+        a trailing stop configured are closed via ``_wait_and_close_profitable``.
+
+        Args:
+            symbol:            Trading pair to close.
+            position:          The position snapshot to close.
+            trailing_stop_pct: Trailing stop percentage, or None for immediate close.
+            max_wait:          Hard timeout for the trailing stop wait.
+
+        Returns:
+            Tuple of (close_order, used_trailing_stop).
+        """
+        if position.unrealized_pnl < Decimal("0") or trailing_stop_pct is None:
+            close_order = await self._close_position_for_shutdown(symbol, position)
+            return close_order, False
+        close_order = await self._wait_and_close_profitable(
+            symbol, position, trailing_stop_pct, max_wait
+        )
+        return close_order, True
+
     async def graceful_shutdown(
         self,
         trailing_stop_pct: Decimal | None = None,
@@ -346,36 +404,11 @@ class OrderExecutor:
         """
         effective_max_wait = max_wait_seconds if max_wait_seconds is not None else 120
 
-        errors: list[str] = []
+        orders_cancelled, errors = await self._shutdown_cancel_orders()
         filled_close_orders: list[Order] = []
 
-        # ------------------------------------------------------------------
-        # Phase 1: Cancel all pending / open orders
-        # ------------------------------------------------------------------
-        async with self._order_lock:
-            orders_cancelled = len(self.open_orders)
-
-        if orders_cancelled > 0:
-            if self.trading_mode == TradingMode.LIVE:
-                try:
-                    await self.api_client.cancel_all_orders()
-                    logger.info(f"Cancelled {orders_cancelled} open orders via API")
-                except Exception as exc:
-                    error_msg = f"Failed to cancel orders: {exc}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-
-            async with self._order_lock:
-                self.open_orders.clear()
-
-        # ------------------------------------------------------------------
-        # Phase 2 & 3: Close ALL positions — losers immediately, winners via
-        # trailing stop (or immediately if no trailing stop configured).
-        # ------------------------------------------------------------------
         async with self._position_lock:
-            position_snapshot: list[tuple[str, Position]] = [
-                (symbol, pos) for symbol, pos in self.positions.items()
-            ]
+            position_snapshot: list[tuple[str, Position]] = list(self.positions.items())
 
         positions_evaluated = len(position_snapshot)
         positions_closed = 0
@@ -385,31 +418,21 @@ class OrderExecutor:
 
         for symbol, position in position_snapshot:
             try:
-                if position.unrealized_pnl < Decimal("0"):
-                    # Losing position — close immediately.
-                    close_order = await self._close_position_for_shutdown(symbol, position)
-                    if close_order and close_order.status == OrderStatus.FILLED:
-                        filled_close_orders.append(close_order)
-                    positions_closed += 1
-                    closed_positions_pnl += position.unrealized_pnl
-                    logger.info(f"Closed losing position {symbol}: PnL={position.unrealized_pnl}")
-                else:
-                    # Profitable or breakeven — use trailing stop if configured,
-                    # otherwise close immediately.
-                    if trailing_stop_pct is not None:
-                        close_order = await self._wait_and_close_profitable(
-                            symbol, position, trailing_stop_pct, effective_max_wait
-                        )
-                    else:
-                        close_order = await self._close_position_for_shutdown(symbol, position)
-                    if close_order and close_order.status == OrderStatus.FILLED:
-                        filled_close_orders.append(close_order)
-                    positions_closed += 1
+                close_order, used_trailing = await self._shutdown_close_one(
+                    symbol, position, trailing_stop_pct, effective_max_wait
+                )
+                if close_order and close_order.status == OrderStatus.FILLED:
+                    filled_close_orders.append(close_order)
+                positions_closed += 1
+                if used_trailing:
                     positions_trailing_stopped += 1
                     trailing_stopped_pnl += position.unrealized_pnl
                     logger.info(
                         f"Closed profitable position {symbol}: PnL={position.unrealized_pnl}"
                     )
+                else:
+                    closed_positions_pnl += position.unrealized_pnl
+                    logger.info(f"Closed position {symbol}: PnL={position.unrealized_pnl}")
             except Exception as exc:
                 error_msg = f"Failed to close position {symbol}: {exc}"
                 logger.error(error_msg)
@@ -430,6 +453,72 @@ class OrderExecutor:
             filled_close_orders=filled_close_orders,
             errors=errors,
         )
+
+    def _update_long_trailing_stop(
+        self,
+        symbol: str,
+        current_price: Decimal,
+        high_watermark: Decimal,
+        trailing_stop_price: Decimal,
+        stop_multiplier: Decimal,
+    ) -> tuple[Decimal, Decimal, bool]:
+        """Update trailing stop state for a long (BUY) position.
+
+        Args:
+            symbol:             Trading pair label (for log messages).
+            current_price:      Latest market price.
+            high_watermark:     Highest price seen since tracking started.
+            trailing_stop_price: Current stop level.
+            stop_multiplier:    1 - stop_pct/100 (e.g. 0.995 for 0.5%).
+
+        Returns:
+            Tuple of (high_watermark, trailing_stop_price, triggered).
+        """
+        if current_price > high_watermark:
+            high_watermark = current_price
+            trailing_stop_price = high_watermark * stop_multiplier
+            logger.debug(f"Trailing stop updated for {symbol}: {trailing_stop_price}")
+        triggered = current_price <= trailing_stop_price
+        if triggered:
+            logger.info(
+                f"Trailing stop triggered for {symbol} at {current_price} "
+                f"(stop={trailing_stop_price})"
+            )
+        return high_watermark, trailing_stop_price, triggered
+
+    def _update_short_trailing_stop(
+        self,
+        symbol: str,
+        current_price: Decimal,
+        low_watermark: Decimal,
+        trailing_stop_price: Decimal,
+        stop_multiplier: Decimal,
+    ) -> tuple[Decimal, Decimal, bool]:
+        """Update trailing stop state for a short (SELL) position.
+
+        For a short, the stop rises as the price falls.  The stop triggers
+        when the price bounces back up above the watermark + stop%.
+
+        Args:
+            symbol:             Trading pair label (for log messages).
+            current_price:      Latest market price.
+            low_watermark:      Lowest price seen since tracking started.
+            trailing_stop_price: Current stop level.
+            stop_multiplier:    1 - stop_pct/100 (e.g. 0.995 for 0.5%).
+
+        Returns:
+            Tuple of (low_watermark, trailing_stop_price, triggered).
+        """
+        if current_price < low_watermark:
+            low_watermark = current_price
+            trailing_stop_price = low_watermark * (Decimal("2") - stop_multiplier)
+        triggered = current_price >= trailing_stop_price
+        if triggered:
+            logger.info(
+                f"Trailing stop triggered for {symbol} at {current_price} "
+                f"(stop={trailing_stop_price})"
+            )
+        return low_watermark, trailing_stop_price, triggered
 
     async def _wait_and_close_profitable(
         self,
@@ -491,27 +580,16 @@ class OrderExecutor:
                 break
 
             if position.side == OrderSide.BUY:
-                if current_price > high_watermark:
-                    high_watermark = current_price
-                    trailing_stop_price = high_watermark * stop_multiplier
-                    logger.debug(f"Trailing stop updated for {symbol}: {trailing_stop_price}")
-                if current_price <= trailing_stop_price:
-                    logger.info(
-                        f"Trailing stop triggered for {symbol} at {current_price} "
-                        f"(stop={trailing_stop_price})"
-                    )
-                    break
+                high_watermark, trailing_stop_price, triggered = self._update_long_trailing_stop(
+                    symbol, current_price, high_watermark, trailing_stop_price, stop_multiplier
+                )
             else:
-                # Short: stop triggers when price rises back above watermark + pct
-                if current_price < low_watermark:
-                    low_watermark = current_price
-                    trailing_stop_price = low_watermark * (Decimal("2") - stop_multiplier)
-                if current_price >= trailing_stop_price:
-                    logger.info(
-                        f"Trailing stop triggered for {symbol} at {current_price} "
-                        f"(stop={trailing_stop_price})"
-                    )
-                    break
+                low_watermark, trailing_stop_price, triggered = self._update_short_trailing_stop(
+                    symbol, current_price, low_watermark, trailing_stop_price, stop_multiplier
+                )
+
+            if triggered:
+                break
 
             await asyncio.sleep(poll_interval_seconds)
 
