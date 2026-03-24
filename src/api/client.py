@@ -19,12 +19,13 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from loguru import logger
-from pydantic import ValidationError
 
 import src.utils.onepassword as op
 from src.config import REVOLUT_API_BASE_URLS, settings
 from src.models.domain import CandleResponse, OrderBookResponse
 from src.utils.rate_limiter import RateLimiter
+
+_ORDERS_ENDPOINT = "/orders"
 
 
 class RevolutAPIError(Exception):
@@ -65,7 +66,7 @@ class RevolutAPIClient:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.close()
 
-    async def initialize(self) -> None:
+    async def initialize(self) -> None:  # NOSONAR(python:S7503)
         """Load the Ed25519 private key from 1Password.
 
         Raises:
@@ -132,6 +133,43 @@ class RevolutAPIClient:
         except Exception:
             return str(e)
 
+    async def _try_single_url(
+        self,
+        method: str,
+        base_url: str,
+        endpoint: str,
+        query: str,
+        headers: dict[str, str],
+        json_data: dict[str, Any] | None,
+    ) -> dict[str, Any] | list[Any]:
+        """Attempt a request against a single base URL.
+
+        Args:
+            method:    HTTP method.
+            base_url:  Base URL to try.
+            endpoint:  API endpoint path.
+            query:     Pre-encoded query string.
+            headers:   Signed request headers.
+            json_data: JSON body (or ``None``).
+
+        Returns:
+            Parsed response body.
+
+        Raises:
+            httpx.ConnectError: If the connection fails (caller should try next URL).
+            httpx.ConnectTimeout: If the connection times out.
+            RevolutAPIError: For HTTP application errors.
+        """
+        url = f"{base_url}{endpoint}"
+        if query:
+            url = f"{url}?{query}"
+        response = await self.client.request(
+            method=method, url=url, headers=headers, json=json_data
+        )
+        response.raise_for_status()
+        self.base_url = base_url
+        return response.json() if response.content else {}
+
     async def _request(
         self,
         method: str,
@@ -162,30 +200,21 @@ class RevolutAPIClient:
 
         last_connect_error: Exception | None = None
         for base_url in self._base_urls:
-            url = f"{base_url}{endpoint}"
-            if query:
-                url = f"{url}?{query}"
             try:
-                response = await self.client.request(
-                    method=method, url=url, headers=headers, json=json_data
+                return await self._try_single_url(
+                    method, base_url, endpoint, query, headers, json_data
                 )
-                response.raise_for_status()
-                self.base_url = base_url
-                return response.json() if response.content else {}
             except (httpx.ConnectError, httpx.ConnectTimeout) as e:
                 logger.warning(f"Connection to {base_url} failed: {e}; trying next URL")
                 last_connect_error = e
                 continue
             except httpx.HTTPStatusError as e:
                 msg = self._extract_api_message(e)
-                if e.response.status_code >= 500:
-                    logger.error(f"HTTP {e.response.status_code}: {msg}")
-                else:
-                    logger.debug(f"HTTP {e.response.status_code}: {msg}")
+                logger.log(
+                    "ERROR" if e.response.status_code >= 500 else "DEBUG",
+                    f"HTTP {e.response.status_code}: {msg}",
+                )
                 raise RevolutAPIError(e.response.status_code, msg) from e
-            except Exception as e:
-                logger.error(f"Request failed: {e}")
-                raise
 
         logger.error("All base URLs exhausted")
         raise last_connect_error  # type: ignore[misc]
@@ -272,7 +301,7 @@ class RevolutAPIClient:
         #   400/422 = passed auth, failed validation  → key can trade
         #   401/403 = rejected at auth/perm layer     → key cannot trade
         try:
-            await self._request("POST", "/orders", json_data={})
+            await self._request("POST", _ORDERS_ENDPOINT, json_data={})
             trade_ok = True
         except RevolutAPIError as e:
             trade_ok = e.status_code not in (401, 403)
@@ -485,7 +514,7 @@ class RevolutAPIClient:
         }
 
         logger.info(f"Creating order: {symbol} {side.lower()} {order_type_lower} qty={quantity}")
-        raw = await self._request("POST", "/orders", json_data=order_data)
+        raw = await self._request("POST", _ORDERS_ENDPOINT, json_data=order_data)
 
         # Response: {"data": [{"venue_order_id": "...", "client_order_id": "...", "state": "..."}]}
         if not isinstance(raw, dict) or "data" not in raw:
@@ -511,7 +540,7 @@ class RevolutAPIClient:
         Docs: DELETE /api/1.0/orders — Auth required. Response: 204 No Content.
         """
         logger.info("Cancelling all active orders")
-        await self._request("DELETE", "/orders")
+        await self._request("DELETE", _ORDERS_ENDPOINT)
 
     # ------------------------------------------------------------------
     # 8. GET /orders/active
@@ -872,7 +901,7 @@ class RevolutAPIClient:
 
         try:
             order_book = OrderBookResponse(**raw)
-        except (ValidationError, Exception) as e:
+        except Exception as e:
             raise ValueError(f"Malformed order book for {symbol}: {e}") from e
 
         asks = order_book.data.asks

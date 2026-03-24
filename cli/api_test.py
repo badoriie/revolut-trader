@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 from loguru import logger
 
@@ -168,13 +169,9 @@ async def check_trade_ready(api_client: RevolutAPIClient) -> None:
         print("        Real market data will be used; orders are simulated locally.")
         print("        To enable live trading, create a key with trading permissions in Revolut X.")
     else:
-        hint = (
-            _VIEW_ERROR_HINTS.get(
-                view_error or "",
-                f"HTTP error: {view_error}.\n        → Run 'make api-test' for details.",
-            )
-            if view_error
-            else "Unknown error.\n        → Run 'make api-test' for details."
+        hint = _VIEW_ERROR_HINTS.get(
+            view_error or "",
+            f"HTTP error: {view_error}.\n        → Run 'make api-test' for details.",
         )
         print(f"STATUS: No market data access — {hint}")
         sys.exit(1)
@@ -299,7 +296,12 @@ async def get_all_tickers(api_client: RevolutAPIClient) -> None:
         for t in sorted(tickers, key=lambda x: x.get("symbol", "")):
             sym = t.get("symbol", "?")
             # API uses slash notation "BTC/USD"; extract quote currency after "/"
-            quote = sym.split("/")[-1] if "/" in sym else sym.split("-")[-1] if "-" in sym else ""
+            if "/" in sym:
+                quote = sym.split("/")[-1]
+            elif "-" in sym:
+                quote = sym.split("-")[-1]
+            else:
+                quote = ""
             c = currency_symbols.get(quote, "")
             bid_f = float(t.get("bid") or 0)
             ask_f = float(t.get("ask") or 0)
@@ -541,82 +543,89 @@ async def get_order(api_client: RevolutAPIClient, order_id: str) -> None:
         print(f"\n❌ Failed: {e}")
 
 
+def _require_symbol(args) -> str:
+    """Validate and return the --symbol argument, exiting if missing.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The symbol string.
+    """
+    if not args.symbol:
+        print(f"❌ Error: --symbol required for {args.command} command")
+        sys.exit(1)
+    return args.symbol
+
+
+def _require_order_id(args) -> str:
+    """Validate and return the --order-id argument, exiting if missing.
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        The order ID string.
+    """
+    if not args.order_id:
+        print(f"❌ Error: --order-id required for {args.command} command")
+        sys.exit(1)
+    return args.order_id
+
+
 async def run_command(args) -> None:
     """Run the specified API command."""
-    # Initialize API client
     api_client = RevolutAPIClient()
     await api_client.initialize()
 
     try:
-        if args.command == "trade-ready":
-            await check_trade_ready(api_client)
-
-        elif args.command == "balance":
-            await get_balance(api_client)
-
-        elif args.command == "ticker":
-            if not args.symbol:
-                print("❌ Error: --symbol required for ticker command")
-                sys.exit(1)
-            await get_ticker(api_client, args.symbol)
-
-        elif args.command == "candles":
-            if not args.symbol:
-                print("❌ Error: --symbol required for candles command")
-                sys.exit(1)
-            await get_candles(api_client, args.symbol, args.interval, args.limit)
-
-        elif args.command == "test":
-            await test_connection(api_client)
-
-        elif args.command == "tickers":
-            symbols = args.symbols.split(",") if args.symbols else ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
-            await get_multiple_tickers(api_client, symbols)
-
-        elif args.command == "order-book":
-            if not args.symbol:
-                print("❌ Error: --symbol required for order-book command")
-                sys.exit(1)
-            await get_order_book(api_client, args.symbol, depth=args.depth)
-
-        elif args.command == "all-tickers":
-            await get_all_tickers(api_client)
-
-        elif args.command == "currencies":
-            await get_currencies(api_client)
-
-        elif args.command == "currency-pairs":
-            await get_currency_pairs(api_client)
-
-        elif args.command == "last-public-trades":
-            await get_last_public_trades(api_client)
-
-        elif args.command == "open-orders":
-            await get_open_orders(api_client, symbol=args.symbol)
-
-        elif args.command == "historical-orders":
-            await get_historical_orders(api_client, symbol=args.symbol, limit=args.limit)
-
-        elif args.command == "trades":
-            if not args.symbol:
-                print("❌ Error: --symbol required for trades command")
-                sys.exit(1)
-            await get_trades(api_client, args.symbol, limit=args.limit)
-
-        elif args.command == "public-trades":
-            if not args.symbol:
-                print("❌ Error: --symbol required for public-trades command")
-                sys.exit(1)
-            await get_public_trades(api_client, args.symbol)
-
-        elif args.command == "order":
-            if not args.order_id:
-                print("❌ Error: --order-id required for order command")
-                sys.exit(1)
-            await get_order(api_client, args.order_id)
-
+        await _dispatch_command(api_client, args)
     finally:
         await api_client.close()
+
+
+async def _dispatch_command(api_client: RevolutAPIClient, args) -> None:
+    """Dispatch the CLI command to the appropriate handler.
+
+    Args:
+        api_client: Initialised Revolut API client.
+        args:       Parsed CLI arguments.
+    """
+    simple_commands: dict[str, Any] = {
+        "trade-ready": lambda: check_trade_ready(api_client),
+        "balance": lambda: get_balance(api_client),
+        "test": lambda: test_connection(api_client),
+        "all-tickers": lambda: get_all_tickers(api_client),
+        "currencies": lambda: get_currencies(api_client),
+        "currency-pairs": lambda: get_currency_pairs(api_client),
+        "last-public-trades": lambda: get_last_public_trades(api_client),
+        "open-orders": lambda: get_open_orders(api_client, symbol=args.symbol),
+        "historical-orders": lambda: get_historical_orders(
+            api_client, symbol=args.symbol, limit=args.limit
+        ),
+    }
+
+    if args.command in simple_commands:
+        await simple_commands[args.command]()
+        return
+
+    symbol_commands: dict[str, Any] = {
+        "ticker": lambda s: get_ticker(api_client, s),
+        "candles": lambda s: get_candles(api_client, s, args.interval, args.limit),
+        "order-book": lambda s: get_order_book(api_client, s, depth=args.depth),
+        "trades": lambda s: get_trades(api_client, s, limit=args.limit),
+        "public-trades": lambda s: get_public_trades(api_client, s),
+    }
+
+    if args.command in symbol_commands:
+        await symbol_commands[args.command](_require_symbol(args))
+        return
+
+    if args.command == "tickers":
+        symbols = args.symbols.split(",") if args.symbols else ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
+        await get_multiple_tickers(api_client, symbols)
+    elif args.command == "order":
+        await get_order(api_client, _require_order_id(args))
 
 
 def main():

@@ -219,14 +219,16 @@ def _calculate_sma(self, prices: deque, period: int) -> Decimal:
 class EMA:
     def __init__(self, period):
         self.multiplier = Decimal(2) / Decimal(period + 1)
-        self.ema = None
+        self.current_ema = None
 
     def update(self, price):
-        if self.ema is None:
-            self.ema = price
+        if self.current_ema is None:
+            self.current_ema = price
         else:
-            self.ema = (price * self.multiplier) + (self.ema * (1 - self.multiplier))
-        return self.ema  # O(1)!
+            self.current_ema = (price * self.multiplier) + (
+                self.current_ema * (1 - self.multiplier)
+            )
+        return self.current_ema  # O(1)!
 ```
 
 ______________________________________________________________________

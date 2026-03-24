@@ -174,7 +174,7 @@ class TestUpdatePortfolio:
         executor = OrderExecutor(MagicMock(), rm, TradingMode.PAPER)
         bot.executor = executor
 
-        await bot._update_portfolio()
+        bot._update_portfolio()
         assert len(bot.portfolio_snapshots) == 1
         snap = bot.portfolio_snapshots[0]
         assert snap.cash_balance == bot.cash_balance
@@ -198,7 +198,7 @@ class TestUpdatePortfolio:
         bot.executor = executor
         bot.cash_balance = Decimal("5000")
 
-        await bot._update_portfolio()
+        bot._update_portfolio()
         snap = bot.portfolio_snapshots[-1]
         assert snap.total_value == Decimal("57000")
 
@@ -210,7 +210,7 @@ class TestCheckRiskLimits:
         from src.risk_management.risk_manager import RiskManager
 
         bot.risk_manager = RiskManager(RiskLevel.MODERATE)
-        await bot._check_risk_limits()  # Should not raise
+        bot._check_risk_limits()  # Should not raise
 
     @pytest.mark.asyncio
     async def test_checks_daily_pnl(self, bot, mock_persistence):
@@ -230,7 +230,7 @@ class TestCheckRiskLimits:
             num_positions=0,
         )
         bot.portfolio_snapshots.append(snapshot)
-        await bot._check_risk_limits()  # Should not raise
+        bot._check_risk_limits()  # Should not raise
 
 
 class TestFetchMarketData:
@@ -804,7 +804,7 @@ class TestCheckRiskLimitsDailyLoss:
             num_positions=0,
         )
         bot.portfolio_snapshots.append(snapshot)
-        await bot._check_risk_limits()
+        bot._check_risk_limits()
         # Verifies the daily_loss_limit_hit path was exercised (line 385)
         assert bot.risk_manager.daily_loss_limit_hit is True
 

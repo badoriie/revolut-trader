@@ -114,7 +114,6 @@ class RiskManager:
     def can_open_position(
         self,
         symbol: str,
-        side: OrderSide,
         quantity: Decimal,
         price: Decimal,
         portfolio_value: Decimal,
@@ -124,7 +123,6 @@ class RiskManager:
 
         Args:
             symbol: Trading pair symbol (e.g. ``"BTC-EUR"``).
-            side: Buy or sell.
             quantity: Order quantity.
             price: Order price in base currency.
             portfolio_value: Total portfolio value in base currency.
@@ -362,7 +360,6 @@ class RiskManager:
         # Position-level risk rules (daily loss, max positions, size %, concentration).
         return self.can_open_position(
             symbol=order.symbol,
-            side=order.side,
             quantity=order.quantity,
             price=order.price,
             portfolio_value=portfolio_value,

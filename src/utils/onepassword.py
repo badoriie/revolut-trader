@@ -109,7 +109,7 @@ def _run_op(*args: str, timeout: int = 10) -> str | None:
             cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL
         )
         return result.stdout if result.returncode == 0 else None
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+    except Exception as e:
         logger.debug(f"op command failed: {e}")
         return None
 
