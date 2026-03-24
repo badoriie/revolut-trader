@@ -56,7 +56,7 @@ class DatabasePersistence:
     def __init__(self) -> None:
         Path(DB_URL.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
         self.engine = create_db_engine()
-        self._Session = get_session_factory(self.engine)
+        self._session_factory = get_session_factory(self.engine)
         init_database(self.engine)
         self.encryption = DatabaseEncryption()
         logger.info(f"Database persistence initialised: {DB_URL}")
@@ -75,7 +75,7 @@ class DatabasePersistence:
         so callers can catch it (or let it propagate).  Closes the session
         in all cases.
         """
-        sess = self._Session()
+        sess = self._session_factory()
         try:
             yield sess
             sess.commit()

@@ -55,3 +55,103 @@ jobs:
             -Dsonar.tests=tests/
             -Dsonar.coverage.exclusions=cli/**
             -Dsonar.python.version=3.11
+            -Dsonar.qualitygate.wait=true
+
+      - name: Fetch SonarCloud issues report
+        if: always()
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          PROJECT_KEY="badoriie_revolut-trader"
+          API_URL="https://sonarcloud.io/api"
+          PAGE=1
+          PAGE_SIZE=100
+          ALL_ISSUES="[]"
+
+          # Paginate through all issues
+          while true; do
+            RESPONSE=$(curl -s -u "${SONAR_TOKEN}:" \
+              "${API_URL}/issues/search?componentKeys=${PROJECT_KEY}&statuses=OPEN,CONFIRMED,REOPENED&ps=${PAGE_SIZE}&p=${PAGE}")
+
+            ISSUES=$(echo "$RESPONSE" | jq '.issues')
+            TOTAL=$(echo "$RESPONSE" | jq '.total')
+            COUNT=$(echo "$ISSUES" | jq 'length')
+
+            ALL_ISSUES=$(echo "$ALL_ISSUES" "$ISSUES" | jq -s '.[0] + .[1]')
+
+            if [ $((PAGE * PAGE_SIZE)) -ge "$TOTAL" ]; then
+              break
+            fi
+            PAGE=$((PAGE + 1))
+          done
+
+          ISSUE_COUNT=$(echo "$ALL_ISSUES" | jq 'length')
+          echo "Total issues found: $ISSUE_COUNT"
+
+          # Save full JSON report
+          echo "$ALL_ISSUES" | jq '.' > sonarcloud-issues.json
+
+          # Generate markdown report
+          {
+            echo "# SonarCloud Issues Report"
+            echo ""
+            echo "**Project:** ${PROJECT_KEY}"
+            echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "**Total issues:** ${ISSUE_COUNT}"
+            echo ""
+
+            # Summary by severity
+            echo "## Summary by Severity"
+            echo ""
+            echo "| Severity | Count |"
+            echo "|----------|-------|"
+            for SEV in BLOCKER CRITICAL MAJOR MINOR INFO; do
+              C=$(echo "$ALL_ISSUES" | jq "[.[] | select(.severity == \"${SEV}\")] | length")
+              if [ "$C" -gt 0 ]; then
+                echo "| ${SEV} | ${C} |"
+              fi
+            done
+            echo ""
+
+            # Summary by type
+            echo "## Summary by Type"
+            echo ""
+            echo "| Type | Count |"
+            echo "|------|-------|"
+            for TYPE in BUG VULNERABILITY CODE_SMELL; do
+              C=$(echo "$ALL_ISSUES" | jq "[.[] | select(.type == \"${TYPE}\")] | length")
+              if [ "$C" -gt 0 ]; then
+                echo "| ${TYPE} | ${C} |"
+              fi
+            done
+            echo ""
+
+            # Detailed issues list
+            echo "## Issues"
+            echo ""
+            echo "| # | Severity | Type | Rule | File | Line | Message |"
+            echo "|---|----------|------|------|------|------|---------|"
+            echo "$ALL_ISSUES" | jq -r '
+              sort_by(
+                if .severity == "BLOCKER" then 0
+                elif .severity == "CRITICAL" then 1
+                elif .severity == "MAJOR" then 2
+                elif .severity == "MINOR" then 3
+                else 4 end
+              ) | to_entries[] |
+              "| \(.key + 1) | \(.value.severity) | \(.value.type) | \(.value.rule) | \(.value.component | split(":")[1] // .value.component) | \(.value.line // "-") | \(.value.message | gsub("\\|"; "∣") | gsub("\n"; " ")) |"
+            '
+          } > sonarcloud-issues.md
+
+          # Write to GitHub Actions job summary
+          cat sonarcloud-issues.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SonarCloud issues report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sonarcloud-issues-report
+          path: |
+            sonarcloud-issues.md
+            sonarcloud-issues.json
+          retention-days: 30
