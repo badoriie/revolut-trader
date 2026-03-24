@@ -71,18 +71,18 @@ class MockRevolutAPIClient:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self.close()
 
-    async def initialize(self) -> None:  # NOSONAR(python:S7503) - async for interface compat
+    async def initialize(self) -> None:  # NOSONAR
         """No-op: mock client needs no private key."""
         logger.info("MockRevolutAPIClient initialized (no credentials required)")
 
-    async def close(self) -> None:  # NOSONAR(python:S7503) - async for interface compat
+    async def close(self) -> None:  # NOSONAR
         """No-op: nothing to close."""
 
     # ------------------------------------------------------------------
     # Permissions
     # ------------------------------------------------------------------
 
-    async def check_permissions(self) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def check_permissions(self) -> dict[str, Any]:  # NOSONAR
         """Mock always returns full permissions.
 
         Returns:
@@ -94,7 +94,7 @@ class MockRevolutAPIClient:
     # 1. GET /balances
     # ------------------------------------------------------------------
 
-    async def get_balance(self) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_balance(self) -> dict[str, Any]:  # NOSONAR
         """Return mock balances matching the processed shape from RevolutAPIClient.
 
         Returns:
@@ -140,7 +140,7 @@ class MockRevolutAPIClient:
     # 2. GET /configuration/currencies
     # ------------------------------------------------------------------
 
-    async def get_currencies(self) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_currencies(self) -> dict[str, Any]:  # NOSONAR
         """Return mock currency configuration.
 
         Returns:
@@ -174,7 +174,7 @@ class MockRevolutAPIClient:
     # 3. GET /configuration/pairs
     # ------------------------------------------------------------------
 
-    async def get_currency_pairs(self) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_currency_pairs(self) -> dict[str, Any]:  # NOSONAR
         """Return mock currency pair configuration.
 
         Returns:
@@ -207,7 +207,7 @@ class MockRevolutAPIClient:
     # 4. GET /public/last-trades
     # ------------------------------------------------------------------
 
-    async def get_last_public_trades(self) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_last_public_trades(self) -> dict[str, Any]:  # NOSONAR
         """Return mock last public trades.
 
         Returns:
@@ -239,7 +239,7 @@ class MockRevolutAPIClient:
     # 5. GET /public/order-book/{symbol}
     # ------------------------------------------------------------------
 
-    async def get_public_order_book(self, symbol: str) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_public_order_book(self, symbol: str) -> dict[str, Any]:  # NOSONAR
         """Return mock public order book (max 5 levels).
 
         Args:
@@ -266,7 +266,7 @@ class MockRevolutAPIClient:
     # 6. POST /orders
     # ------------------------------------------------------------------
 
-    async def create_order(  # NOSONAR(python:S7503)
+    async def create_order(  # NOSONAR
         self,
         symbol: str,
         side: str,
@@ -335,7 +335,7 @@ class MockRevolutAPIClient:
     # 7. DELETE /orders
     # ------------------------------------------------------------------
 
-    async def cancel_all_orders(self) -> None:  # NOSONAR(python:S7503)
+    async def cancel_all_orders(self) -> None:  # NOSONAR
         """Cancel all active mock orders."""
         cancelled = list(self._active_orders.keys())
         for oid in cancelled:
@@ -348,7 +348,7 @@ class MockRevolutAPIClient:
     # 8. GET /orders/active
     # ------------------------------------------------------------------
 
-    async def get_open_orders(  # NOSONAR(python:S7503)
+    async def get_open_orders(  # NOSONAR
         self,
         symbols: list[str] | None = None,
         states: list[str] | None = None,
@@ -390,7 +390,7 @@ class MockRevolutAPIClient:
     # 9. GET /orders/historical
     # ------------------------------------------------------------------
 
-    async def get_historical_orders(  # NOSONAR(python:S7503)
+    async def get_historical_orders(  # NOSONAR
         self,
         symbols: list[str] | None = None,
         states: list[str] | None = None,
@@ -415,7 +415,7 @@ class MockRevolutAPIClient:
     # 10. GET /orders/{venue_order_id}
     # ------------------------------------------------------------------
 
-    async def get_order(self, venue_order_id: str) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_order(self, venue_order_id: str) -> dict[str, Any]:  # NOSONAR
         """Get details for a specific mock order.
 
         Args:
@@ -440,7 +440,7 @@ class MockRevolutAPIClient:
     # 11. DELETE /orders/{venue_order_id}
     # ------------------------------------------------------------------
 
-    async def cancel_order(self, venue_order_id: str) -> None:  # NOSONAR(python:S7503)
+    async def cancel_order(self, venue_order_id: str) -> None:  # NOSONAR
         """Cancel a specific mock order.
 
         Args:
@@ -461,7 +461,7 @@ class MockRevolutAPIClient:
     # 12. GET /orders/fills/{venue_order_id}
     # ------------------------------------------------------------------
 
-    async def get_order_fills(self, venue_order_id: str) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_order_fills(self, venue_order_id: str) -> dict[str, Any]:  # NOSONAR
         """Return mock fills for an order.
 
         Args:
@@ -477,7 +477,7 @@ class MockRevolutAPIClient:
     # 13. GET /trades/all/{symbol}
     # ------------------------------------------------------------------
 
-    async def get_public_trades(  # NOSONAR(python:S7503)
+    async def get_public_trades(  # NOSONAR
         self,
         symbol: str,
         start_date: int | None = None,
@@ -517,7 +517,7 @@ class MockRevolutAPIClient:
     # 14. GET /trades/private/{symbol}
     # ------------------------------------------------------------------
 
-    async def get_trades(  # NOSONAR(python:S7503)
+    async def get_trades(  # NOSONAR
         self,
         symbol: str,
         start_date: int | None = None,
@@ -540,9 +540,7 @@ class MockRevolutAPIClient:
     # 15. GET /order-book/{symbol}
     # ------------------------------------------------------------------
 
-    async def get_order_book(
-        self, symbol: str, depth: int = 20
-    ) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_order_book(self, symbol: str, depth: int = 20) -> dict[str, Any]:  # NOSONAR
         """Return mock authenticated order book (up to 20 levels).
 
         Args:
@@ -586,7 +584,7 @@ class MockRevolutAPIClient:
     # 16. GET /candles/{symbol}
     # ------------------------------------------------------------------
 
-    async def get_candles(  # NOSONAR(python:S7503)
+    async def get_candles(  # NOSONAR
         self,
         symbol: str,
         interval: int = 60,
@@ -635,7 +633,7 @@ class MockRevolutAPIClient:
 
     async def get_tickers(
         self, symbols: list[str] | None = None
-    ) -> list[dict[str, Any]]:  # NOSONAR(python:S7503)
+    ) -> list[dict[str, Any]]:  # NOSONAR
         """Return mock tickers.
 
         Args:
@@ -664,7 +662,7 @@ class MockRevolutAPIClient:
     # Derived helper: get_ticker()
     # ------------------------------------------------------------------
 
-    async def get_ticker(self, symbol: str) -> dict[str, Any]:  # NOSONAR(python:S7503)
+    async def get_ticker(self, symbol: str) -> dict[str, Any]:  # NOSONAR
         """Return a normalised ticker for a symbol using mock order book data.
 
         Same contract as RevolutAPIClient.get_ticker().
