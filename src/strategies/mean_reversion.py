@@ -28,6 +28,67 @@ class MeanReversionStrategy(BaseStrategy):
         # Price history for calculations
         self.price_history: dict[str, deque[Decimal]] = {}
 
+    def _determine_signal(
+        self,
+        current_price: Decimal,
+        mean_price: Decimal,
+        upper_band: Decimal,
+        lower_band: Decimal,
+        deviation: Decimal,
+        existing_position: Position | None,
+    ) -> tuple[str, float, str]:
+        """Determine signal type, strength, and reason from Bollinger Band analysis.
+
+        Args:
+            current_price:     Current market price.
+            mean_price:        Bollinger Band mean (SMA).
+            upper_band:        Upper Bollinger Band.
+            lower_band:        Lower Bollinger Band.
+            deviation:         Percentage deviation from the mean.
+            existing_position: Existing position for this symbol (or ``None``).
+
+        Returns:
+            ``(signal_type, strength, reason)`` tuple.
+        """
+        # Price below lower band — oversold, buy signal
+        if current_price <= lower_band and abs(deviation) >= self.min_deviation:
+            if not existing_position or existing_position.side == OrderSide.SELL:
+                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
+                return (
+                    "BUY",
+                    strength,
+                    f"Price {current_price:.2f} below lower band {lower_band:.2f}, "
+                    f"deviation {deviation:.2%}",
+                )
+
+        # Price above upper band — overbought, sell signal
+        elif current_price >= upper_band and abs(deviation) >= self.min_deviation:
+            if not existing_position or existing_position.side == OrderSide.BUY:
+                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
+                return (
+                    "SELL",
+                    strength,
+                    f"Price {current_price:.2f} above upper band {upper_band:.2f}, "
+                    f"deviation {deviation:.2%}",
+                )
+
+        # Exit signal: price returns to mean
+        elif existing_position:
+            if existing_position.side == OrderSide.BUY and current_price >= mean_price:
+                return (
+                    "SELL",
+                    0.7,
+                    f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
+                )
+            if existing_position.side == OrderSide.SELL and current_price <= mean_price:
+                return (
+                    "BUY",
+                    0.7,
+                    f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}",
+                )
+
+        return "HOLD", 0.0, ""
+
     async def analyze(
         self,
         symbol: str,
@@ -36,16 +97,12 @@ class MeanReversionStrategy(BaseStrategy):
         portfolio_value: Decimal,
     ) -> Signal | None:
         """Generate mean reversion signals using Bollinger Bands."""
-
-        # Initialize price history for symbol if needed
         if symbol not in self.price_history:
             self.price_history[symbol] = deque(maxlen=self.lookback_period)
 
-        # Add current price to history
         current_price = market_data.last
         self.price_history[symbol].append(current_price)
 
-        # Need enough data for analysis
         if len(self.price_history[symbol]) < self.lookback_period:
             logger.debug(
                 f"{symbol}: Insufficient data {len(self.price_history[symbol])}/{self.lookback_period}"
@@ -54,65 +111,18 @@ class MeanReversionStrategy(BaseStrategy):
 
         prices = list(self.price_history[symbol])
 
-        # Calculate Bollinger Bands
         mean_price = sum(prices) / Decimal(len(prices))
         variance = sum((p - mean_price) ** 2 for p in prices) / Decimal(len(prices))
         std_dev = variance.sqrt() if variance > 0 else Decimal("0")
 
         upper_band = mean_price + (self.num_std_dev * std_dev)
         lower_band = mean_price - (self.num_std_dev * std_dev)
-
-        # Calculate % deviation from mean
         deviation = (current_price - mean_price) / mean_price
 
-        # Check for existing position
-        existing_position = None
-        for pos in positions:
-            if pos.symbol == symbol:
-                existing_position = pos
-                break
-
-        # Generate signals
-        signal_type = "HOLD"
-        strength = 0.0
-        reason = ""
-
-        # Price below lower band - oversold, buy signal
-        if current_price <= lower_band and abs(deviation) >= self.min_deviation:
-            if not existing_position or existing_position.side == OrderSide.SELL:
-                signal_type = "BUY"
-                # Scale strength between 0.5 (at threshold) and 1.0 (at 2× threshold).
-                # The original formula always produced 1.0 because abs(deviation) ≥ min_deviation
-                # guaranteed a ratio ≥ 1.0, which was immediately capped.
-                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
-                reason = (
-                    f"Price {current_price:.2f} below lower band {lower_band:.2f}, "
-                    f"deviation {deviation:.2%}"
-                )
-
-        # Price above upper band - overbought, sell signal
-        elif current_price >= upper_band and abs(deviation) >= self.min_deviation:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                signal_type = "SELL"
-                strength = min(1.0, 0.5 * abs(float(deviation)) / float(self.min_deviation))
-                reason = (
-                    f"Price {current_price:.2f} above upper band {upper_band:.2f}, "
-                    f"deviation {deviation:.2%}"
-                )
-
-        # Exit signal: price returns to mean
-        elif existing_position:
-            # Close long position if price returns near or above mean
-            if existing_position.side == OrderSide.BUY and current_price >= mean_price:
-                signal_type = "SELL"
-                strength = 0.7
-                reason = f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}"
-
-            # Close short position if price returns near or below mean
-            elif existing_position.side == OrderSide.SELL and current_price <= mean_price:
-                signal_type = "BUY"
-                strength = 0.7
-                reason = f"Mean reversion exit: Price {current_price:.2f} returned to mean {mean_price:.2f}"
+        existing_position = next((p for p in positions if p.symbol == symbol), None)
+        signal_type, strength, reason = self._determine_signal(
+            current_price, mean_price, upper_band, lower_band, deviation, existing_position
+        )
 
         if signal_type == "HOLD":
             return None

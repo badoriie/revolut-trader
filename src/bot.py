@@ -11,7 +11,7 @@ from src.api.client import RevolutAPIClient
 from src.api.mock_client import MockRevolutAPIClient
 from src.config import RiskLevel, StrategyType, TradingMode, settings
 from src.execution.executor import OrderExecutor
-from src.models.domain import MarketData, PortfolioSnapshot
+from src.models.domain import MarketData, Order, PortfolioSnapshot
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
@@ -196,12 +196,64 @@ class TradingBot:
         }
         return strategies.get(strategy_type, MarketMakingStrategy())
 
-    async def run_trading_loop(self, interval: int = 60):
-        """
-        Main trading loop.
+    @staticmethod
+    def _handle_http_error(e: httpx.HTTPStatusError) -> int | None:
+        """Handle HTTP status errors and return the retry delay, or None to stop.
 
         Args:
-            interval: Seconds between iterations
+            e: The HTTP status error from the API.
+
+        Returns:
+            Seconds to sleep before retrying, or ``None`` to break the loop.
+        """
+        status_code = e.response.status_code
+        if status_code == 401:
+            logger.critical("Authentication failed! Check API credentials.")
+            return None  # Stop trading - auth is broken
+        if status_code == 429:
+            logger.warning("⚠️  Rate limited by API, backing off...")
+            return 60
+        if status_code >= 500:
+            logger.error(f"🔧 API server error ({status_code}), waiting 30s...")
+            return 30
+        logger.error(f"❌ HTTP error {status_code}: {e.response.text}")
+        return -1  # Sentinel: use default interval
+
+    async def _run_iteration(self, iteration: int) -> None:
+        """Execute a single trading iteration.
+
+        Args:
+            iteration: The current iteration number (for logging).
+        """
+        logger.info(f"=== Trading Iteration {iteration} ===")
+
+        await asyncio.gather(
+            *[self._process_symbol(symbol) for symbol in self.trading_pairs],
+            return_exceptions=True,
+        )
+
+        self._update_portfolio()
+
+        if self.portfolio_snapshots:
+            self.persistence.save_portfolio_snapshot(
+                snapshot=self.portfolio_snapshots[-1],
+                strategy=self.strategy_type.value,
+                risk_level=self.risk_level.value,
+                trading_mode=self.trading_mode.value,
+            )
+
+        self.save_counter += 1
+        if self.save_counter >= 10:
+            self._save_data()
+            self.save_counter = 0
+
+        self._check_risk_limits()
+
+    async def run_trading_loop(self, interval: int = 60):
+        """Main trading loop.
+
+        Args:
+            interval: Seconds between iterations.
         """
         logger.info(f"Starting trading loop (interval: {interval}s)")
 
@@ -209,39 +261,8 @@ class TradingBot:
         while self.is_running:
             try:
                 iteration += 1
-                logger.info(f"=== Trading Iteration {iteration} ===")
-
-                # Process all trading pairs in parallel (2-5x faster than sequential)
-                await asyncio.gather(
-                    *[self._process_symbol(symbol) for symbol in self.trading_pairs],
-                    return_exceptions=True,  # Don't stop all if one fails
-                )
-
-                # Update portfolio snapshot
-                await self._update_portfolio()
-
-                # Save snapshot to database immediately (for real-time analytics)
-                if self.portfolio_snapshots:
-                    current_snapshot = self.portfolio_snapshots[-1]
-                    self.persistence.save_portfolio_snapshot(
-                        snapshot=current_snapshot,
-                        strategy=self.strategy_type.value,
-                        risk_level=self.risk_level.value,
-                        trading_mode=self.trading_mode.value,
-                    )
-
-                # Save bulk data periodically (every 10 iterations)
-                self.save_counter += 1
-                if self.save_counter >= 10:
-                    self._save_data()
-                    self.save_counter = 0
-
-                # Check risk limits
-                await self._check_risk_limits()
-
-                # Wait for next iteration
+                await self._run_iteration(iteration)
                 await asyncio.sleep(interval)
-
             except KeyboardInterrupt:
                 logger.info("Received shutdown signal")
                 break
@@ -250,50 +271,49 @@ class TradingBot:
                 logger.info("Retrying next iteration...")
                 await asyncio.sleep(interval)
             except httpx.HTTPStatusError as e:
-                status_code = e.response.status_code
-                if status_code == 401:
-                    logger.critical("Authentication failed! Check API credentials.")
-                    break  # Stop trading - auth is broken
-                if status_code == 429:
-                    logger.warning("⚠️  Rate limited by API, backing off...")
-                    await asyncio.sleep(60)  # Wait 1 minute
-                elif status_code >= 500:
-                    logger.error(f"🔧 API server error ({status_code}), waiting 30s...")
-                    await asyncio.sleep(30)
-                else:
-                    logger.error(f"❌ HTTP error {status_code}: {e.response.text}")
-                    await asyncio.sleep(interval)
+                delay = self._handle_http_error(e)
+                if delay is None:
+                    break
+                await asyncio.sleep(interval if delay == -1 else delay)
             except ValueError as e:
-                # Validation errors from Pydantic or data parsing
                 logger.error(f"📊 Data validation error: {e}")
                 logger.info("Likely malformed market data, continuing...")
                 await asyncio.sleep(interval)
             except RuntimeError as e:
                 logger.critical(f"Runtime error: {e}")
-                break  # Stop trading
+                break
             except Exception as e:
                 logger.critical(
                     f"Unexpected error in trading loop: {type(e).__name__}: {e}", exc_info=True
                 )
                 await asyncio.sleep(interval)
 
+    def _process_filled_order(self, order: Order) -> None:
+        """Persist a filled order and update the cash balance.
+
+        Args:
+            order: The filled order to process.
+        """
+        self.persistence.save_trade(order)
+        if order.price is not None:
+            order_value = order.price * order.filled_quantity
+            if order.side.value == "BUY":
+                self.cash_balance -= order_value
+            else:
+                self.cash_balance += order_value
+
     async def _process_symbol(self, symbol: str):
         """Process a single trading pair."""
         assert self.executor is not None
         assert self.strategy is not None
         try:
-            # Get market data
             market_data = await self._fetch_market_data(symbol)
             if not market_data:
                 return
 
-            # Update positions with current price
             await self.executor.update_market_prices(symbol, market_data.last)
-
-            # Get current portfolio value
             portfolio_value = await self.executor.get_portfolio_value(self.cash_balance)
 
-            # Get trading signal from strategy
             signal = await self.strategy.analyze(
                 symbol=symbol,
                 market_data=market_data,
@@ -303,22 +323,9 @@ class TradingBot:
 
             if signal:
                 logger.info(f"Signal generated: {signal.signal_type} {symbol} - {signal.reason}")
-
-                # Execute signal
                 order = await self.executor.execute_signal(signal, portfolio_value)
-
-                if order:
-                    # Save trade to history if filled
-                    if order.status.value == "FILLED":
-                        self.persistence.save_trade(order)
-
-                    # Update cash balance if order filled
-                    if order.status.value == "FILLED" and order.price is not None:
-                        order_value = order.price * order.filled_quantity
-                        if order.side.value == "BUY":
-                            self.cash_balance -= order_value
-                        else:
-                            self.cash_balance += order_value
+                if order and order.status.value == "FILLED":
+                    self._process_filled_order(order)
 
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e!s}", exc_info=True)
@@ -349,7 +356,7 @@ class TradingBot:
             logger.error(f"Failed to fetch market data for {symbol}: {e!s}")
             return None
 
-    async def _update_portfolio(self):
+    def _update_portfolio(self) -> None:
         """Update and save portfolio snapshot."""
         assert self.executor is not None
         positions = self.executor.get_positions()
@@ -379,7 +386,7 @@ class TradingBot:
             f"P&L: {self.currency_symbol}{snapshot.total_pnl:.2f}"
         )
 
-    async def _check_risk_limits(self):
+    def _check_risk_limits(self) -> None:
         """Check and enforce risk limits."""
         if not self.portfolio_snapshots:
             return

@@ -576,7 +576,6 @@ class TestEdgeCases:
         """
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.001"),
             price=Decimal("50000"),
             portfolio_value=Decimal("0"),

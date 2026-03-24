@@ -18,7 +18,7 @@ class EMA:
         """
         self.period = period
         self.multiplier = Decimal(2) / Decimal(period + 1)
-        self.ema: Decimal | None = None
+        self.current_ema: Decimal | None = None
         self._warmup_prices: list[Decimal] = []
         self._warmup_complete = False
 
@@ -37,7 +37,7 @@ class EMA:
 
             if len(self._warmup_prices) >= self.period:
                 # Initialize with SMA of warm-up period
-                self.ema = sum(self._warmup_prices) / Decimal(len(self._warmup_prices))
+                self.current_ema = sum(self._warmup_prices) / Decimal(len(self._warmup_prices))
                 self._warmup_complete = True
                 self._warmup_prices.clear()  # Free memory
             else:
@@ -46,15 +46,17 @@ class EMA:
 
         # Standard EMA calculation: EMA = Price * k + EMA(previous) * (1 - k)
         # where k = 2 / (period + 1)
-        if self.ema is not None:  # Type guard for mypy
-            self.ema = (price * self.multiplier) + (self.ema * (Decimal(1) - self.multiplier))
+        if self.current_ema is not None:  # Type guard for mypy
+            self.current_ema = (price * self.multiplier) + (
+                self.current_ema * (Decimal(1) - self.multiplier)
+            )
 
-        return self.ema if self.ema is not None else price
+        return self.current_ema if self.current_ema is not None else price
 
     @property
     def value(self) -> Decimal | None:
         """Get current EMA value without updating."""
-        return self.ema
+        return self.current_ema
 
     @property
     def is_ready(self) -> bool:
@@ -63,7 +65,7 @@ class EMA:
 
     def reset(self) -> None:
         """Reset the EMA calculator."""
-        self.ema = None
+        self.current_ema = None
         self._warmup_prices.clear()
         self._warmup_complete = False
 

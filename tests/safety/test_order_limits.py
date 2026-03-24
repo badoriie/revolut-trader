@@ -198,7 +198,6 @@ class TestDailyLossLimits:
         # 0.002 BTC * 50000 EUR = 100 EUR < 150 EUR limit
         is_valid, _reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.002"),
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,
@@ -223,7 +222,6 @@ class TestDailyLossLimits:
         # 0.002 BTC * 50000 EUR = 100 EUR < 150 EUR limit
         is_valid, _ = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.002"),
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,
@@ -260,7 +258,6 @@ class TestMaxPositionsLimit:
         # Try to open 4th position
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="MATIC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("10"),
             price=Decimal("1"),
             portfolio_value=medium_portfolio_value,
@@ -282,7 +279,6 @@ class TestMaxPositionsLimit:
 
         is_valid, _ = conservative_risk_manager.can_open_position(
             symbol="ETH-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.04"),
             price=Decimal("3000"),
             portfolio_value=medium_portfolio_value,
@@ -336,7 +332,6 @@ class TestConcentrationRisk:
 
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.003"),  # 150 EUR = 1.5% — passes individual check
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,
@@ -355,7 +350,6 @@ class TestConcentrationRisk:
         # 0.04 ETH * 3000 EUR = 120 EUR < 150 EUR limit
         is_valid, _ = conservative_risk_manager.can_open_position(
             symbol="ETH-EUR",  # Different symbol
-            side=OrderSide.BUY,
             quantity=Decimal("0.04"),
             price=Decimal("3000"),
             portfolio_value=medium_portfolio_value,
@@ -423,7 +417,6 @@ class TestPositionSizeValidation:
         # 500 EUR position = 0.01 BTC @ 50,000 EUR
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.01"),  # 0.01 * 50,000 = 500 EUR
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,
@@ -444,7 +437,6 @@ class TestPositionSizeValidation:
 
         is_valid, reason = conservative_risk_manager.can_open_position(
             symbol="BTC-EUR",
-            side=OrderSide.BUY,
             quantity=Decimal("0.002"),
             price=Decimal("50000"),
             portfolio_value=medium_portfolio_value,

@@ -36,6 +36,53 @@ class MomentumStrategy(BaseStrategy):
         self.slow_ema: dict[str, EMA] = {}
         self.rsi_indicator: dict[str, RSI] = {}
 
+    def _determine_signal(
+        self,
+        fast_ma: Decimal,
+        slow_ma: Decimal,
+        rsi: Decimal,
+        existing_position: Position | None,
+    ) -> tuple[str, float, str]:
+        """Determine signal type, strength, and reason from indicator values.
+
+        Args:
+            fast_ma:           Fast EMA value.
+            slow_ma:           Slow EMA value.
+            rsi:               Current RSI value.
+            existing_position: Existing position for this symbol (or ``None``).
+
+        Returns:
+            ``(signal_type, strength, reason)`` tuple.
+        """
+        # Bullish: Fast MA crosses above Slow MA and RSI not overbought
+        if fast_ma > slow_ma and rsi < self.rsi_overbought:
+            if not existing_position or existing_position.side == OrderSide.SELL:
+                ma_diff = (fast_ma - slow_ma) / slow_ma
+                return (
+                    "BUY",
+                    min(1.0, float(ma_diff) * 10),
+                    f"Bullish momentum: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+                )
+
+        # Bearish: Fast MA crosses below Slow MA and RSI not oversold
+        elif fast_ma < slow_ma and rsi > self.rsi_oversold:
+            if not existing_position or existing_position.side == OrderSide.BUY:
+                ma_diff = (slow_ma - fast_ma) / slow_ma
+                return (
+                    "SELL",
+                    min(1.0, float(ma_diff) * 10),
+                    f"Bearish momentum: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+                )
+
+        # Exit signals based on RSI extremes
+        elif existing_position:
+            if existing_position.side == OrderSide.BUY and rsi > self.rsi_overbought:
+                return "SELL", 0.8, f"RSI overbought exit: {rsi:.1f} > {self.rsi_overbought}"
+            if existing_position.side == OrderSide.SELL and rsi < self.rsi_oversold:
+                return "BUY", 0.8, f"RSI oversold exit: {rsi:.1f} < {self.rsi_oversold}"
+
+        return "HOLD", 0.0, ""
+
     async def analyze(
         self,
         symbol: str,
@@ -47,20 +94,16 @@ class MomentumStrategy(BaseStrategy):
 
         Optimized implementation using O(1) EMA updates instead of O(n) SMA recalculation.
         """
-
-        # Initialize indicators for symbol if needed
         if symbol not in self.fast_ema:
             self.fast_ema[symbol] = EMA(self.fast_period)
             self.slow_ema[symbol] = EMA(self.slow_period)
             self.rsi_indicator[symbol] = RSI(self.rsi_period)
 
-        # Update all indicators with current price (O(1) operation)
         current_price = market_data.last
         fast_ma = self.fast_ema[symbol].update(current_price)
         slow_ma = self.slow_ema[symbol].update(current_price)
         rsi = self.rsi_indicator[symbol].update(current_price)
 
-        # Wait for indicators to warm up
         if not (
             self.fast_ema[symbol].is_ready
             and self.slow_ema[symbol].is_ready
@@ -69,44 +112,10 @@ class MomentumStrategy(BaseStrategy):
             logger.debug(f"{symbol}: Indicators warming up...")
             return None
 
-        # Check for existing position
-        existing_position = None
-        for pos in positions:
-            if pos.symbol == symbol:
-                existing_position = pos
-                break
-
-        # Generate signals
-        signal_type = "HOLD"
-        strength = 0.0
-        reason = ""
-
-        # Bullish: Fast MA crosses above Slow MA and RSI not overbought
-        if fast_ma > slow_ma and rsi < self.rsi_overbought:
-            if not existing_position or existing_position.side == OrderSide.SELL:
-                signal_type = "BUY"
-                ma_diff = (fast_ma - slow_ma) / slow_ma
-                strength = min(1.0, float(ma_diff) * 10)  # Scale to 0-1
-                reason = f"Bullish momentum: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}"
-
-        # Bearish: Fast MA crosses below Slow MA and RSI not oversold
-        elif fast_ma < slow_ma and rsi > self.rsi_oversold:
-            if not existing_position or existing_position.side == OrderSide.BUY:
-                signal_type = "SELL"
-                ma_diff = (slow_ma - fast_ma) / slow_ma
-                strength = min(1.0, float(ma_diff) * 10)
-                reason = f"Bearish momentum: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}"
-
-        # Exit signals based on RSI extremes
-        elif existing_position:
-            if existing_position.side == OrderSide.BUY and rsi > self.rsi_overbought:
-                signal_type = "SELL"
-                strength = 0.8
-                reason = f"RSI overbought exit: {rsi:.1f} > {self.rsi_overbought}"
-            elif existing_position.side == OrderSide.SELL and rsi < self.rsi_oversold:
-                signal_type = "BUY"
-                strength = 0.8
-                reason = f"RSI oversold exit: {rsi:.1f} < {self.rsi_oversold}"
+        existing_position = next((p for p in positions if p.symbol == symbol), None)
+        signal_type, strength, reason = self._determine_signal(
+            fast_ma, slow_ma, rsi, existing_position
+        )
 
         if signal_type == "HOLD":
             return None

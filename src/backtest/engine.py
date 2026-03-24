@@ -346,6 +346,126 @@ class BacktestEngine:
     # Simulated order execution
     # ------------------------------------------------------------------
 
+    def _execute_buy(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        exec_price: Decimal,
+        fee: Decimal,
+        order_value: Decimal,
+    ) -> bool:
+        """Execute a simulated buy order.
+
+        Args:
+            symbol:     Trading pair.
+            side:       ``BUY``.
+            quantity:   Order quantity in base currency units.
+            exec_price: Execution price after slippage.
+            fee:        Taker fee for this fill.
+            order_value: ``quantity × exec_price``.
+
+        Returns:
+            ``True`` if the order was filled; ``False`` if rejected.
+        """
+        total_cost = order_value + fee
+        if self.cash_balance < total_cost:
+            logger.warning(
+                f"Insufficient funds for BUY {symbol}: "
+                f"need {total_cost:.2f}, have {self.cash_balance:.2f}"
+            )
+            return False
+
+        self.cash_balance -= total_cost
+        self.results.total_fees += fee
+
+        sl_pct = Decimal(str(self.risk_manager.risk_params["stop_loss_pct"])) / 100
+        tp_pct = Decimal(str(self.risk_manager.risk_params["take_profit_pct"])) / 100
+
+        if symbol in self.positions:
+            pos = self.positions[symbol]
+            total_cost_basis = pos.quantity * pos.entry_price + quantity * exec_price
+            new_qty = pos.quantity + quantity
+            pos.entry_price = total_cost_basis / new_qty
+            pos.quantity = new_qty
+            pos.current_price = exec_price
+            pos.stop_loss = pos.entry_price * (1 - sl_pct)
+            pos.take_profit = pos.entry_price * (1 + tp_pct)
+        else:
+            self.positions[symbol] = Position(
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                entry_price=exec_price,
+                current_price=exec_price,
+                stop_loss=exec_price * (1 - sl_pct),
+                take_profit=exec_price * (1 + tp_pct),
+            )
+        return True
+
+    def _execute_sell(
+        self,
+        symbol: str,
+        quantity: Decimal,
+        exec_price: Decimal,
+        fee: Decimal,
+        order_value: Decimal,
+        timestamp: datetime,
+    ) -> bool:
+        """Execute a simulated sell order.
+
+        Args:
+            symbol:      Trading pair.
+            quantity:    Order quantity in base currency units.
+            exec_price:  Execution price after slippage.
+            fee:         Taker fee for this fill.
+            order_value: ``quantity × exec_price``.
+            timestamp:   Bar timestamp for the trade log.
+
+        Returns:
+            ``True`` if the order was filled; ``False`` if rejected.
+        """
+        if symbol not in self.positions:
+            logger.warning(f"Cannot SELL {symbol}: no open position")
+            return False
+
+        pos = self.positions[symbol]
+        if pos.quantity < quantity:
+            logger.warning(
+                f"Insufficient position for SELL {symbol}: have {pos.quantity}, need {quantity}"
+            )
+            return False
+
+        self.cash_balance += order_value - fee
+        self.results.total_fees += fee
+
+        pnl = (exec_price - pos.entry_price) * quantity - fee
+        self.results.trades.append(
+            {
+                "timestamp": timestamp.isoformat(),
+                "symbol": symbol,
+                "side": "SELL",
+                "quantity": float(quantity),
+                "price": float(exec_price),
+                "entry_price": float(pos.entry_price),
+                "pnl": float(pnl),
+                "fee": float(fee),
+            }
+        )
+
+        self.results.total_pnl += pnl
+        self.results.total_trades += 1
+        if pnl > 0:
+            self.results.winning_trades += 1
+        else:
+            self.results.losing_trades += 1
+
+        pos.quantity -= quantity
+        if pos.quantity <= Decimal("0"):
+            del self.positions[symbol]
+
+        return True
+
     def _execute_backtest_order(
         self,
         symbol: str,
@@ -386,102 +506,128 @@ class BacktestEngine:
             ``True`` if the order was filled; ``False`` if it was rejected
             (insufficient funds or no open position to sell).
         """
-        exec_price = (
-            (market_data.ask if side == OrderSide.BUY else market_data.bid)
-            if market_data is not None
-            else price
-        )
+        if market_data is not None:
+            exec_price = market_data.ask if side == OrderSide.BUY else market_data.bid
+        else:
+            exec_price = price
         order_value = quantity * exec_price
         fee = order_value * TAKER_FEE_PCT
 
         if side == OrderSide.BUY:
-            total_cost = order_value + fee
-            if self.cash_balance < total_cost:
-                logger.warning(
-                    f"Insufficient funds for BUY {symbol}: "
-                    f"need {total_cost:.2f}, have {self.cash_balance:.2f}"
-                )
-                return False
-
-            self.cash_balance -= total_cost
-            self.results.total_fees += fee
-
-            # Derive SL/TP from the active risk manager parameters
-            sl_pct = Decimal(str(self.risk_manager.risk_params["stop_loss_pct"])) / 100
-            tp_pct = Decimal(str(self.risk_manager.risk_params["take_profit_pct"])) / 100
-
-            if symbol in self.positions:
-                # Scale into existing position — recalculate average entry
-                pos = self.positions[symbol]
-                total_cost_basis = pos.quantity * pos.entry_price + quantity * exec_price
-                new_qty = pos.quantity + quantity
-                pos.entry_price = total_cost_basis / new_qty
-                pos.quantity = new_qty
-                pos.current_price = exec_price
-                # Anchor SL/TP to the new average entry
-                pos.stop_loss = pos.entry_price * (1 - sl_pct)
-                pos.take_profit = pos.entry_price * (1 + tp_pct)
-            else:
-                self.positions[symbol] = Position(
-                    symbol=symbol,
-                    side=side,
-                    quantity=quantity,
-                    entry_price=exec_price,
-                    current_price=exec_price,
-                    stop_loss=exec_price * (1 - sl_pct),
-                    take_profit=exec_price * (1 + tp_pct),
-                )
-
-        else:  # SELL
-            if symbol not in self.positions:
-                logger.warning(f"Cannot SELL {symbol}: no open position")
-                return False
-
-            pos = self.positions[symbol]
-            if pos.quantity < quantity:
-                logger.warning(
-                    f"Insufficient position for SELL {symbol}: have {pos.quantity}, need {quantity}"
-                )
-                return False
-
-            net_proceeds = order_value - fee
-            self.cash_balance += net_proceeds
-            self.results.total_fees += fee
-
-            # P&L is realised gain minus the fee on this leg only
-            # (the buy-side fee was already deducted from cash_balance)
-            pnl = (exec_price - pos.entry_price) * quantity - fee
-
-            self.results.trades.append(
-                {
-                    "timestamp": timestamp.isoformat(),
-                    "symbol": symbol,
-                    "side": "SELL",
-                    "quantity": float(quantity),
-                    "price": float(exec_price),
-                    "entry_price": float(pos.entry_price),
-                    "pnl": float(pnl),
-                    "fee": float(fee),
-                }
-            )
-
-            self.results.total_pnl += pnl
-            self.results.total_trades += 1
-
-            if pnl > 0:
-                self.results.winning_trades += 1
-            else:
-                self.results.losing_trades += 1
-
-            pos.quantity -= quantity
-            if pos.quantity <= Decimal("0"):
-                del self.positions[symbol]
-
-        return True
+            return self._execute_buy(symbol, side, quantity, exec_price, fee, order_value)
+        return self._execute_sell(symbol, quantity, exec_price, fee, order_value, timestamp)
 
     # ------------------------------------------------------------------
     # Main simulation loop
     # ------------------------------------------------------------------
+
+    async def _process_bar_symbol(
+        self,
+        symbol: str,
+        market_data: MarketData,
+    ) -> None:
+        """Process a single symbol for one bar: update position, check SL/TP, generate signal.
+
+        Args:
+            symbol:      Trading pair.
+            market_data: Current bar's market snapshot.
+        """
+        # 1. Update open position with latest price + check SL/TP
+        if symbol in self.positions:
+            pos = self.positions[symbol]
+            pos.update_price(market_data.last)
+
+            should_exit, exit_reason = pos.should_close()
+            if should_exit:
+                logger.debug(f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}")
+                self._execute_backtest_order(
+                    symbol=symbol,
+                    side=OrderSide.SELL,
+                    quantity=pos.quantity,
+                    price=market_data.last,
+                    timestamp=market_data.timestamp,
+                    market_data=market_data,
+                )
+                return  # Skip strategy signal this bar
+
+        # 2. Ask the strategy for a signal
+        positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
+        portfolio_value = self.cash_balance + positions_value
+
+        signal = await self.strategy.analyze(
+            symbol=symbol,
+            market_data=market_data,
+            positions=list(self.positions.values()),
+            portfolio_value=portfolio_value,
+        )
+        if signal is None:
+            return
+
+        side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
+        quantity = self.risk_manager.calculate_position_size(
+            portfolio_value=portfolio_value,
+            price=signal.price,
+            signal_strength=signal.strength,
+        )
+
+        # 3. Validate with risk manager
+        temp_order = Order(
+            symbol=symbol,
+            side=side,
+            order_type=OrderType.LIMIT,
+            quantity=quantity,
+            price=signal.price,
+            status=OrderStatus.PENDING,
+        )
+        is_valid, reason = self.risk_manager.validate_order(
+            temp_order, portfolio_value, list(self.positions.values())
+        )
+        if not is_valid:
+            logger.debug(f"Order rejected ({symbol}): {reason}")
+            return
+
+        # 4. Execute
+        self._execute_backtest_order(
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            price=signal.price,
+            timestamp=market_data.timestamp,
+            market_data=market_data,
+        )
+
+    def _update_equity_snapshot(self, ts_ms: int) -> None:
+        """Record an equity snapshot and update the running drawdown peak.
+
+        Args:
+            ts_ms: Bar timestamp in milliseconds.
+        """
+        positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
+        equity = self.cash_balance + positions_value
+        bar_time = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+        self.results.equity_curve.append((bar_time, equity))
+
+        if equity > self._equity_peak:
+            self._equity_peak = equity
+
+        drawdown = self._equity_peak - equity
+        if drawdown > self.results.max_drawdown:
+            self.results.max_drawdown = drawdown
+            if self._equity_peak > 0:
+                self.results.max_drawdown_pct = float(drawdown / self._equity_peak * 100)
+
+    def _force_close_positions(self) -> None:
+        """Force-close any positions still open at the end of the test period."""
+        for symbol, pos in self.positions.copy().items():
+            close_side = OrderSide.SELL if pos.side == OrderSide.BUY else OrderSide.BUY
+            self._execute_backtest_order(
+                symbol=symbol,
+                side=close_side,
+                quantity=pos.quantity,
+                price=pos.current_price,
+                timestamp=datetime.now(UTC),
+                market_data=None,
+            )
 
     async def run(
         self,
@@ -525,8 +671,6 @@ class BacktestEngine:
         logger.info(f"Period:          {days}d × {interval}min candles")
         logger.info("=" * 60)
 
-        # Fetch all candles and index them: {symbol: {start_ms: CandleData}}
-        # O(1) lookup replaces the previous O(n) linear scan per bar.
         indexed: dict[str, dict[int, CandleData]] = {}
         for symbol in symbols:
             candles = await self.fetch_historical_data(symbol, days, interval)
@@ -537,7 +681,6 @@ class BacktestEngine:
             logger.error("No historical data fetched — aborting backtest")
             return self.results
 
-        # Union of all bar timestamps, sorted chronologically
         all_timestamps = sorted(
             {ts for symbol_candles in indexed.values() for ts in symbol_candles}
         )
@@ -552,104 +695,11 @@ class BacktestEngine:
                 candle = indexed.get(symbol, {}).get(ts_ms)
                 if candle is None:
                     continue
+                await self._process_bar_symbol(symbol, self._candle_to_market_data(candle, symbol))
 
-                market_data = self._candle_to_market_data(candle, symbol)
+            self._update_equity_snapshot(ts_ms)
 
-                # 1. Update open position with latest price
-                if symbol in self.positions:
-                    pos = self.positions[symbol]
-                    pos.update_price(market_data.last)
-
-                    # 2. Check SL/TP before generating a new signal
-                    should_exit, exit_reason = pos.should_close()
-                    if should_exit:
-                        logger.debug(
-                            f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}"
-                        )
-                        self._execute_backtest_order(
-                            symbol=symbol,
-                            side=OrderSide.SELL,
-                            quantity=pos.quantity,
-                            price=market_data.last,
-                            timestamp=market_data.timestamp,
-                            market_data=market_data,
-                        )
-                        continue  # Skip strategy signal this bar
-
-                # 3. Compute portfolio value and ask the strategy for a signal
-                positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
-                portfolio_value = self.cash_balance + positions_value
-
-                signal = await self.strategy.analyze(
-                    symbol=symbol,
-                    market_data=market_data,
-                    positions=list(self.positions.values()),
-                    portfolio_value=portfolio_value,
-                )
-
-                if signal is None:
-                    continue
-
-                side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
-                quantity = self.risk_manager.calculate_position_size(
-                    portfolio_value=portfolio_value,
-                    price=signal.price,
-                    signal_strength=signal.strength,
-                )
-
-                # 4. Validate with risk manager
-                temp_order = Order(
-                    symbol=symbol,
-                    side=side,
-                    order_type=OrderType.LIMIT,
-                    quantity=quantity,
-                    price=signal.price,
-                    status=OrderStatus.PENDING,
-                )
-                is_valid, reason = self.risk_manager.validate_order(
-                    temp_order, portfolio_value, list(self.positions.values())
-                )
-                if not is_valid:
-                    logger.debug(f"Order rejected ({symbol}): {reason}")
-                    continue
-
-                # 5. Execute
-                self._execute_backtest_order(
-                    symbol=symbol,
-                    side=side,
-                    quantity=quantity,
-                    price=signal.price,
-                    timestamp=market_data.timestamp,
-                    market_data=market_data,
-                )
-
-            # 6. Equity snapshot + O(1) drawdown update
-            positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
-            equity = self.cash_balance + positions_value
-            bar_time = datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
-            self.results.equity_curve.append((bar_time, equity))
-
-            if equity > self._equity_peak:
-                self._equity_peak = equity
-
-            drawdown = self._equity_peak - equity
-            if drawdown > self.results.max_drawdown:
-                self.results.max_drawdown = drawdown
-                if self._equity_peak > 0:
-                    self.results.max_drawdown_pct = float(drawdown / self._equity_peak * 100)
-
-        # Force-close any positions still open at the end of the test period
-        for symbol, pos in list(self.positions.items()):
-            close_side = OrderSide.SELL if pos.side == OrderSide.BUY else OrderSide.BUY
-            self._execute_backtest_order(
-                symbol=symbol,
-                side=close_side,
-                quantity=pos.quantity,
-                price=pos.current_price,
-                timestamp=datetime.now(UTC),
-                market_data=None,  # No spread on end-of-test force-close
-            )
-
+        self._force_close_positions()
         self.results.final_capital = self.cash_balance
         self.results.compute_sharpe_ratio()
 

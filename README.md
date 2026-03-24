@@ -143,9 +143,7 @@ revolut-trader/
 │   │   ├── sonarcloud.yml    # SonarCloud code scanning
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
 │   │   └── release.yml       # Manual production release workflow
-│   ├── dependabot.yml        # Automated dependency updates
-│   ├── PULL_REQUEST_TEMPLATE.md
-│   └── ISSUE_TEMPLATE/       # Bug report & feature request forms
+│   └── dependabot.yml        # Automated dependency updates
 ├── src/
 │   ├── api/                  # Revolut API client (Ed25519 auth) + mock client
 │   ├── strategies/           # 6 trading strategies (base + implementations)
@@ -173,7 +171,8 @@ revolut-trader/
 │   ├── DEVELOPMENT_GUIDELINES.md  # TDD, coding standards, contribution rules
 │   ├── 1PASSWORD.md          # Credential and config setup
 │   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
-│   └── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
+│   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
+│   └── revolut-trader.drawio     # Architecture diagram (draw.io)
 └── Makefile                  # All project commands
 ```
 
