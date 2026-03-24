@@ -42,6 +42,16 @@ run_trading_loop()
         └── persistence.save_trade()            → encrypted SQLite
     └── save_portfolio_snapshot()
     └── RiskManager.update_daily_pnl()          → suspend if limit hit
+
+stop()  (graceful shutdown on Ctrl-C or error)
+    └── executor.graceful_shutdown()
+        ├── cancel_all_orders()                → cancel unmonitored orders
+        ├── for each position:
+        │   ├── unrealized_pnl < 0 → close via market order
+        │   └── unrealized_pnl ≥ 0 → keep open (profitable)
+        └── return ShutdownSummary             → bot updates cash balance
+    └── persistence.save_data()                → final snapshot to DB
+    └── persistence.end_session()              → record final metrics
 ```
 
 ______________________________________________________________________
@@ -74,3 +84,5 @@ ______________________________________________________________________
 1. **Rate limiting** — 60 API calls/min
 1. **Encrypted DB** — sensitive fields (trading pairs, log messages) encrypted with Fernet key from 1Password
 1. **No plaintext files** — logs go to encrypted SQLite, never to disk
+1. **Graceful shutdown** — cancels all pending orders and closes losing positions on shutdown; profitable positions are kept open
+1. **Capital cap** — optional `MAX_CAPITAL` in 1Password limits how much the bot can trade with, regardless of account balance

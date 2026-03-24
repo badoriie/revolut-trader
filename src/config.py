@@ -137,11 +137,33 @@ class Settings(BaseSettings):
                     "Invalid INITIAL_CAPITAL in 1Password: must be a positive number."
                 ) from e
 
+        # MAX_CAPITAL — optional for all environments.
+        # Caps the cash_balance at startup so the bot never trades with more
+        # than this amount, even if the account holds more.
+        max_capital_str = op.get_optional("MAX_CAPITAL")
+        if max_capital_str is not None:
+            try:
+                max_capital_val = float(max_capital_str)
+                if max_capital_val <= 0:
+                    raise ValueError("must be a positive number")
+                self.max_capital = max_capital_val
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid MAX_CAPITAL in 1Password: must be a positive number.\n"
+                    "Set it with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"
+                ) from e
+
     # Logging
     log_level: str = Field(default="INFO")
 
     # Paper Trading (populated in model_post_init from 1Password INITIAL_CAPITAL)
     paper_initial_capital: float = Field(default=10000.0, ge=1.0)
+
+    # Maximum capital the bot is allowed to trade with (optional).
+    # If set, cash_balance is capped to this value at startup — the bot will
+    # never consider more than this amount as available capital, even if the
+    # account holds more.  None means "use the full available balance".
+    max_capital: float | None = Field(default=None)
 
 
 settings = Settings()

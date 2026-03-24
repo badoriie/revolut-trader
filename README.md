@@ -19,6 +19,7 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 - **Backtesting**: Strategy comparison with real historical data, configurable via Actions console
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
+- **Graceful Shutdown**: Cancels pending orders and closes losing positions on exit; profitable positions kept open
 - **Monitoring**: Database analytics, CSV export
 
 ## Quick Start
@@ -132,6 +133,12 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 | Conservative | 1.5%         | 3%             | 3                  | 1.5%      |
 | Moderate     | 3%           | 5%             | 5                  | 2.5%      |
 | Aggressive   | 5%           | 10%            | 8                  | 4%        |
+
+Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trade with, regardless of your account balance:
+
+```bash
+make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
+```
 
 ## Project Structure
 

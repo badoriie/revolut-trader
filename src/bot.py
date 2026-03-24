@@ -156,13 +156,48 @@ class TradingBot:
                     "Please check API connection and credentials."
                 ) from e
 
+        # Apply MAX_CAPITAL cap — limits how much money the bot can trade with.
+        if settings.max_capital is not None:
+            max_cap = Decimal(str(settings.max_capital))
+            if self.cash_balance > max_cap:
+                logger.info(
+                    f"MAX_CAPITAL cap applied: {self.currency_symbol}{self.cash_balance:,.2f} "
+                    f"→ {self.currency_symbol}{max_cap:,.2f}"
+                )
+                self.cash_balance = max_cap
+
         self.is_running = True
         logger.info("Trading bot started successfully!")
 
     async def stop(self):
-        """Stop the trading bot gracefully."""
+        """Stop the trading bot gracefully.
+
+        Shutdown sequence:
+          1. Cancel all pending orders and close losing positions.
+          2. Update cash balance for any positions closed during shutdown.
+          3. Save final portfolio state to the database.
+          4. End the database session with final metrics.
+          5. Close the API client connection.
+        """
         logger.info("Stopping trading bot...")
         self.is_running = False
+
+        # Graceful shutdown: cancel orders, close losing positions, keep winners
+        if self.executor:
+            shutdown_summary = await self.executor.graceful_shutdown()
+            logger.info(
+                f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
+                f"{shutdown_summary.positions_closed} losing positions closed, "
+                f"{shutdown_summary.positions_kept} profitable positions kept"
+            )
+
+            # Update cash balance for positions closed during shutdown
+            for order in shutdown_summary.filled_close_orders:
+                self._process_filled_order(order)
+
+            if shutdown_summary.errors:
+                for error in shutdown_summary.errors:
+                    logger.error(f"Shutdown error: {error}")
 
         # Save final state and end session
         self._save_data()

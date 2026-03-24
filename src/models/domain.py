@@ -165,6 +165,25 @@ class PortfolioSnapshot(BaseModel):
     num_positions: int
 
 
+class ShutdownSummary(BaseModel):
+    """Summary of actions taken during graceful shutdown.
+
+    Returned by ``OrderExecutor.graceful_shutdown()`` so the bot can log
+    what happened and update its cash balance for any closed positions.
+
+    All monetary fields use ``Decimal`` — never ``float``.
+    """
+
+    orders_cancelled: int
+    positions_evaluated: int
+    positions_closed: int
+    positions_kept: int
+    closed_positions_pnl: Decimal = Decimal("0")
+    kept_positions_pnl: Decimal = Decimal("0")
+    filled_close_orders: list["Order"] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
 # API Response Models for validation
 
 

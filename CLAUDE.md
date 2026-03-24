@@ -71,10 +71,11 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 - `TradingBot` (orchestrator) owns: `RevolutAPIClient` or `MockRevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
 - Each trading loop iteration: fetch market data → `strategy.analyze()` → `risk_manager.validate()` → `executor.execute()` → persist
+- Graceful shutdown: `bot.stop()` → `executor.graceful_shutdown()` (cancel orders, close losing positions, keep profitable ones) → save final state → end DB session
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
 
-**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). Config fails fast with actionable error messages if 1Password fields are missing.
+**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never trades with more than this amount (e.g., account holds 50,000 EUR but MAX_CAPITAL=5,000 → bot uses 5,000). Config fails fast with actionable error messages if 1Password fields are missing.
 
 **Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv ENV=prod` for on-demand exports.
 
@@ -84,13 +85,14 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
-**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, and position management via the API client.
+**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, position management, and graceful shutdown via the API client. On shutdown, `graceful_shutdown()` cancels all pending orders, closes positions with negative unrealized PnL, and keeps profitable positions open. Returns a `ShutdownSummary` so the bot can update its cash balance.
 
 **Tests** (`tests/`):
 
 - `tests/conftest.py` — shared fixtures, sets `ENVIRONMENT=dev` before `Settings` singleton is created
-- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions)
+- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions, graceful shutdown)
 - `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
+- `tests/safety/test_graceful_shutdown.py` — graceful shutdown safety tests (order cancellation, losing position closure, profitable position preservation)
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager)
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
@@ -168,7 +170,7 @@ Trading config must come from 1Password exclusively. Two exceptions:
 - `ENVIRONMENT` — comes from `os.environ` (set by the Makefile or `--env` CLI arg) because it must be known before 1Password items can be resolved.
 - `TRADING_MODE` — derived from environment (dev/int → paper, prod → live). Not stored in 1Password.
 
-`INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches the real balance from the API. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
+`INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches the real balance from the API. `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never uses more than this amount. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
 
 ### Database Encryption — Always On
 

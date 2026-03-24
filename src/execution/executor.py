@@ -6,7 +6,15 @@ from loguru import logger
 from src.api.client import RevolutAPIClient
 from src.api.mock_client import MockRevolutAPIClient
 from src.config import TradingMode
-from src.models.domain import Order, OrderSide, OrderStatus, OrderType, Position, Signal
+from src.models.domain import (
+    Order,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    ShutdownSummary,
+    Signal,
+)
 from src.risk_management.risk_manager import RiskManager
 
 # Map Revolut API order states to internal OrderStatus values.
@@ -291,6 +299,135 @@ class OrderExecutor:
 
         if close_order.status == OrderStatus.FILLED:
             await self._update_positions(close_order)
+
+    async def graceful_shutdown(self) -> ShutdownSummary:
+        """Cancel all pending orders and close losing positions on shutdown.
+
+        Shutdown procedure:
+          1. Cancel all pending/open orders (they will be unmonitored).
+          2. Evaluate each open position's unrealized PnL.
+          3. Close positions with ``unrealized_pnl < 0`` via market orders.
+          4. Leave positions with ``unrealized_pnl >= 0`` open (profitable).
+          5. Return a summary of all actions taken.
+
+        This method is fault-tolerant: individual failures are logged and
+        recorded in the summary but do not prevent other shutdown actions.
+
+        Returns:
+            ShutdownSummary describing what happened during shutdown.
+        """
+        errors: list[str] = []
+        filled_close_orders: list[Order] = []
+
+        # ------------------------------------------------------------------
+        # Phase 1: Cancel all pending / open orders
+        # ------------------------------------------------------------------
+        async with self._order_lock:
+            orders_cancelled = len(self.open_orders)
+
+        if orders_cancelled > 0:
+            if self.trading_mode == TradingMode.LIVE:
+                try:
+                    await self.api_client.cancel_all_orders()
+                    logger.info(f"Cancelled {orders_cancelled} open orders via API")
+                except Exception as exc:
+                    error_msg = f"Failed to cancel orders: {exc}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+
+            async with self._order_lock:
+                self.open_orders.clear()
+
+        # ------------------------------------------------------------------
+        # Phase 2: Evaluate positions — close losers, keep winners
+        # ------------------------------------------------------------------
+        # Snapshot positions under lock, then iterate without holding the lock
+        # to avoid deadlock with _close_position → _update_positions.
+        async with self._position_lock:
+            position_snapshot: list[tuple[str, Position]] = [
+                (symbol, pos) for symbol, pos in self.positions.items()
+            ]
+
+        positions_evaluated = len(position_snapshot)
+        positions_closed = 0
+        positions_kept = 0
+        closed_positions_pnl = Decimal("0")
+        kept_positions_pnl = Decimal("0")
+
+        for symbol, position in position_snapshot:
+            if position.unrealized_pnl < Decimal("0"):
+                # Losing position → close it
+                try:
+                    close_order = await self._close_position_for_shutdown(symbol, position)
+                    if close_order and close_order.status == OrderStatus.FILLED:
+                        filled_close_orders.append(close_order)
+                    positions_closed += 1
+                    closed_positions_pnl += position.unrealized_pnl
+                    logger.info(f"Closed losing position {symbol}: PnL={position.unrealized_pnl}")
+                except Exception as exc:
+                    error_msg = f"Failed to close position {symbol}: {exc}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+            else:
+                # Profitable or breakeven → keep it
+                positions_kept += 1
+                kept_positions_pnl += position.unrealized_pnl
+                logger.info(f"Keeping profitable position {symbol}: PnL={position.unrealized_pnl}")
+
+        logger.info(
+            f"Graceful shutdown complete: {orders_cancelled} orders cancelled, "
+            f"{positions_closed} positions closed, {positions_kept} positions kept"
+        )
+
+        return ShutdownSummary(
+            orders_cancelled=orders_cancelled,
+            positions_evaluated=positions_evaluated,
+            positions_closed=positions_closed,
+            positions_kept=positions_kept,
+            closed_positions_pnl=closed_positions_pnl,
+            kept_positions_pnl=kept_positions_pnl,
+            filled_close_orders=filled_close_orders,
+            errors=errors,
+        )
+
+    async def _close_position_for_shutdown(self, symbol: str, position: Position) -> Order | None:
+        """Build and execute a market close order during graceful shutdown.
+
+        Similar to ``_close_position`` but returns the close order so the bot
+        can update its cash balance, and uses ``"graceful_shutdown"`` as the
+        close reason.
+
+        Args:
+            symbol:   Trading pair to close.
+            position: The position being closed (read-only snapshot).
+
+        Returns:
+            The filled close Order, or None if the position was already gone.
+        """
+        # Re-check under lock — position may have been removed concurrently
+        async with self._position_lock:
+            if symbol not in self.positions:
+                return None
+
+        close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
+        close_order = Order(
+            symbol=symbol,
+            side=close_side,
+            order_type=OrderType.MARKET,
+            quantity=position.quantity,
+            price=position.current_price,
+            strategy="close_graceful_shutdown",
+        )
+
+        if self.trading_mode == TradingMode.PAPER:
+            await self._execute_paper_order(close_order)
+        else:
+            await self._execute_live_order(close_order)
+
+        if close_order.status == OrderStatus.FILLED:
+            await self._update_positions(close_order)
+
+        return close_order
 
     async def get_portfolio_value(self, cash_balance: Decimal) -> Decimal:
         """Calculate total portfolio value (cash + mark-to-market positions, thread-safe)."""

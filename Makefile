@@ -145,6 +145,7 @@ setup:
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
 					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
+				echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
 			else \
 				op item create \
 					--category "Secure Note" \
@@ -273,7 +274,7 @@ opshow:
 	@echo ""
 	@echo "=== Configuration ($(OP_CONFIG)) ==="
 	@echo "  TRADING_MODE              = (derived: dev/int → paper, prod → live)"
-	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
 		printf "  %-25s = %s\n" "$$field" "$$value"; \
 	done
@@ -322,6 +323,7 @@ opconfig-init:
 			"DEFAULT_STRATEGY[text]=market_making" \
 			>/dev/null; \
 		echo "Config item created (prod — no INITIAL_CAPITAL needed, real balance from API)"; \
+		echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
 	else \
 		op item create \
 			--category "Secure Note" \
@@ -337,6 +339,7 @@ opconfig-init:
 		echo "  RISK_LEVEL=conservative  INITIAL_CAPITAL=10000"; \
 	fi
 	@echo "  Trading mode: derived from environment (dev/int → paper, prod → live)"
+	@echo "  MAX_CAPITAL: optional — limits how much the bot can trade with"
 	@echo "  Use 'make opconfig-set KEY=... VALUE=...' to change values"
 
 opconfig-set:
@@ -351,7 +354,7 @@ opconfig-set:
 opconfig-show:
 	@echo "Configuration ($(OP_VAULT)/$(OP_CONFIG)):"
 	@echo "  TRADING_MODE:            (derived: dev/int → paper, prod → live)"
-	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL; do \
+	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$key 2>/dev/null || echo "(not set)"); \
 		printf "  %-22s %s\n" "$$key:" "$$value"; \
 	done
