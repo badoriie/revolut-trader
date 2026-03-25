@@ -180,6 +180,7 @@ class TradingBot:
           5. Close the API client connection.
         """
         logger.info("Stopping trading bot...")
+        logger.info("Please wait — cancelling orders and closing all positions before exit...")
         self.is_running = False
 
         # Graceful shutdown: cancel orders, close ALL positions.
