@@ -35,6 +35,8 @@ make run-live                # live trading (prod env, REAL MONEY — requires c
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 ENV=dev
+make backtest-compare        # compare all strategies side-by-side (DAYS=... RISK=...)
+make backtest-matrix         # all strategies × all risk levels matrix
 make db-backtests            # view stored results (uses ENV)
 make db-export-csv           # export results to CSV
 
@@ -90,11 +92,15 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 **Tests** (`tests/`):
 
 - `tests/conftest.py` — shared fixtures, sets `ENVIRONMENT=dev` before `Settings` singleton is created
+- `tests/test_config.py` — configuration loading and validation tests
 - `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions, graceful shutdown)
 - `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
 - `tests/safety/test_graceful_shutdown.py` — graceful shutdown safety tests (order cancellation, all-positions closure, trailing stop logic, timeout force-close)
 - `tests/safety/test_pre_existing_crypto.py` — pre-existing crypto protection tests (SELL guard, shutdown scope)
 - `tests/safety/test_currency_mismatch.py` — trading pair / BASE_CURRENCY mismatch validation tests
+- `tests/safety/test_config_required.py` — required config field validation tests (fail-fast on missing 1Password fields)
+- `tests/safety/test_max_capital.py` — MAX_CAPITAL cap enforcement tests
+- `tests/safety/test_order_limits.py` — order size and position limit safety tests
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager)
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)

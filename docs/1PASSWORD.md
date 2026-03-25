@@ -83,13 +83,16 @@ The bot uses two 1Password items per environment in the `revolut-trader` vault.
 
 ### Trading Configuration (`revolut-trader-config-{env}`)
 
-| Field              | Type | Default           | dev / int | prod       | Valid Values                                                                                   |
-| ------------------ | ---- | ----------------- | --------- | ---------- | ---------------------------------------------------------------------------------------------- |
-| `DEFAULT_STRATEGY` | text | `market_making`   | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion` |
-| `RISK_LEVEL`       | text | `conservative`    | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                       |
-| `BASE_CURRENCY`    | text | `EUR`             | Required  | Required   | `EUR`, `USD`, `GBP`                                                                            |
-| `TRADING_PAIRS`    | text | `BTC-EUR,ETH-EUR` | Required  | Required   | Comma-separated symbols                                                                        |
-| `INITIAL_CAPITAL`  | text | `10000`           | Required  | Not needed | Any positive number                                                                            |
+| Field                        | Type | Default           | dev / int | prod       | Valid Values                                                                                          |
+| ---------------------------- | ---- | ----------------- | --------- | ---------- | ----------------------------------------------------------------------------------------------------- |
+| `DEFAULT_STRATEGY`           | text | `market_making`   | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion`        |
+| `RISK_LEVEL`                 | text | `conservative`    | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                              |
+| `BASE_CURRENCY`              | text | `EUR`             | Required  | Required   | `EUR`, `USD`, `GBP`                                                                                   |
+| `TRADING_PAIRS`              | text | `BTC-EUR,ETH-EUR` | Required  | Required   | Comma-separated symbols                                                                               |
+| `INITIAL_CAPITAL`            | text | `10000`           | Required  | Not needed | Any positive number                                                                                   |
+| `MAX_CAPITAL`                | text | _(not set)_       | Optional  | Optional   | Any positive number — caps how much cash the bot can use regardless of account balance                |
+| `SHUTDOWN_TRAILING_STOP_PCT` | text | _(not set)_       | Optional  | Optional   | e.g. `0.5` for 0.5% — trailing stop % for profitable positions on shutdown; omit to close immediately |
+| `SHUTDOWN_MAX_WAIT_SECONDS`  | text | `120`             | Optional  | Optional   | Hard timeout before force-closing a profitable position whose trailing stop has not triggered         |
 
 > **TRADING_MODE is not stored in 1Password.** It is derived from the environment: dev/int → paper, prod → live. This is intentionally non-configurable.
 >
@@ -115,6 +118,7 @@ ______________________________________________________________________
 | `make opdelete`                   | Delete credentials item (requires confirmation)  |
 | `make opconfig-show`              | Show trading configuration                       |
 | `make opconfig-set KEY=X VALUE=Y` | Update a config field                            |
+| `make opconfig-delete KEY=X`      | Remove a config field                            |
 | `make opconfig-init`              | (Re-)create config item with defaults            |
 
 ### Using the CLI directly

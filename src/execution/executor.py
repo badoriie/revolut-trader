@@ -520,6 +520,51 @@ class OrderExecutor:
             )
         return low_watermark, trailing_stop_price, triggered
 
+    async def _execute_market_close_order(
+        self,
+        symbol: str,
+        position: Position,
+        price: Decimal,
+        strategy_label: str,
+    ) -> Order:
+        """Build and execute a market close order, then update position tracking.
+
+        Shared by both the trailing-stop and immediate shutdown paths.  Patches
+        ``filled_quantity`` for live orders that come back with zero before the
+        fill-poll cycle has run.
+
+        Args:
+            symbol:         Trading pair to close.
+            position:       The position being closed.
+            price:          Market price to use for the order.
+            strategy_label: Strategy tag recorded on the Order (e.g.
+                            ``"close_graceful_shutdown"``).
+
+        Returns:
+            The executed close Order.
+        """
+        close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
+        close_order = Order(
+            symbol=symbol,
+            side=close_side,
+            order_type=OrderType.MARKET,
+            quantity=position.quantity,
+            price=price,
+            strategy=strategy_label,
+        )
+        if self.trading_mode == TradingMode.PAPER:
+            await self._execute_paper_order(close_order)
+        else:
+            await self._execute_live_order(close_order)
+        if close_order.status == OrderStatus.FILLED:
+            # Live orders come back with filled_quantity=0 (not yet polled).
+            # For shutdown close orders we treat the full quantity as filled so
+            # _update_positions correctly removes the position from the dict.
+            if close_order.filled_quantity == Decimal("0"):
+                close_order.filled_quantity = close_order.quantity
+            await self._update_positions(close_order)
+        return close_order
+
     async def _wait_and_close_profitable(
         self,
         symbol: str,
@@ -596,31 +641,9 @@ class OrderExecutor:
         # Update position price to the latest known market price before closing
         position.update_price(current_price)
 
-        # Build close order with trailing-stop label
-        close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
-        close_order = Order(
-            symbol=symbol,
-            side=close_side,
-            order_type=OrderType.MARKET,
-            quantity=position.quantity,
-            price=current_price,
-            strategy="close_trailing_stop_shutdown",
+        return await self._execute_market_close_order(
+            symbol, position, current_price, "close_trailing_stop_shutdown"
         )
-
-        if self.trading_mode == TradingMode.PAPER:
-            await self._execute_paper_order(close_order)
-        else:
-            await self._execute_live_order(close_order)
-
-        if close_order.status == OrderStatus.FILLED:
-            # Live orders come back with filled_quantity=0 (not yet polled).
-            # For shutdown close orders we treat the full quantity as filled so
-            # _update_positions correctly removes the position from the dict.
-            if close_order.filled_quantity == Decimal("0"):
-                close_order.filled_quantity = close_order.quantity
-            await self._update_positions(close_order)
-
-        return close_order
 
     async def _close_position_for_shutdown(self, symbol: str, position: Position) -> Order | None:
         """Build and execute a market close order during graceful shutdown.
@@ -641,30 +664,9 @@ class OrderExecutor:
             if symbol not in self.positions:
                 return None
 
-        close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
-        close_order = Order(
-            symbol=symbol,
-            side=close_side,
-            order_type=OrderType.MARKET,
-            quantity=position.quantity,
-            price=position.current_price,
-            strategy="close_graceful_shutdown",
+        return await self._execute_market_close_order(
+            symbol, position, position.current_price, "close_graceful_shutdown"
         )
-
-        if self.trading_mode == TradingMode.PAPER:
-            await self._execute_paper_order(close_order)
-        else:
-            await self._execute_live_order(close_order)
-
-        if close_order.status == OrderStatus.FILLED:
-            # Live orders come back with filled_quantity=0 (not yet polled).
-            # For shutdown close orders we treat the full quantity as filled so
-            # _update_positions correctly removes the position from the dict.
-            if close_order.filled_quantity == Decimal("0"):
-                close_order.filled_quantity = close_order.quantity
-            await self._update_positions(close_order)
-
-        return close_order
 
     async def get_portfolio_value(self, cash_balance: Decimal) -> Decimal:
         """Calculate total portfolio value (cash + mark-to-market positions, thread-safe)."""
