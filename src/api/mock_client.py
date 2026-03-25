@@ -631,9 +631,9 @@ class MockRevolutAPIClient:
     # 17. GET /tickers
     # ------------------------------------------------------------------
 
-    async def get_tickers(
+    async def get_tickers(  # NOSONAR
         self, symbols: list[str] | None = None
-    ) -> list[dict[str, Any]]:  # NOSONAR
+    ) -> list[dict[str, Any]]:
         """Return mock tickers.
 
         Args:

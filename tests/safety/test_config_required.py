@@ -291,8 +291,8 @@ class TestValidConfiguration:
         """Base currency should be converted to uppercase."""
         config = {
             "RISK_LEVEL": "conservative",
-            "BASE_CURRENCY": "usd",  # lowercase
-            "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
+            "BASE_CURRENCY": "usd",  # lowercase — pairs must use USD to avoid mismatch
+            "TRADING_PAIRS": "BTC-USD,ETH-USD",
             "DEFAULT_STRATEGY": "market_making",
             "INITIAL_CAPITAL": "10000",
         }

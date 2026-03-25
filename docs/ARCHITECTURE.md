@@ -42,6 +42,22 @@ run_trading_loop()
         └── persistence.save_trade()            → encrypted SQLite
     └── save_portfolio_snapshot()
     └── RiskManager.update_daily_pnl()          → suspend if limit hit
+
+stop()  (graceful shutdown on Ctrl-C or error)
+    └── executor.graceful_shutdown(trailing_stop_pct, max_wait_seconds)
+        ├── Phase 1: cancel_all_orders()           → cancel unmonitored orders
+        ├── Phase 2: for each position (unrealized_pnl < 0):
+        │   └── close immediately via market order
+        ├── Phase 3: for each position (unrealized_pnl ≥ 0):
+        │   ├── if SHUTDOWN_TRAILING_STOP_PCT set:
+        │   │   ├── poll get_ticker() every 2s
+        │   │   ├── track high-watermark, trailing_stop = watermark × (1 - pct%)
+        │   │   ├── close when price ≤ trailing_stop OR timeout expires
+        │   └── else: close immediately via market order
+        └── return ShutdownSummary             → bot updates cash balance
+            GUARANTEE: executor.positions == {} after return
+    └── persistence.save_data()                → final snapshot to DB
+    └── persistence.end_session()              → record final metrics
 ```
 
 ______________________________________________________________________
@@ -74,3 +90,8 @@ ______________________________________________________________________
 1. **Rate limiting** — 60 API calls/min
 1. **Encrypted DB** — sensitive fields (trading pairs, log messages) encrypted with Fernet key from 1Password
 1. **No plaintext files** — logs go to encrypted SQLite, never to disk
+1. **Graceful shutdown** — cancels all pending orders, closes losing positions immediately, and closes profitable positions via trailing stop (or immediately); **guarantee: no bot-opened position is left open after shutdown** (EUR → trade → EUR contract)
+1. **Pre-existing crypto protection** — SELL guard in `execute_signal` blocks any sell for a symbol the bot did not open; pre-existing crypto is never touched
+1. **Currency mismatch validation** — all trading pairs must end with `-{BASE_CURRENCY}`; bot refuses to start if there is a mismatch
+1. **Capital cap** — optional `MAX_CAPITAL` in 1Password limits how much the bot can trade with, regardless of account balance
+1. **Shutdown trailing stop** — optional `SHUTDOWN_TRAILING_STOP_PCT` and `SHUTDOWN_MAX_WAIT_SECONDS` in 1Password control how long the bot waits for the best exit on profitable positions before force-closing

@@ -6,7 +6,8 @@ per-environment mock vaults (dev, int, prod).
 
 TRADING_MODE is not stored in 1Password — it is derived from the environment
 (dev/int → paper, prod → live).  INITIAL_CAPITAL is only needed for paper
-mode environments (dev/int).
+mode environments (dev/int).  MAX_CAPITAL is optional for all environments —
+when set, it caps the cash balance at startup.
 """
 
 _MOCK_PRIVATE_KEY = (
@@ -16,11 +17,13 @@ _MOCK_PRIVATE_KEY = (
 )
 
 
-def create_mock_vault(environment: str = "dev") -> dict[str, str]:
+def create_mock_vault(environment: str = "dev", max_capital: str | None = None) -> dict[str, str]:
     """Return all test values as a single flat dict (mirrors the real vault cache).
 
     Args:
         environment: The environment to mock (dev, int, prod).
+        max_capital: Optional MAX_CAPITAL value.  When set, caps the cash
+            balance at startup so the bot never trades with more than this.
 
     Returns:
         Dict with all required credentials and configuration for tests
@@ -40,6 +43,10 @@ def create_mock_vault(environment: str = "dev") -> dict[str, str]:
     # Prod (live mode) fetches real balance from the Revolut API.
     if environment != "prod":
         base["INITIAL_CAPITAL"] = "10000"
+
+    # MAX_CAPITAL — optional for all environments.
+    if max_capital is not None:
+        base["MAX_CAPITAL"] = max_capital
 
     return base
 

@@ -61,6 +61,8 @@ jobs:
         if: always()
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           PROJECT_KEY="badoriie_revolut-trader"
           API_URL="https://sonarcloud.io/api"
@@ -68,10 +70,17 @@ jobs:
           PAGE_SIZE=100
           ALL_ISSUES="[]"
 
+          # Set branch filter: PR number for pull_request events, branch name for push
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            BRANCH_PARAM="pullRequest=${PR_NUMBER}"
+          else
+            BRANCH_PARAM="branch=main"
+          fi
+
           # Paginate through all issues
           while true; do
             RESPONSE=$(curl -s -u "${SONAR_TOKEN}:" \
-              "${API_URL}/issues/search?componentKeys=${PROJECT_KEY}&statuses=OPEN,CONFIRMED,REOPENED&ps=${PAGE_SIZE}&p=${PAGE}")
+              "${API_URL}/issues/search?componentKeys=${PROJECT_KEY}&${BRANCH_PARAM}&statuses=OPEN,CONFIRMED,REOPENED&ps=${PAGE_SIZE}&p=${PAGE}")
 
             ISSUES=$(echo "$RESPONSE" | jq '.issues')
             TOTAL=$(echo "$RESPONSE" | jq '.total')

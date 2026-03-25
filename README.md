@@ -19,6 +19,7 @@ A production-ready algorithmic trading bot for Revolut X Crypto API with multipl
 - **Backtesting**: Strategy comparison with real historical data, configurable via Actions console
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
+- **Graceful Shutdown**: Cancels pending orders, closes losing positions immediately, and closes profitable positions via trailing stop (or immediately); guarantee: all bot-opened positions are closed before exit
 - **Monitoring**: Database analytics, CSV export
 
 ## Quick Start
@@ -133,6 +134,12 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 | Moderate     | 3%           | 5%             | 5                  | 2.5%      |
 | Aggressive   | 5%           | 10%            | 8                  | 4%        |
 
+Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trade with, regardless of your account balance:
+
+```bash
+make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
+```
+
 ## Project Structure
 
 ```
@@ -172,7 +179,8 @@ revolut-trader/
 │   ├── 1PASSWORD.md          # Credential and config setup
 │   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
-│   └── revolut-trader.drawio     # Architecture diagram (draw.io)
+│   ├── revolut-trader.drawio     # Architecture diagram (draw.io)
+│   └── README.md                 # Documentation index
 └── Makefile                  # All project commands
 ```
 
