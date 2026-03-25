@@ -112,8 +112,11 @@ def _make_open_order(order_id: str, symbol: str) -> Order:
     )
 
 
-# Convenience — avoids repeating trailing stop args in every test
-_DEFAULT_SHUTDOWN_ARGS = {"trailing_stop_pct": Decimal("0.5"), "max_wait_seconds": 5}
+# Convenience — avoids repeating trailing stop args in every test.
+# max_wait_seconds=0 means the trailing-stop loop times out immediately (elapsed >= 0
+# is always True), so tests that don't care about polling duration finish without any
+# real wall-clock wait while still exercising the full shutdown code path.
+_DEFAULT_SHUTDOWN_ARGS = {"trailing_stop_pct": Decimal("0.5"), "max_wait_seconds": 0}
 
 
 # ===========================================================================
@@ -442,10 +445,9 @@ class TestTrailingStopBehavior:
             }
         )
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            summary = await paper_executor.graceful_shutdown(
-                trailing_stop_pct=Decimal("0.5"), max_wait_seconds=1
-            )
+        summary = await paper_executor.graceful_shutdown(
+            trailing_stop_pct=Decimal("0.5"), max_wait_seconds=0
+        )
 
         # Force closed on timeout
         assert summary.positions_closed == 1
