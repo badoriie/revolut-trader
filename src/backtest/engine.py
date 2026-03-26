@@ -24,6 +24,12 @@ from loguru import logger
 from src.api.client import RevolutAPIClient
 from src.api.mock_client import MockRevolutAPIClient
 from src.config import RiskLevel, StrategyType
+from src.execution.executor import (
+    _DEFAULT_MIN_SIGNAL_STRENGTH,
+    _DEFAULT_ORDER_TYPE,
+    _STRATEGY_MIN_SIGNAL_STRENGTH,
+    _STRATEGY_ORDER_TYPE,
+)
 from src.models.domain import (
     CandleData,
     MarketData,
@@ -57,9 +63,9 @@ MAX_CANDLES_PER_REQUEST: int = 1000
 # Revolut X taker fee (see their published fee schedule)
 TAKER_FEE_PCT: Decimal = Decimal("0.0009")
 
-# Simulated bid/ask half-spread applied to every candle close price (0.3 %)
-# Keeps the spread above the 0.2 % minimum required by MarketMakingStrategy
-SPREAD_PCT: Decimal = Decimal("0.003")
+# Simulated bid/ask half-spread applied to every candle close price (0.1 %)
+# Matches real Revolut X bid-ask spreads (~0.05-0.1 %) for representative P&L.
+SPREAD_PCT: Decimal = Decimal("0.001")
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +221,7 @@ class BacktestEngine:
         self.risk_level = risk_level
         self.initial_capital = initial_capital
 
-        self.risk_manager = RiskManager(risk_level=risk_level)
+        self.risk_manager = RiskManager(risk_level=risk_level, strategy=strategy_type.value)
         self.strategy: BaseStrategy = self._create_strategy(strategy_type)
 
         # Simulation state
@@ -426,12 +432,12 @@ class BacktestEngine:
             ``True`` if the order was filled; ``False`` if rejected.
         """
         if symbol not in self.positions:
-            logger.warning(f"Cannot SELL {symbol}: no open position")
+            logger.debug(f"Cannot SELL {symbol}: no open position")
             return False
 
         pos = self.positions[symbol]
         if pos.quantity < quantity:
-            logger.warning(
+            logger.debug(
                 f"Insufficient position for SELL {symbol}: have {pos.quantity}, need {quantity}"
             )
             return False
@@ -474,15 +480,17 @@ class BacktestEngine:
         price: Decimal,
         timestamp: datetime,
         market_data: MarketData | None = None,
+        order_type: OrderType = OrderType.MARKET,
     ) -> bool:
         """Simulate a fill with slippage and taker fee.
 
         Execution price
         ~~~~~~~~~~~~~~~
-        When *market_data* is available (the normal path), buys fill at the
-        ask and sells fill at the bid.  This models the cost of crossing the
-        spread on a taker order.  When *market_data* is ``None`` (e.g. the
-        end-of-backtest force-close), the supplied *price* is used directly.
+        MARKET orders: buys fill at ask, sells at bid — modelling taker spread cost.
+        LIMIT orders:  buys fill at *price* (not ask) only if ``market_data.low ≤ price``;
+        sells fill at *price* only if ``market_data.high ≥ price``.  When
+        *market_data* is ``None`` (end-of-backtest force-close), the supplied
+        *price* is used directly regardless of order type.
 
         Fee
         ~~~
@@ -498,18 +506,42 @@ class BacktestEngine:
             symbol:      Trading pair.
             side:        ``BUY`` or ``SELL``.
             quantity:    Order quantity in base currency units.
-            price:       Reference price (used when *market_data* is None).
+            price:       Reference price / limit price.
             timestamp:   Bar timestamp recorded in the trade log.
-            market_data: Current bar's bid/ask; enables slippage modelling.
+            market_data: Current bar's bid/ask/high/low; enables slippage and
+                         LIMIT fill verification.
+            order_type:  ``MARKET`` fills immediately at bid/ask; ``LIMIT``
+                         only fills when the candle range includes the limit price.
 
         Returns:
             ``True`` if the order was filled; ``False`` if it was rejected
-            (insufficient funds or no open position to sell).
+            (insufficient funds, no open position to sell, or LIMIT price not reached).
         """
-        if market_data is not None:
-            exec_price = market_data.ask if side == OrderSide.BUY else market_data.bid
-        else:
+        if market_data is None:
+            # End-of-backtest force-close: use supplied price directly.
             exec_price = price
+        elif order_type == OrderType.LIMIT:
+            # LIMIT fill verification: the price must have been reached during the bar.
+            if side == OrderSide.BUY:
+                if market_data.low_24h > price:
+                    logger.debug(
+                        f"{symbol}: LIMIT BUY at {price} not filled "
+                        f"(candle low {market_data.low_24h} > limit price)"
+                    )
+                    return False
+                exec_price = price  # fill at limit, not at ask
+            else:  # SELL
+                if market_data.high_24h < price:
+                    logger.debug(
+                        f"{symbol}: LIMIT SELL at {price} not filled "
+                        f"(candle high {market_data.high_24h} < limit price)"
+                    )
+                    return False
+                exec_price = price  # fill at limit, not at bid
+        else:
+            # MARKET order: always fills at bid/ask (taker cost).
+            exec_price = market_data.ask if side == OrderSide.BUY else market_data.bid
+
         order_value = quantity * exec_price
         fee = order_value * TAKER_FEE_PCT
 
@@ -532,11 +564,53 @@ class BacktestEngine:
             symbol:      Trading pair.
             market_data: Current bar's market snapshot.
         """
-        # 1. Update open position with latest price + check SL/TP
+        # 1. Update open position with latest price + check SL/TP.
+        #
+        # Intra-bar SL/TP: in live trading the bot polls every few seconds and
+        # can catch a stop-loss or take-profit trigger mid-candle even when the
+        # closing price is outside the SL/TP range.  We mirror that here by
+        # checking the bar's low/high BEFORE updating to the close price.
+        #
+        # Priority when both SL and TP are triggered by the same candle
+        # (whipsaw): SL wins (conservative / worst-case assumption).
         if symbol in self.positions:
             pos = self.positions[symbol]
-            pos.update_price(market_data.last)
 
+            if pos.stop_loss is not None or pos.take_profit is not None:
+                # Check intra-bar extremes first (before updating to close price).
+                sl_hit = (
+                    pos.stop_loss is not None
+                    and pos.side == OrderSide.BUY
+                    and market_data.low_24h <= pos.stop_loss
+                )
+                tp_hit = (
+                    pos.take_profit is not None
+                    and pos.side == OrderSide.BUY
+                    and market_data.high_24h >= pos.take_profit
+                )
+
+                if sl_hit or tp_hit:
+                    # SL takes precedence (conservative worst-case).
+                    exit_price = pos.stop_loss if sl_hit else pos.take_profit
+                    exit_reason = "Stop-loss" if sl_hit else "Take-profit"
+                    assert exit_price is not None  # narrowing for type checker
+                    logger.debug(
+                        f"{exit_reason} triggered intra-bar for {symbol} at {exit_price:.4f} "
+                        f"(bar low={market_data.low_24h:.4f}, high={market_data.high_24h:.4f})"
+                    )
+                    self._execute_backtest_order(
+                        symbol=symbol,
+                        side=OrderSide.SELL,
+                        quantity=pos.quantity,
+                        price=exit_price,
+                        timestamp=market_data.timestamp,
+                        # Pass None so the exit fills at exactly SL/TP price, not bid.
+                        market_data=None,
+                    )
+                    return  # Skip strategy signal this bar
+
+            # No intra-bar exit: update to close price and run the close-price check.
+            pos.update_price(market_data.last)
             should_exit, exit_reason = pos.should_close()
             if should_exit:
                 logger.debug(f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}")
@@ -563,7 +637,33 @@ class BacktestEngine:
         if signal is None:
             return
 
+        # Mirror the live-trading signal strength filter from OrderExecutor.
+        strategy_key = signal.strategy.lower().replace(" ", "_").replace("-", "_")
+        min_strength = _STRATEGY_MIN_SIGNAL_STRENGTH.get(strategy_key, _DEFAULT_MIN_SIGNAL_STRENGTH)
+        if float(signal.strength) < min_strength:
+            logger.debug(
+                f"{symbol}: signal strength {signal.strength:.2f} below threshold "
+                f"{min_strength} for strategy '{signal.strategy}' — skipped"
+            )
+            return
+
+        # Mirror the live executor's SELL guard: never try to sell a symbol the bot
+        # has not opened a position in.  Without this check, strategies that emit SELL
+        # signals on price momentum (not inventory) would reach _execute_backtest_order
+        # and log spurious WARNING messages for every bar.
+        if signal.signal_type == "SELL" and symbol not in self.positions:
+            logger.debug(
+                f"{symbol}: SELL signal skipped — no open position (mirrors live SELL guard)"
+            )
+            return
+
         side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
+
+        # Mirror the live executor's per-strategy order type selection.
+        # Momentum/breakout → MARKET (speed-critical, fills at ask/bid).
+        # All others → LIMIT (patient fills, only when price is reached).
+        order_type = _STRATEGY_ORDER_TYPE.get(strategy_key, _DEFAULT_ORDER_TYPE)
+
         quantity = self.risk_manager.calculate_position_size(
             portfolio_value=portfolio_value,
             price=signal.price,
@@ -574,7 +674,7 @@ class BacktestEngine:
         temp_order = Order(
             symbol=symbol,
             side=side,
-            order_type=OrderType.LIMIT,
+            order_type=order_type,
             quantity=quantity,
             price=signal.price,
             status=OrderStatus.PENDING,
@@ -594,6 +694,7 @@ class BacktestEngine:
             price=signal.price,
             timestamp=market_data.timestamp,
             market_data=market_data,
+            order_type=order_type,
         )
 
     def _update_equity_snapshot(self, ts_ms: int) -> None:

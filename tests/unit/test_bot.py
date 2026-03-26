@@ -47,6 +47,24 @@ def mock_api():
             "low": "49000",
         }
     )
+    api.get_tickers = AsyncMock(
+        return_value=[
+            {
+                "symbol": "BTC/EUR",
+                "bid": "49950",
+                "ask": "50050",
+                "mid": "50000",
+                "last_price": "50000",
+            },
+            {
+                "symbol": "ETH/EUR",
+                "bid": "2995",
+                "ask": "3005",
+                "mid": "3000",
+                "last_price": "3000",
+            },
+        ]
+    )
     return api
 
 
@@ -248,6 +266,60 @@ class TestFetchMarketData:
         bot.api_client = mock_api
         md = await bot._fetch_market_data("BTC-EUR")
         assert md is None
+
+
+class TestFetchAllMarketData:
+    @pytest.mark.asyncio
+    async def test_returns_market_data_for_all_pairs(self, bot, mock_api):
+        bot.api_client = mock_api
+        result = await bot._fetch_all_market_data()
+        assert "BTC-EUR" in result
+        assert "ETH-EUR" in result
+
+    @pytest.mark.asyncio
+    async def test_bid_ask_last_parsed_as_decimal(self, bot, mock_api):
+        bot.api_client = mock_api
+        result = await bot._fetch_all_market_data()
+        assert result["BTC-EUR"].bid == Decimal("49950")
+        assert result["BTC-EUR"].ask == Decimal("50050")
+        assert result["BTC-EUR"].last == Decimal("50000")
+
+    @pytest.mark.asyncio
+    async def test_normalises_slash_symbol_to_dash(self, bot, mock_api):
+        bot.api_client = mock_api
+        result = await bot._fetch_all_market_data()
+        assert "BTC/EUR" not in result
+        assert "BTC-EUR" in result
+
+    @pytest.mark.asyncio
+    async def test_excludes_symbols_not_in_trading_pairs(self, bot, mock_api):
+        mock_api.get_tickers = AsyncMock(
+            return_value=[
+                {
+                    "symbol": "SOL/EUR",
+                    "bid": "145",
+                    "ask": "146",
+                    "mid": "145.5",
+                    "last_price": "145.5",
+                },
+            ]
+        )
+        bot.api_client = mock_api
+        result = await bot._fetch_all_market_data()
+        assert "SOL-EUR" not in result
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_dict_on_api_failure(self, bot, mock_api):
+        mock_api.get_tickers = AsyncMock(side_effect=Exception("API error"))
+        bot.api_client = mock_api
+        result = await bot._fetch_all_market_data()
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_passes_trading_pairs_as_filter(self, bot, mock_api):
+        bot.api_client = mock_api
+        await bot._fetch_all_market_data()
+        mock_api.get_tickers.assert_called_once_with(symbols=bot.trading_pairs)
 
 
 class TestStop:
@@ -663,6 +735,20 @@ class TestBotStart:
             with pytest.raises(RuntimeError, match="Cannot start live trading"):
                 await live_bot.start()
 
+    @pytest.mark.asyncio
+    async def test_start_passes_strategy_to_risk_manager(self, bot, mock_persistence):
+        """RiskManager is constructed with the active strategy so overrides apply."""
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+
+        with patch("src.bot.create_api_client", return_value=mock_api):
+            with patch("src.bot.RiskManager") as mock_rm_cls:
+                mock_rm_cls.return_value = MagicMock()
+                await bot.start()
+                call_kwargs = mock_rm_cls.call_args.kwargs
+                assert call_kwargs.get("strategy") == bot.strategy_type.value
+
 
 class TestProcessSymbol:
     @pytest.mark.asyncio
@@ -783,6 +869,37 @@ class TestProcessSymbol:
         await bot._process_symbol("BTC-EUR")
         bot.strategy.analyze.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_process_symbol_uses_pre_supplied_market_data(
+        self, bot, mock_api, mock_persistence
+    ):
+        from datetime import UTC, datetime
+
+        from src.execution.executor import OrderExecutor
+        from src.models.domain import MarketData
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(return_value=None)
+
+        pre_fetched = MarketData(
+            symbol="BTC-EUR",
+            timestamp=datetime.now(UTC),
+            bid=Decimal("49950"),
+            ask=Decimal("50050"),
+            last=Decimal("50000"),
+            volume_24h=Decimal("0"),
+            high_24h=Decimal("0"),
+            low_24h=Decimal("0"),
+        )
+
+        await bot._process_symbol("BTC-EUR", pre_fetched)
+        mock_api.get_ticker.assert_not_called()
+        bot.strategy.analyze.assert_called_once()
+
 
 class TestCheckRiskLimitsDailyLoss:
     @pytest.mark.asyncio
@@ -809,10 +926,126 @@ class TestCheckRiskLimitsDailyLoss:
         assert bot.risk_manager.daily_loss_limit_hit is True
 
 
+class TestDefaultInterval:
+    def test_market_making_uses_5s(self, bot):
+        bot.strategy_type = StrategyType.MARKET_MAKING
+        assert bot._default_interval() == 5
+
+    def test_breakout_uses_5s(self, bot):
+        bot.strategy_type = StrategyType.BREAKOUT
+        assert bot._default_interval() == 5
+
+    def test_momentum_uses_10s(self, bot):
+        bot.strategy_type = StrategyType.MOMENTUM
+        assert bot._default_interval() == 10
+
+    def test_multi_strategy_uses_10s(self, bot):
+        bot.strategy_type = StrategyType.MULTI_STRATEGY
+        assert bot._default_interval() == 10
+
+    def test_mean_reversion_uses_15s(self, bot):
+        bot.strategy_type = StrategyType.MEAN_REVERSION
+        assert bot._default_interval() == 15
+
+    def test_range_reversion_uses_15s(self, bot):
+        bot.strategy_type = StrategyType.RANGE_REVERSION
+        assert bot._default_interval() == 15
+
+    @pytest.mark.asyncio
+    async def test_run_loop_uses_strategy_default_when_no_interval(self, bot, mock_api):
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+        bot.strategy_type = StrategyType.MOMENTUM  # _default_interval() → 10s
+
+        sleep_calls = []
+
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
+            bot.is_running = False
+
+        async def fake_sleep(t):
+            sleep_calls.append(t)
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
+                bot.is_running = True
+                await bot.run_trading_loop()  # no interval — uses strategy default
+
+        assert 10 in sleep_calls
+
+    @pytest.mark.asyncio
+    async def test_run_loop_explicit_interval_overrides_default(self, bot, mock_api):
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+        bot.strategy_type = StrategyType.MOMENTUM  # would default to 10s
+
+        sleep_calls = []
+
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
+            bot.is_running = False
+
+        async def fake_sleep(t):
+            sleep_calls.append(t)
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
+                bot.is_running = True
+                await bot.run_trading_loop(interval=30)  # explicit override
+
+        assert 30 in sleep_calls
+        assert 10 not in sleep_calls
+
+
 class TestPeriodicSave:
     @pytest.mark.asyncio
-    async def test_save_data_called_every_10_iterations(self, bot, mock_api, mock_persistence):
-        """The save counter triggers _save_data() every 10 iterations."""
+    async def test_save_triggered_after_60_seconds(self, bot, mock_api, mock_persistence):
+        """Save is triggered once ≥60 seconds have elapsed since the last save."""
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+
+        monotonic_val = [0.0]
+
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
+            monotonic_val[0] += 65.0  # advance past 60-second threshold
+            bot.is_running = False
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep"):
+                with patch("src.bot.time.monotonic", side_effect=lambda: monotonic_val[0]):
+                    bot.is_running = True
+                    await bot.run_trading_loop(interval=0)
+
+        mock_persistence.save_portfolio_snapshots_bulk.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_save_not_triggered_before_60_seconds(self, bot, mock_api, mock_persistence):
+        """Save is NOT triggered when less than 60 seconds have elapsed."""
         from src.config import RiskLevel, TradingMode
         from src.execution.executor import OrderExecutor
         from src.risk_management.risk_manager import RiskManager
@@ -824,19 +1057,21 @@ class TestPeriodicSave:
         bot.strategy = MomentumStrategy()
 
         iteration = 0
+        monotonic_val = [0.0]
 
         async def fake_gather(*coros, **kwargs):
             nonlocal iteration
             iteration += 1
             for c in coros:
                 c.close()
-            if iteration >= 11:
+            monotonic_val[0] += 5.0  # only 5s per iteration
+            if iteration >= 5:
                 bot.is_running = False
 
-        async def fake_sleep(t):
-            pass
-
         with patch("src.bot.asyncio.gather", side_effect=fake_gather):
-            with patch("src.bot.asyncio.sleep", side_effect=fake_sleep):
-                bot.is_running = True
-                await bot.run_trading_loop(interval=0)
+            with patch("src.bot.asyncio.sleep"):
+                with patch("src.bot.time.monotonic", side_effect=lambda: monotonic_val[0]):
+                    bot.is_running = True
+                    await bot.run_trading_loop(interval=0)
+
+        mock_persistence.save_portfolio_snapshots_bulk.assert_not_called()

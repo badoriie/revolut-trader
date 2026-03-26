@@ -6,6 +6,10 @@
 
 ENV ?= dev
 
+# Backtest targets default to int (real historical data).
+# Override with: make backtest BACKTEST_ENV=dev
+BACKTEST_ENV ?= int
+
 # ============================================================================
 # 1Password vault/item names — environment-suffixed
 # ============================================================================
@@ -44,7 +48,9 @@ help:
 	@echo "  make run-mock          - Run with mock API (dev env, no credentials needed)"
 	@echo "  make run-paper         - Run paper trading (int env, real API, no real trades)"
 	@echo "  make run-live          - Run live trading (prod env, REAL MONEY)"
-	@echo "  make backtest          - Backtest one strategy (STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=...)"
+	@echo "  make backtest          - Backtest one strategy using real data (int env by default)"
+	@echo "                           STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=..."
+	@echo "                           Override env: make backtest BACKTEST_ENV=dev"
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
@@ -399,16 +405,16 @@ backtest:
 	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
 	CAPITAL=$${CAPITAL:-10000}; \
 	RISK=$${RISK:-conservative}; \
-	echo "Environment: $(ENV) | Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: $$INTERVAL min | Pairs: $$PAIRS"; \
-	ENVIRONMENT=$(ENV) uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
+	echo "Environment: $(BACKTEST_ENV) | Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: $$INTERVAL min | Pairs: $$PAIRS"; \
+	ENVIRONMENT=$(BACKTEST_ENV) uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
 		--interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL \
-		&& echo "Backtest complete — results saved to database (make db-backtests ENV=$(ENV))" \
+		&& echo "Backtest complete — results saved to database (make db-backtests ENV=$(BACKTEST_ENV))" \
 		|| echo "Backtest failed - check logs above"
 
 backtest-compare:
 	@echo ""; \
 	echo "============================================================"; \
-	echo "  STRATEGY COMPARISON BACKTEST ($(ENV))"; \
+	echo "  STRATEGY COMPARISON BACKTEST ($(BACKTEST_ENV))"; \
 	echo "============================================================"; \
 	DAYS=$${DAYS:-30}; \
 	INTERVAL=$${INTERVAL:-60}; \
@@ -416,20 +422,20 @@ backtest-compare:
 	CAPITAL=$${CAPITAL:-10000}; \
 	RISK=$${RISK:-conservative}; \
 	STRATEGIES=$${STRATEGIES:-}; \
-	CMD="ENVIRONMENT=$(ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL --risk $$RISK"; \
+	CMD="ENVIRONMENT=$(BACKTEST_ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL --risk $$RISK"; \
 	if [ -n "$$STRATEGIES" ]; then CMD="$$CMD --strategies $$STRATEGIES"; fi; \
 	eval $$CMD
 
 backtest-matrix:
 	@echo ""; \
 	echo "============================================================"; \
-	echo "  STRATEGY × RISK LEVEL MATRIX BACKTEST ($(ENV))"; \
+	echo "  STRATEGY × RISK LEVEL MATRIX BACKTEST ($(BACKTEST_ENV))"; \
 	echo "============================================================"; \
 	DAYS=$${DAYS:-30}; \
 	INTERVAL=$${INTERVAL:-60}; \
 	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
 	CAPITAL=$${CAPITAL:-10000}; \
-	ENVIRONMENT=$(ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL \
+	ENVIRONMENT=$(BACKTEST_ENV) uv run python cli/backtest_compare.py --days $$DAYS --interval $$INTERVAL \
 		--pairs $$PAIRS --capital $$CAPITAL \
 		--risk-levels conservative,moderate,aggressive
 

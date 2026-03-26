@@ -39,6 +39,32 @@ _API_STATE_MAP: dict[str, OrderStatus] = {
 }
 
 
+# Minimum signal strength (0.0–1.0) required to execute an order per strategy.
+# Prevents acting on low-confidence signals; each strategy has a different noise floor.
+_STRATEGY_MIN_SIGNAL_STRENGTH: dict[str, float] = {
+    "market_making": 0.3,  # Spread capture; thin confidence acceptable
+    "momentum": 0.6,  # Confirmed trend direction required
+    "breakout": 0.7,  # High conviction; false breakouts are costly
+    "mean_reversion": 0.5,  # Meaningful deviation from mean required
+    "range_reversion": 0.5,  # Same
+    "multi_strategy": 0.55,  # Needs meaningful sub-strategy consensus
+}
+_DEFAULT_MIN_SIGNAL_STRENGTH: float = 0.5
+
+# Preferred order type per strategy.
+# Momentum/breakout: market orders — execution speed beats price improvement.
+# Spread/reversion strategies: limit orders — patient fills, never cross the spread.
+_STRATEGY_ORDER_TYPE: dict[str, OrderType] = {
+    "market_making": OrderType.LIMIT,
+    "momentum": OrderType.MARKET,
+    "breakout": OrderType.MARKET,
+    "mean_reversion": OrderType.LIMIT,
+    "range_reversion": OrderType.LIMIT,
+    "multi_strategy": OrderType.LIMIT,
+}
+_DEFAULT_ORDER_TYPE: OrderType = OrderType.LIMIT
+
+
 class OrderExecutor:
     """Handles order execution and position management with thread-safe operations."""
 
@@ -104,6 +130,20 @@ class OrderExecutor:
             rejected.status = OrderStatus.REJECTED
             return rejected
 
+        # Normalise display names (e.g. "Market Making", "Multi-Strategy") to the
+        # snake_case keys used in the strategy config dicts.  This bridges the gap
+        # between BaseStrategy.name (human-readable) and the dict keys.
+        strategy_key = signal.strategy.lower().replace(" ", "_").replace("-", "_")
+
+        # Signal strength filter — skip signals below the strategy's confidence floor.
+        min_strength = _STRATEGY_MIN_SIGNAL_STRENGTH.get(strategy_key, _DEFAULT_MIN_SIGNAL_STRENGTH)
+        if float(signal.strength) < min_strength:
+            logger.debug(
+                f"Signal filtered: {signal.strategy} strength {float(signal.strength):.2f} "
+                f"< threshold {min_strength:.2f} for {signal.symbol}"
+            )
+            return None
+
         side = OrderSide.BUY if signal.signal_type == "BUY" else OrderSide.SELL
 
         quantity = self.risk_manager.calculate_position_size(
@@ -112,10 +152,12 @@ class OrderExecutor:
             signal_strength=signal.strength,
         )
 
+        order_type = _STRATEGY_ORDER_TYPE.get(strategy_key, _DEFAULT_ORDER_TYPE)
+
         order = Order(
             symbol=signal.symbol,
             side=side,
-            order_type=OrderType.LIMIT,
+            order_type=order_type,
             quantity=quantity,
             price=signal.price,
             strategy=signal.strategy,

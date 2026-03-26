@@ -117,22 +117,39 @@ make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
 
 ## Strategies
 
-| Strategy            | Best For                       | Key Indicators                  |
-| ------------------- | ------------------------------ | ------------------------------- |
-| **Market Making**   | Stable markets, high liquidity | Bid-ask spread                  |
-| **Momentum**        | Trending markets               | EMA(12/26), RSI                 |
-| **Mean Reversion**  | Range-bound markets            | Bollinger Bands                 |
-| **Breakout**        | Volatile markets, breakouts    | Rolling high/low, RSI           |
-| **Range Reversion** | Ranging markets                | 24h high/low range position     |
-| **Multi-Strategy**  | Mixed conditions               | Weighted consensus of all above |
+| Strategy            | Best For                       | Key Indicators                  | Interval | Order Type | Min Signal |
+| ------------------- | ------------------------------ | ------------------------------- | -------- | ---------- | ---------- |
+| **Market Making**   | Stable markets, high liquidity | Bid-ask spread                  | 5s       | Limit      | 0.30       |
+| **Breakout**        | Volatile markets, breakouts    | Rolling high/low, RSI           | 5s       | Market     | 0.70       |
+| **Momentum**        | Trending markets               | EMA(12/26), RSI                 | 10s      | Market     | 0.60       |
+| **Multi-Strategy**  | Mixed conditions               | Weighted consensus of all above | 10s      | Limit      | 0.55       |
+| **Mean Reversion**  | Range-bound markets            | Bollinger Bands                 | 15s      | Limit      | 0.50       |
+| **Range Reversion** | Ranging markets                | 24h high/low range position     | 15s      | Limit      | 0.50       |
+
+**Interval** — how often the trading loop runs for this strategy (overridable via `--interval`).
+**Order Type** — MARKET for speed-sensitive strategies (momentum, breakout); LIMIT for patience-oriented strategies.
+**Min Signal** — minimum confidence score [0.0–1.0] required before executing a trade; filters noise-driven signals.
 
 ## Risk Levels
+
+Risk parameters are set per level and further refined per strategy (stop-loss and take-profit shown below are the strategy overrides):
 
 | Level        | Max Position | Max Daily Loss | Max Open Positions | Stop Loss |
 | ------------ | ------------ | -------------- | ------------------ | --------- |
 | Conservative | 1.5%         | 3%             | 3                  | 1.5%      |
 | Moderate     | 3%           | 5%             | 5                  | 2.5%      |
 | Aggressive   | 5%           | 10%            | 8                  | 4%        |
+
+Per-strategy stop-loss / take-profit overrides (applied on top of the risk-level baseline). Position size always comes from the risk level — this ensures conservative/moderate/aggressive produce different trade sizes:
+
+| Strategy            | Stop Loss    | Take Profit  |
+| ------------------- | ------------ | ------------ |
+| **Market Making**   | 0.5%         | 0.3%         |
+| **Momentum**        | 2.5%         | 4.0%         |
+| **Breakout**        | 3.0%         | 5.0%         |
+| **Mean Reversion**  | 1.0%         | 1.5%         |
+| **Range Reversion** | 1.0%         | 1.5%         |
+| **Multi-Strategy**  | *(baseline)* | *(baseline)* |
 
 Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trade with, regardless of your account balance:
 
