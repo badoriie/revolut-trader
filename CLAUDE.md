@@ -108,7 +108,39 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export).
 
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `release.yml` (manual production release with semver tag and auto-generated changelog).
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `release.yml` (manual production release — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`).
+
+## Commit Message Convention
+
+All commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/). This is enforced by the `commitizen` `commit-msg` pre-commit hook.
+
+**Format:** `<type>[optional scope]: <description>`
+
+| Type       | When to use                               |
+| ---------- | ----------------------------------------- |
+| `feat`     | New feature (triggers minor version bump) |
+| `fix`      | Bug fix (triggers patch version bump)     |
+| `docs`     | Documentation only                        |
+| `refactor` | Code restructuring, no behaviour change   |
+| `test`     | Adding or updating tests                  |
+| `chore`    | Build process, dependencies, tooling      |
+| `perf`     | Performance improvement                   |
+| `ci`       | CI/CD workflow changes                    |
+| `style`    | Formatting, no logic change               |
+
+**Breaking change:** append `!` after the type (`feat!:`) or add `BREAKING CHANGE:` footer. Triggers major version bump.
+
+**Examples:**
+
+```
+feat(strategy): add breakout strategy with ATR-based stops
+fix(executor): prevent duplicate orders on rapid signal changes
+docs: add backtesting guide to README
+chore(deps): upgrade httpx to 0.28
+feat!: replace REST polling with WebSocket feed
+```
+
+**Interactive commit helper:** `uv run cz commit` — prompts for type, scope, and description.
 
 ## Mandatory Rules
 

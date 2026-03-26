@@ -34,6 +34,7 @@ dev = [
     "pyright~=1.1",
     "pre-commit~=4.5",
     "bandit~=1.9",
+    "commitizen~=4.0",
 ]
 
 [project.scripts]
@@ -105,6 +106,15 @@ reportMissingTypeStubs = false
 
 [tool.coverage.report]
 fail_under = 97
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_scheme = "semver"
+version_provider = "pep621"
+update_changelog_on_bump = true
+changelog_incremental = true
+major_version_zero = true
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "venv"]

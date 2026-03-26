@@ -1,23 +1,33 @@
 name: Release (Prod)
 
 # Manual workflow to validate and release a production version from main.
-# Runs the full CI suite with ENVIRONMENT=prod, then creates a semver tag
-# and a GitHub Release with auto-generated changelog from merged PRs/commits.
+# Commitizen determines the next semver from conventional commits since the last
+# tag, updates pyproject.toml, generates CHANGELOG.md incrementally, creates the
+# git tag, and publishes a GitHub Release — all atomically.
 #
-# After the release, CHANGELOG.md is updated automatically from all GitHub
-# Releases and committed back to main.
+# Workflow order:
+#   validate-inputs → check-version-bump → [lint, typecheck, security, test] → release
+#
+# Use the `increment` input to force a specific bump type when the commit history
+# contains no conventional commits of the required type (e.g. only `chore:` fixes
+# that need a patch release, or a first release after migrating to Conventional Commits).
 
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version (semver, e.g. 1.0.0 — without 'v' prefix)"
-        required: true
-        type: string
       confirm:
         description: "Type 'I UNDERSTAND' to confirm production release"
         required: true
         type: string
+      increment:
+        description: "Force a bump type (leave blank to auto-detect from commits)"
+        required: false
+        type: choice
+        options:
+          - ""
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -41,28 +51,51 @@ jobs:
           echo "::error::You must type 'I UNDERSTAND' to confirm production release."
           exit 1
 
-      - name: Validate semver format
-        run: |
-          VERSION="${{ inputs.version }}"
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "::error::Invalid version '$VERSION'. Must be semver (e.g. 1.0.0, 1.2.3-beta.1)."
-            exit 1
-          fi
-
+  # Dry-runs the version bump to verify there are releasable conventional commits
+  # before the expensive CI jobs start. Always runs (no top-level `if:`) so it can
+  # safely appear in `needs:` of the parallel CI jobs.
+  check-version-bump:
+    name: Check Version Bump
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Check tag does not exist
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Dry-run version bump
         run: |
-          if git rev-parse "v${{ inputs.version }}" >/dev/null 2>&1; then
-            echo "::error::Tag v${{ inputs.version }} already exists."
-            exit 1
+          INCREMENT="${{ inputs.increment }}"
+          if [ -n "$INCREMENT" ]; then
+            BUMP_ARGS="--increment $(echo "$INCREMENT" | tr '[:lower:]' '[:upper:]')"
+          else
+            BUMP_ARGS=""
           fi
+
+          # shellcheck disable=SC2086
+          OUTPUT=$(uv run cz bump --dry-run --yes $BUMP_ARGS 2>&1) || {
+            echo "::error::commitizen could not determine a next version."
+            echo "::error::Ensure commits since the last tag follow Conventional Commits, or use the 'increment' input to force a bump type."
+            exit 1
+          }
+
+          echo "$OUTPUT"
+          echo "### Version bump preview" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   lint:
     name: Lint & Format
-    needs: validate-inputs
+    needs: check-version-bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -83,7 +116,7 @@ jobs:
 
   typecheck:
     name: Type Check
-    needs: validate-inputs
+    needs: check-version-bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -101,7 +134,7 @@ jobs:
 
   security:
     name: Security Scan
-    needs: validate-inputs
+    needs: check-version-bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -119,7 +152,7 @@ jobs:
 
   test:
     name: Tests (prod)
-    needs: validate-inputs
+    needs: check-version-bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -150,60 +183,64 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Create tag and GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          VERSION="v${{ inputs.version }}"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
 
-          git tag "$VERSION"
-          git push origin "$VERSION"
+      - run: uv python install ${{ env.PYTHON_VERSION }}
 
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --generate-notes \
-            --latest
+      - run: uv sync --extra dev
 
-      - name: Generate CHANGELOG.md from releases
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          {
-            echo "# Changelog"
-            echo ""
-            echo "Auto-generated from [GitHub Releases](../../releases)."
-            echo ""
-
-            gh release list --limit 100 --json tagName,publishedAt,name \
-              --jq '.[] | .tagName' | while read -r TAG; do
-
-              RELEASE_DATE=$(gh release view "$TAG" --json publishedAt --jq '.publishedAt[:10]')
-              RELEASE_BODY=$(gh release view "$TAG" --json body --jq '.body')
-
-              echo "## [$TAG] - $RELEASE_DATE"
-              echo ""
-              echo "$RELEASE_BODY"
-              echo ""
-            done
-          } > CHANGELOG.md
-
-      - name: Update version in pyproject.toml
-        run: |
-          sed -i "s/^version = \".*\"/version = \"${{ inputs.version }}\"/" pyproject.toml
-
-      - name: Commit updated CHANGELOG.md and pyproject.toml
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md pyproject.toml
-          git diff --cached --quiet && exit 0
-          git commit -m "release: v${{ inputs.version }}"
-          git push origin main
+
+      - name: Bump version, generate changelog, and tag
+        id: bump
+        run: |
+          INCREMENT="${{ inputs.increment }}"
+          if [ -n "$INCREMENT" ]; then
+            BUMP_ARGS="--increment $(echo "$INCREMENT" | tr '[:lower:]' '[:upper:]')"
+          else
+            BUMP_ARGS=""
+          fi
+
+          # --changelog: write the new section to CHANGELOG.md (incremental)
+          # --yes: skip interactive prompts
+          # --no-verify: bypass commit-msg hook — bot commit format doesn't follow
+          #              Conventional Commits and would fail our own hook
+          # shellcheck disable=SC2086
+          uv run cz bump --changelog --yes --no-verify $BUMP_ARGS
+
+          NEW_TAG=$(git describe --tags --abbrev=0)
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Push commit and tag to main
+        run: git push origin main --follow-tags
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          # Extract from the first ## heading to (not including) the second ## heading.
+          # Works for both the new commitizen format and the old GitHub-notes format.
+          awk '/^## /{if(found) exit; found=1} found{print}' CHANGELOG.md > release_notes.md
+          echo "--- release notes ---"
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "${{ steps.bump.outputs.tag }}" \
+            --notes-file release_notes.md \
+            --latest
 
       - name: Post release summary
         run: |
+          TAG="${{ steps.bump.outputs.tag }}"
           {
-            echo "## Production Release v${{ inputs.version }}"
+            echo "## Production Release $TAG"
             echo ""
             echo "All checks passed:"
             echo "- Lint & Format"
@@ -211,6 +248,6 @@ jobs:
             echo "- Security Scan"
             echo "- Tests (prod, ≥97% coverage)"
             echo ""
-            echo "**Tag:** \`v${{ inputs.version }}\`"
-            echo "**Release:** [v${{ inputs.version }}](../../releases/tag/v${{ inputs.version }})"
+            echo "**Tag:** \`$TAG\`"
+            echo "**Release:** [${TAG}](../../releases/tag/${TAG})"
           } >> "$GITHUB_STEP_SUMMARY"

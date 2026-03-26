@@ -237,7 +237,7 @@ GitHub Actions workflows:
   - Tests — pytest with coverage (≥ 97%)
 - **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
-- **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Creates a semver tag (`v1.0.0`), GitHub Release with auto-generated changelog from merged PRs, and updates `CHANGELOG.md` automatically
+- **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with the new changelog section as release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient
 
 Dependabot targets `main` — dependency PRs trigger int CI automatically.
 
@@ -258,6 +258,24 @@ Dependabot targets `main` — dependency PRs trigger int CI automatically.
 #   Name:  SONAR_TOKEN
 #   Value: (generate at sonarcloud.io → My Account → Security)
 ```
+
+### Commit Messages
+
+All commits must follow [Conventional Commits](https://www.conventionalcommits.org/), enforced by a `commit-msg` pre-commit hook:
+
+```
+feat(strategy): add breakout strategy with ATR-based stops
+fix(executor): prevent duplicate orders on rapid signal changes
+docs: add backtesting guide to README
+chore(deps): upgrade httpx to 0.28
+feat!: replace REST polling with WebSocket feed   ← breaking change
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`, `style`.
+
+Use `uv run cz commit` for an interactive prompt, or write the message manually — the hook validates it on `git commit`.
+
+After cloning, run `make pre-commit-install` to register both the `pre-commit` and `commit-msg` hooks.
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
 
