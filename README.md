@@ -46,6 +46,8 @@ See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
 ```bash
 make backtest                              # 30 days, default strategy
 make backtest STRATEGY=momentum DAYS=90    # specific strategy and period
+make backtest-hf                           # high-frequency: 1-min candles (closest to live 5s polling)
+make backtest-hf STRATEGY=breakout DAYS=7  # high-frequency with specific strategy
 make db-backtests                          # view stored results
 make db-export-csv                         # export to CSV
 ```

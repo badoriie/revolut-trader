@@ -141,8 +141,8 @@ Examples:
         "-i",
         type=int,
         default=60,
-        choices=[5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60)",
+        choices=[1, 5, 15, 30, 60, 240, 1440],
+        help="Candle interval in minutes (default: 60, use 1 for highest granularity)",
     )
     parser.add_argument(
         "--capital",
