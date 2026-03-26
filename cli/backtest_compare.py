@@ -71,6 +71,7 @@ def _persist_result(
     results_dict: dict[str, Any] = {
         "final_capital": float(results.final_capital),
         "total_pnl": float(results.total_pnl),
+        "total_fees": float(results.total_fees),
         "return_pct": results.return_pct,
         "total_trades": results.total_trades,
         "winning_trades": results.winning_trades,
@@ -116,31 +117,37 @@ def _print_comparison_table(
     rows = sorted(rows, key=lambda r: r["return_pct"], reverse=True)
 
     # Header
-    print("\n" + "=" * 110)
+    print("\n" + "=" * 130)
     print("STRATEGY COMPARISON")
-    print("=" * 110)
+    print("=" * 130)
     header = (
         f"{'#':<3} {'Strategy':<18} {'Risk':<14} {'Return %':>9} "
-        f"{'P&L':>12} {'Trades':>7} {'Win%':>7} {'PF':>6} "
+        f"{'Gross P&L':>12} {'Fees':>10} {'Net P&L':>12} "
+        f"{'Trades':>7} {'Win%':>7} {'PF':>6} "
         f"{'MaxDD':>10} {'Sharpe':>7}"
     )
     print(header)
-    print("-" * 110)
+    print("-" * 130)
 
     for i, r in enumerate(rows, 1):
         return_pct = r["return_pct"]
-        pnl = r["total_pnl"]
+        net_pnl = r["total_pnl"]
+        fees = r["total_fees"]
+        gross_pnl = net_pnl + fees
         pf = r["profit_factor"]
         pf_str = f"{pf:.2f}" if pf != float("inf") else "inf"
 
-        # Format with sign included, then right-align the whole token
         ret_str = f"{return_pct:+.2f}%"
-        pnl_str = f"{'+' if pnl >= 0 else '-'}{sym}{abs(pnl):,.2f}"
+        gross_str = f"{'+' if gross_pnl >= 0 else '-'}{sym}{abs(gross_pnl):,.2f}"
+        fees_str = f"-{sym}{fees:,.2f}"
+        net_str = f"{'+' if net_pnl >= 0 else '-'}{sym}{abs(net_pnl):,.2f}"
 
         line = (
             f"{i:<3} {r['strategy']:<18} {r['risk_level']:<14} "
             f"{ret_str:>9} "
-            f"{pnl_str:>12} "
+            f"{gross_str:>12} "
+            f"{fees_str:>10} "
+            f"{net_str:>12} "
             f"{r['total_trades']:>7} "
             f"{r['win_rate']:>6.1f}% "
             f"{pf_str:>6} "
@@ -149,7 +156,7 @@ def _print_comparison_table(
         )
         print(line)
 
-    print("=" * 110)
+    print("=" * 130)
 
     # Summary
     best = rows[0]
@@ -235,6 +242,7 @@ async def run_compare(args) -> None:
                         "risk_level": risk_level_str,
                         "return_pct": results.return_pct,
                         "total_pnl": float(results.total_pnl),
+                        "total_fees": float(results.total_fees),
                         "total_trades": results.total_trades,
                         "winning_trades": results.winning_trades,
                         "losing_trades": results.losing_trades,

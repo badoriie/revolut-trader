@@ -16,6 +16,7 @@ from src.models.domain import (
     Signal,
 )
 from src.risk_management.risk_manager import RiskManager
+from src.utils.fees import calculate_fee
 
 # Map Revolut API order states to internal OrderStatus values.
 # API state strings (lowercase) → internal enum:
@@ -186,14 +187,21 @@ class OrderExecutor:
         return executed_order
 
     async def _execute_paper_order(self, order: Order) -> Order:  # NOSONAR
-        """Simulate an order fill in paper trading mode."""
+        """Simulate an order fill in paper trading mode.
+
+        Sets order status to FILLED, fills quantity, and calculates trading
+        commission so that downstream P&L and cash accounting include fees.
+        """
         logger.info(
             f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}"
         )
         order.order_id = f"paper_{order.symbol}_{int(order.created_at.timestamp())}"
         order.status = OrderStatus.FILLED
         order.filled_quantity = order.quantity
-        logger.info(f"[PAPER] Order filled: {order.order_id}")
+        if order.price is not None:
+            order_value = order.price * order.filled_quantity
+            order.commission = calculate_fee(order_value, order.order_type)
+        logger.info(f"[PAPER] Order filled: {order.order_id} | Fee: {order.commission:.4f}")
         return order
 
     async def _execute_live_order(self, order: Order) -> Order:
@@ -266,21 +274,29 @@ class OrderExecutor:
                 else:
                     # Opposite side — reduce or close position.
                     if order.filled_quantity >= position.quantity:
-                        # Full close: realised PnL equals unrealized at close price.
-                        realized_pnl = position.unrealized_pnl
+                        # Full close: realised PnL equals unrealized at close price minus fee.
+                        gross_pnl = position.unrealized_pnl
+                        realized_pnl = gross_pnl - order.commission
+                        order.realized_pnl = realized_pnl
                         position.realized_pnl += realized_pnl
-                        logger.info(f"Position closed: {symbol}, Realized P&L: {realized_pnl}")
+                        logger.info(
+                            f"Position closed: {symbol} | "
+                            f"Gross P&L: {gross_pnl:.4f} | "
+                            f"Fee: {order.commission:.4f} | "
+                            f"Net P&L: {realized_pnl:.4f}"
+                        )
                         del self.positions[symbol]
                     else:
                         # Partial reduce: PnL direction depends on the position side.
                         if position.side == OrderSide.BUY:
                             realized_pnl = (
                                 order.price - position.entry_price
-                            ) * order.filled_quantity
+                            ) * order.filled_quantity - order.commission
                         else:  # SELL (short) — profit when price falls
                             realized_pnl = (
                                 position.entry_price - order.price
-                            ) * order.filled_quantity
+                            ) * order.filled_quantity - order.commission
+                        order.realized_pnl = realized_pnl
                         position.quantity -= order.filled_quantity
                         position.realized_pnl += realized_pnl
 
@@ -469,12 +485,24 @@ class OrderExecutor:
                 if used_trailing:
                     positions_trailing_stopped += 1
                     trailing_stopped_pnl += position.unrealized_pnl
+                    fee = close_order.commission if close_order else Decimal("0")
+                    net_pnl = position.unrealized_pnl - fee
                     logger.info(
-                        f"Closed profitable position {symbol}: PnL={position.unrealized_pnl}"
+                        f"Closed profitable position {symbol} | "
+                        f"Gross P&L: {position.unrealized_pnl:.4f} | "
+                        f"Fee: {fee:.4f} | "
+                        f"Net P&L: {net_pnl:.4f}"
                     )
                 else:
                     closed_positions_pnl += position.unrealized_pnl
-                    logger.info(f"Closed position {symbol}: PnL={position.unrealized_pnl}")
+                    fee = close_order.commission if close_order else Decimal("0")
+                    net_pnl = position.unrealized_pnl - fee
+                    logger.info(
+                        f"Closed position {symbol} | "
+                        f"Gross P&L: {position.unrealized_pnl:.4f} | "
+                        f"Fee: {fee:.4f} | "
+                        f"Net P&L: {net_pnl:.4f}"
+                    )
             except Exception as exc:
                 error_msg = f"Failed to close position {symbol}: {exc}"
                 logger.error(error_msg)

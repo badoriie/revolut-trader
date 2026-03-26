@@ -110,6 +110,8 @@ class Order(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     strategy: str | None = None
+    commission: Decimal = Decimal("0")
+    realized_pnl: Decimal | None = None
 
 
 class Trade(BaseModel):
