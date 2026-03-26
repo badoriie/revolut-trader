@@ -237,6 +237,8 @@ class DatabasePersistence:
                         strategy=order.strategy,
                         created_at=order.created_at,
                         filled_at=(datetime.now(UTC) if order.status.value == "FILLED" else None),
+                        pnl=order.realized_pnl,
+                        fee=order.commission if order.commission != Decimal("0") else None,
                     )
                 )
             logger.debug(f"Saved trade: {order.symbol} {order.side} {order.quantity}")
@@ -279,6 +281,8 @@ class DatabasePersistence:
                         "status": r.status,
                         "strategy": r.strategy,
                         "created_at": r.created_at.isoformat(),
+                        "pnl": str(r.pnl) if r.pnl is not None else None,
+                        "fee": str(r.fee) if r.fee is not None else None,
                     }
                     for r in rows
                 ]
@@ -389,15 +393,25 @@ class DatabasePersistence:
                     .filter(TradeDB.created_at >= since, TradeDB.pnl > 0)
                     .scalar()
                 )
+                losing_trades = (
+                    sess.query(func.count(TradeDB.id))
+                    .filter(TradeDB.created_at >= since, TradeDB.pnl < 0)
+                    .scalar()
+                )
                 total_pnl = (
                     sess.query(func.sum(TradeDB.pnl)).filter(TradeDB.created_at >= since).scalar()
+                )
+                total_fees = (
+                    sess.query(func.sum(TradeDB.fee)).filter(TradeDB.created_at >= since).scalar()
                 )
                 analytics: dict[str, Any] = {
                     "period_days": days,
                     "total_snapshots": len(snapshots),
                     "total_trades": total_trades or 0,
                     "winning_trades": winning_trades or 0,
+                    "losing_trades": losing_trades or 0,
                     "total_pnl": float(total_pnl) if total_pnl else 0.0,
+                    "total_fees": float(total_fees) if total_fees else 0.0,
                     "win_rate": ((winning_trades / total_trades * 100) if total_trades else 0.0),
                 }
                 if snapshots:

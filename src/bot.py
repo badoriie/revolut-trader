@@ -396,16 +396,22 @@ class TradingBot:
     def _process_filled_order(self, order: Order) -> None:
         """Persist a filled order and update the cash balance.
 
+        Cash accounting includes trading fees so the balance reflects the true
+        cost of each trade:
+          - BUY:  deduct order value + fee (cash spent to acquire the asset)
+          - SELL: add order value - fee (cash received minus exchange fee)
+
         Args:
             order: The filled order to process.
         """
         self.persistence.save_trade(order)
         if order.price is not None:
             order_value = order.price * order.filled_quantity
+            fee = order.commission
             if order.side.value == "BUY":
-                self.cash_balance -= order_value
+                self.cash_balance -= order_value + fee
             else:
-                self.cash_balance += order_value
+                self.cash_balance += order_value - fee
 
     async def _process_symbol(self, symbol: str, market_data: MarketData | None = None):
         """Process a single trading pair.

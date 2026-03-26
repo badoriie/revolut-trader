@@ -157,6 +157,20 @@ Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trad
 make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
 ```
 
+## Trading Fees
+
+Fee tracking is built into every trade. Fees are deducted from the cash balance in real-time and stored alongside each trade record for accurate P&L reporting.
+
+| Order Type | Role  | Fee   |
+| ---------- | ----- | ----- |
+| LIMIT      | Maker | 0%    |
+| MARKET     | Taker | 0.09% |
+
+- **LIMIT orders** (market making, mean reversion, range reversion, multi-strategy) — no fee.
+- **MARKET orders** (momentum, breakout, and all SL/TP close orders) — 0.09% taker fee deducted from realized P&L and cash balance.
+
+Fee data is available in trade history exports and the analytics report (`total_fees`, `losing_trades` fields).
+
 ## Project Structure
 
 ```

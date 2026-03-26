@@ -188,7 +188,7 @@ class Settings(BaseSettings):
         ]
         if mismatched:
             msg = (
-                f"Trading pair(s) {mismatched} do not match BASE_CURRENCY '{self.base_currency}'.\n"  # nosec B608
+                f"Trading pair(s) {mismatched} do not match BASE_CURRENCY '{self.base_currency}'.\n"
                 f"All pairs must end with '-{self.base_currency}' (e.g. BTC-{self.base_currency}).\n"
                 f"Fix with: make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-{self.base_currency} ENV=<env>\n"
                 f"Or update BASE_CURRENCY: make opconfig-set KEY=BASE_CURRENCY VALUE=<currency> ENV=<env>"

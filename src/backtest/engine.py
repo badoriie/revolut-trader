@@ -47,6 +47,7 @@ from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
+from src.utils.fees import TAKER_FEE_PCT
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -60,8 +61,9 @@ VALID_INTERVALS: frozenset[int] = frozenset(
 # API constraint: (until − since) / interval_ms ≤ 1 000 candles per request
 MAX_CANDLES_PER_REQUEST: int = 1000
 
-# Revolut X taker fee (see their published fee schedule)
-TAKER_FEE_PCT: Decimal = Decimal("0.0009")
+# Re-exported from src.utils.fees for backtest consumers that import TAKER_FEE_PCT directly.
+# Revolut X taker fee (see their published fee schedule): 0.09%
+# TAKER_FEE_PCT is imported above — do not redefine here.
 
 # Simulated bid/ask half-spread applied to every candle close price (0.1 %)
 # Matches real Revolut X bid-ask spreads (~0.05-0.1 %) for representative P&L.
@@ -175,10 +177,12 @@ class BacktestResults:
         print("\n" + "=" * 60)
         print("BACKTEST RESULTS")
         print("=" * 60)
+        gross_pnl = self.total_pnl + self.total_fees
         print(f"Initial Capital:    {sym}{self.initial_capital:,.2f}")
         print(f"Final Capital:      {sym}{self.final_capital:,.2f}")
-        print(f"Total P&L:          {sym}{self.total_pnl:,.2f}")
-        print(f"Total Fees:         {sym}{self.total_fees:,.2f}")
+        print(f"Gross P&L:          {sym}{gross_pnl:,.2f}")
+        print(f"Total Fees:         -{sym}{self.total_fees:,.2f}")
+        print(f"Net P&L:            {sym}{self.total_pnl:,.2f}")
         print(f"Return:             {self.return_pct:.2f}%")
         print(f"Total Trades:       {self.total_trades}")
         print(f"Winning Trades:     {self.winning_trades}")

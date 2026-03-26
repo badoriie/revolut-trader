@@ -407,3 +407,125 @@ class TestEnvironmentAwareDbUrl:
 
         monkeypatch.setenv("ENVIRONMENT", "int")
         assert get_db_url() == "sqlite:///data/int.db"
+
+
+# ---------------------------------------------------------------------------
+# Fee and P&L persistence tests
+# ---------------------------------------------------------------------------
+
+
+def make_order_with_pnl(
+    symbol: str = "BTC-EUR",
+    realized_pnl: Decimal | None = None,
+    commission: Decimal = Decimal("0"),
+    order_type: OrderType = OrderType.MARKET,
+) -> Order:
+    """Create a filled order with optional realized_pnl and commission."""
+    order = Order(
+        order_id=f"order-fee-{symbol}",
+        symbol=symbol,
+        side=OrderSide.SELL,
+        order_type=order_type,
+        quantity=Decimal("0.1"),
+        price=Decimal("51000"),
+        status=OrderStatus.FILLED,
+        strategy="momentum",
+        filled_quantity=Decimal("0.1"),
+    )
+    order.realized_pnl = realized_pnl
+    order.commission = commission
+    return order
+
+
+class TestSaveTradeStoresPnlAndFee:
+    def test_save_trade_stores_pnl(self, db_persistence):
+        """realized_pnl on the order must be saved as pnl in the DB."""
+        order = make_order_with_pnl(realized_pnl=Decimal("100.5"))
+        db_persistence.save_trade(order)
+        trades = db_persistence.load_trade_history()
+        assert len(trades) == 1
+        assert trades[0]["pnl"] is not None
+        assert Decimal(trades[0]["pnl"]) == pytest.approx(Decimal("100.5"))
+
+    def test_save_trade_stores_fee(self, db_persistence):
+        """commission on the order must be saved as fee in the DB."""
+        fee = Decimal("51000") * Decimal("0.1") * Decimal("0.0009")
+        order = make_order_with_pnl(commission=fee)
+        db_persistence.save_trade(order)
+        trades = db_persistence.load_trade_history()
+        assert len(trades) == 1
+        assert trades[0]["fee"] is not None
+        assert Decimal(trades[0]["fee"]) == pytest.approx(fee)
+
+    def test_save_trade_null_pnl_when_not_set(self, db_persistence):
+        """Order without realized_pnl must persist pnl as None."""
+        order = make_order_with_pnl(realized_pnl=None, commission=Decimal("0"))
+        db_persistence.save_trade(order)
+        trades = db_persistence.load_trade_history()
+        assert trades[0]["pnl"] is None
+
+    def test_save_trade_null_fee_when_zero(self, db_persistence):
+        """Order with commission=0 (LIMIT) must persist fee as None."""
+        order = make_order_with_pnl(commission=Decimal("0"), order_type=OrderType.LIMIT)
+        db_persistence.save_trade(order)
+        trades = db_persistence.load_trade_history()
+        assert trades[0]["fee"] is None
+
+    def test_load_trade_history_includes_pnl_key(self, db_persistence):
+        """All trade history dicts must include a 'pnl' key."""
+        db_persistence.save_trade(make_order())
+        trades = db_persistence.load_trade_history()
+        assert "pnl" in trades[0]
+
+    def test_load_trade_history_includes_fee_key(self, db_persistence):
+        """All trade history dicts must include a 'fee' key."""
+        db_persistence.save_trade(make_order())
+        trades = db_persistence.load_trade_history()
+        assert "fee" in trades[0]
+
+
+class TestAnalyticsFeeAndLosingTrades:
+    def test_analytics_total_fees_key_exists(self, db_persistence):
+        """get_analytics() must always return a 'total_fees' key."""
+        analytics = db_persistence.get_analytics(days=30)
+        assert "total_fees" in analytics
+
+    def test_analytics_losing_trades_key_exists(self, db_persistence):
+        """get_analytics() must always return a 'losing_trades' key."""
+        analytics = db_persistence.get_analytics(days=30)
+        assert "losing_trades" in analytics
+
+    def test_analytics_total_fees_sums_fees(self, db_persistence):
+        """total_fees must be the sum of all fee values in the window."""
+        fee1 = Decimal("4.59")
+        fee2 = Decimal("2.31")
+        db_persistence.save_trade(make_order_with_pnl(symbol="BTC-EUR", commission=fee1))
+        db_persistence.save_trade(make_order_with_pnl(symbol="ETH-EUR", commission=fee2))
+        analytics = db_persistence.get_analytics(days=30)
+        assert analytics["total_fees"] == pytest.approx(float(fee1 + fee2), rel=1e-6)
+
+    def test_analytics_losing_trades_counts_negative_pnl(self, db_persistence):
+        """losing_trades must count trades with pnl < 0."""
+        db_persistence.save_trade(make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("50")))
+        db_persistence.save_trade(
+            make_order_with_pnl(symbol="ETH-EUR", realized_pnl=Decimal("-30"))
+        )
+        analytics = db_persistence.get_analytics(days=30)
+        assert analytics["losing_trades"] == 1
+
+    def test_analytics_sums_real_pnl(self, db_persistence):
+        """total_pnl must be the sum of all realized_pnl values in the window."""
+        pnl1 = Decimal("150")
+        pnl2 = Decimal("-50")
+        db_persistence.save_trade(make_order_with_pnl(symbol="BTC-EUR", realized_pnl=pnl1))
+        db_persistence.save_trade(make_order_with_pnl(symbol="ETH-EUR", realized_pnl=pnl2))
+        analytics = db_persistence.get_analytics(days=30)
+        assert analytics["total_pnl"] == pytest.approx(float(pnl1 + pnl2), rel=1e-6)
+
+    def test_analytics_total_fees_zero_when_no_trades(self, db_persistence):
+        analytics = db_persistence.get_analytics(days=30)
+        assert analytics["total_fees"] == 0.0
+
+    def test_analytics_losing_trades_zero_when_no_trades(self, db_persistence):
+        analytics = db_persistence.get_analytics(days=30)
+        assert analytics["losing_trades"] == 0
