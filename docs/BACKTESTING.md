@@ -319,7 +319,7 @@ ERROR | No historical data available
 ValueError: Invalid interval
 ```
 
-**Solution**: Use one of the supported intervals: 5, 15, 30, 60, 240, 1440.
+**Solution**: Use one of the supported intervals: 1, 5, 15, 30, 60, 240, 1440.
 
 ### Insufficient Data
 

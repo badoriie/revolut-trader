@@ -36,7 +36,7 @@ make run-paper               # paper trading (int env, real API, no real trades)
 make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
-make backtest                # STRATEGY=momentum DAYS=30 ENV=dev
+make backtest                # STRATEGY=momentum DAYS=30 BACKTEST_ENV=int
 make backtest-hf             # high-frequency: 1-min candles (closest to live 5s polling)
 make backtest-compare        # compare all strategies side-by-side (DAYS=... RISK=...)
 make backtest-matrix         # all strategies × all risk levels matrix
