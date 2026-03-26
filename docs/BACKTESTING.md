@@ -87,10 +87,14 @@ The backtest provides comprehensive performance analysis:
 
 ## Simulation Realism
 
-The engine models real trading costs:
+The engine models real trading costs and execution behaviour to match live trading:
 
 - **Taker fee**: 0.09% deducted per fill
-- **Slippage**: BUY fills at ask price, SELL fills at bid price (0.3% spread)
+- **Slippage**: BUY fills at ask price, SELL fills at bid price (0.1% spread — matches real Revolut X bid-ask spreads)
+- **Signal strength filter**: Weak signals are discarded using the same per-strategy thresholds as live trading (e.g. momentum requires ≥ 0.6)
+- **Per-strategy risk parameters**: Stop-loss and take-profit levels use the same strategy-specific overrides as live trading (e.g. market_making uses 0.5% SL, breakout uses 3.0% SL)
+- **Intra-bar SL/TP**: Stop-loss and take-profit are checked against the candle's low/high, not just the closing price. This mirrors the live bot's frequent polling — a position that would have been stopped out mid-candle is correctly closed even when the close price is outside the SL/TP range. When both SL and TP are triggered by the same candle (whipsaw), the stop-loss wins (conservative/worst-case).
+- **Per-strategy order type**: Momentum and breakout strategies use MARKET orders (fills immediately at ask/bid). All other strategies use LIMIT orders (fills only when the candle's price range includes the limit price). This mirrors `_STRATEGY_ORDER_TYPE` in the live executor and prevents over-optimistic fill assumptions for patient strategies.
 - **Pagination**: Fetches up to 1,000 candles per API request, chunked across the date range
 - **Stop-loss / Take-profit**: Checked against candle high/low before signal processing
 

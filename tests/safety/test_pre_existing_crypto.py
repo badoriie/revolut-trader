@@ -31,7 +31,7 @@ def make_signal(
 
     return Signal(
         symbol=symbol,
-        strategy="Momentum",
+        strategy="market_making",
         signal_type=signal_type,
         strength=strength,
         price=price,

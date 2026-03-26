@@ -27,12 +27,13 @@ cli/run.py  (entry point)
 
 ______________________________________________________________________
 
-## Main Data Flow (every 60s)
+## Main Data Flow (strategy-dependent interval: 5s / 10s / 15s)
 
 ```
 run_trading_loop()
+    └── RevolutAPIClient.get_tickers()          → dict[symbol, MarketData]  (1 batch call)
     └── [parallel for each symbol]
-        ├── RevolutAPIClient.get_ticker()       → MarketData
+        ├── MarketData (from batch)             → pre-fetched, no per-symbol call
         ├── strategy.analyze()                  → Signal (BUY/SELL/HOLD)
         ├── executor.execute_signal()
         │   ├── RiskManager.calculate_position_size()
@@ -62,6 +63,68 @@ stop()  (graceful shutdown on Ctrl-C or error)
 
 ______________________________________________________________________
 
+## Per-Strategy Optimizations
+
+Every strategy ships with tuned defaults across four dimensions. All are applied automatically; none require manual configuration.
+
+### Trading Interval
+
+How often the main loop runs. Faster strategies poll more aggressively:
+
+| Strategy        | Interval | Rationale                                   |
+| --------------- | -------- | ------------------------------------------- |
+| Market Making   | 5s       | Spread opportunities vanish in seconds      |
+| Breakout        | 5s       | Price explosions need immediate reaction    |
+| Momentum        | 10s      | Trend signals need a few seconds to confirm |
+| Multi-Strategy  | 10s      | Consensus voting already smooths noise      |
+| Mean Reversion  | 15s      | Reversion unfolds over minutes, not seconds |
+| Range Reversion | 15s      | Same as mean reversion — patience pays      |
+
+Override with `--interval N` or `ENVIRONMENT=int uv run python cli/run.py --interval 3`.
+
+### Order Type
+
+Speed-critical strategies use MARKET orders; patient strategies use LIMIT:
+
+| Strategy        | Order Type | Rationale                                   |
+| --------------- | ---------- | ------------------------------------------- |
+| Market Making   | LIMIT      | Must control the exact spread capture price |
+| Momentum        | MARKET     | Speed matters more than price precision     |
+| Breakout        | MARKET     | Miss the breakout = miss the trade          |
+| Mean Reversion  | LIMIT      | Wait for the fill at the reversion price    |
+| Range Reversion | LIMIT      | Same logic as mean reversion                |
+| Multi-Strategy  | LIMIT      | Consensus signals are not time-critical     |
+
+### Minimum Signal Strength
+
+Confidence floor [0.0–1.0] below which signals are discarded before any order is placed:
+
+| Strategy        | Min Strength | Rationale                                       |
+| --------------- | ------------ | ----------------------------------------------- |
+| Market Making   | 0.30         | Small spreads still profitable at low certainty |
+| Momentum        | 0.60         | Trend signals need moderate conviction          |
+| Breakout        | 0.70         | Breakout false-positives are costly — be sure   |
+| Mean Reversion  | 0.50         | Default: moderate confidence required           |
+| Range Reversion | 0.50         | Default: moderate confidence required           |
+| Multi-Strategy  | 0.55         | Consensus already filters noise slightly        |
+
+### Stop-Loss / Take-Profit Overrides
+
+Applied on top of the risk-level baseline. Reflect each strategy's typical holding period and volatility tolerance. **Position sizing (`max_position_size_pct`) is always controlled by the risk level** — this is intentional so that conservative/moderate/aggressive produce meaningfully different trade sizes in the backtest matrix and in live trading.
+
+| Strategy        | Stop Loss    | Take Profit  | Notes                                |
+| --------------- | ------------ | ------------ | ------------------------------------ |
+| Market Making   | 0.5%         | 0.3%         | Tight: short-lived spread trades     |
+| Momentum        | 2.5%         | 4.0%         | Wider: trends need room to develop   |
+| Breakout        | 3.0%         | 5.0%         | Widest: breakouts have large targets |
+| Mean Reversion  | 1.0%         | 1.5%         | Tight: if no revert quickly, exit    |
+| Range Reversion | 1.0%         | 1.5%         | Same as mean reversion               |
+| Multi-Strategy  | *(baseline)* | *(baseline)* | Sub-strategy mix varies too much     |
+
+`*(baseline)*` = value comes from the selected risk level (Conservative / Moderate / Aggressive). Position size always comes from the risk level for every strategy.
+
+______________________________________________________________________
+
 ## Key Files
 
 | Layer        | File                                  | Responsibility                           |
@@ -87,7 +150,7 @@ ______________________________________________________________________
 1. **Daily loss limit** — suspends all trading if P&L threshold hit
 1. **Stop-loss / take-profit** — auto-closes positions at price levels
 1. **No leverage** — order value ≤ portfolio value enforced
-1. **Rate limiting** — 60 API calls/min
+1. **Rate limiting** — 200 API calls/min (API allows 1000/min; 200 leaves a 5× safety buffer)
 1. **Encrypted DB** — sensitive fields (trading pairs, log messages) encrypted with Fernet key from 1Password
 1. **No plaintext files** — logs go to encrypted SQLite, never to disk
 1. **Graceful shutdown** — cancels all pending orders, closes losing positions immediately, and closes profitable positions via trailing stop (or immediately); **guarantee: no bot-opened position is left open after shutdown** (EUR → trade → EUR contract)

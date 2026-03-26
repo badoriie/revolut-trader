@@ -40,7 +40,8 @@ async def run_bot(args):
     logger.info(f"Strategy: {strategy_type.value}")
     logger.info(f"Risk Level: {risk_level.value}")
     logger.info(f"Trading Mode: {settings.trading_mode.value} (derived from environment)")
-    logger.info(f"Interval: {args.interval}s")
+    interval_label = f"{args.interval}s" if args.interval is not None else "strategy-dependent"
+    logger.info(f"Interval: {interval_label}")
     logger.info("=" * 60)
 
     # Initialize bot
@@ -80,7 +81,7 @@ Examples:
   # Run multi-strategy with custom pairs
   python run.py --env dev --strategy multi_strategy --pairs BTC-EUR,ETH-EUR,SOL-EUR
 
-  # Run with faster update interval (30 seconds)
+  # Override interval (strategy-dependent by default; market_making=5s, momentum=10s, mean_reversion=15s)
   python run.py --env dev --strategy momentum --interval 30
 
 Trading mode is derived from environment:
@@ -127,8 +128,13 @@ Trading mode is derived from environment:
         "--interval",
         "-i",
         type=int,
-        default=60,
-        help="Trading loop interval in seconds (default: 60)",
+        default=None,
+        help=(
+            "Trading loop interval in seconds. "
+            "Omit to use the strategy-dependent default "
+            "(market_making/breakout=5s, momentum/multi_strategy=10s, "
+            "mean_reversion/range_reversion=15s)."
+        ),
     )
 
     parser.add_argument(

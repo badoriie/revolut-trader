@@ -55,20 +55,72 @@ _RISK_PARAMS: dict[RiskLevel, RiskParams] = {
 }
 
 
+# Per-strategy risk parameter overrides applied on top of the risk-level baseline.
+# Only stop_loss_pct and take_profit_pct are overridden here — they reflect each
+# strategy's characteristic holding pattern and volatility tolerance.
+# max_position_size_pct is intentionally NOT overridden: position sizing reflects
+# the user's risk appetite (conservative/moderate/aggressive), not the strategy type.
+# Keeping position size risk-level-controlled means the backtest matrix produces
+# meaningfully different results across risk levels.
+# max_open_positions and max_daily_loss_pct also remain risk-level concerns.
+_STRATEGY_RISK_OVERRIDES: dict[str, dict[str, float]] = {
+    "market_making": {
+        "stop_loss_pct": 0.5,  # Tight: short-lived spread trades
+        "take_profit_pct": 0.3,  # Small spread capture target
+    },
+    "momentum": {
+        "stop_loss_pct": 2.5,  # Wider: trends need room to develop
+        "take_profit_pct": 4.0,  # Ride the trend further
+    },
+    "breakout": {
+        "stop_loss_pct": 3.0,  # Widest: breakouts need breathing room
+        "take_profit_pct": 5.0,  # Breakouts have large price targets
+    },
+    "mean_reversion": {
+        "stop_loss_pct": 1.0,  # Tight: if it doesn't revert quickly, exit
+        "take_profit_pct": 1.5,  # Small mean-reversion capture
+    },
+    "range_reversion": {
+        "stop_loss_pct": 1.0,
+        "take_profit_pct": 1.5,
+    },
+    # multi_strategy intentionally absent — sub-strategy mix varies too much for fixed overrides
+}
+
+
 class RiskManager:
     """Risk management system for controlling trading exposure."""
 
-    def __init__(self, risk_level: RiskLevel | None = None, max_order_value: int = 10000):
+    def __init__(
+        self,
+        risk_level: RiskLevel | None = None,
+        max_order_value: int = 10000,
+        strategy: str | None = None,
+    ):
         """Initialise the risk manager.
 
         Args:
-            risk_level: Risk level to use; falls back to ``settings.risk_level``
-                if not provided.
+            risk_level:      Risk level to use; falls back to ``settings.risk_level``
+                             if not provided.
             max_order_value: Absolute maximum order value in the base currency
-                (e.g. EUR).  Acts as a hard ceiling regardless of portfolio size.
+                             (e.g. EUR).  Acts as a hard ceiling regardless of
+                             portfolio size.
+            strategy:        Active strategy name (e.g. ``"momentum"``).  When
+                             provided, per-strategy overrides in
+                             ``_STRATEGY_RISK_OVERRIDES`` are applied on top of the
+                             risk-level baseline for stop-loss and take-profit.
+                             Position sizing always follows the risk level so that
+                             conservative/moderate/aggressive produce different trade
+                             sizes.  Pass ``None`` to use risk-level defaults only.
         """
         self.risk_level = risk_level or settings.risk_level
         self.risk_params = self._get_risk_parameters_for_level(self.risk_level)
+
+        # Apply per-strategy overrides on top of the risk-level baseline.
+        if strategy and strategy in _STRATEGY_RISK_OVERRIDES:
+            overrides = _STRATEGY_RISK_OVERRIDES[strategy]
+            self.risk_params = {**self.risk_params, **overrides}
+            logger.info(f"Strategy risk overrides applied for '{strategy}': {overrides}")
         self.daily_pnl = Decimal("0")
         self.daily_loss_limit_hit = False
 

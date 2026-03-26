@@ -424,6 +424,31 @@ class TestMarketMakingStrategy:
         assert "spread" in result.metadata
         assert "inventory_ratio" in result.metadata
 
+    @pytest.mark.asyncio
+    async def test_default_threshold_generates_signal_with_real_market_spread(self):
+        """Default threshold must allow signals on real exchange spreads (~0.1%).
+
+        Revolut X BTC-EUR spread is typically 0.05-0.15%.  The default threshold
+        must be low enough to trigger on these spreads, otherwise the bot never
+        generates any market-making signals in production.
+        """
+        strategy = MarketMakingStrategy()  # default threshold
+        # bid/ask gap = 50 EUR on 50000 EUR price → spread ≈ 0.1 %
+        md = make_market_data(bid=Decimal("49975"), ask=Decimal("50025"))
+        result = await strategy.analyze("BTC-EUR", md, [], Decimal("10000"))
+        assert result is not None, (
+            "Signal should be generated at 0.1% spread — default threshold is too high"
+        )
+
+    @pytest.mark.asyncio
+    async def test_default_threshold_blocks_very_tight_spread(self):
+        """Spreads below the threshold must still return None."""
+        strategy = MarketMakingStrategy()  # default threshold
+        # bid/ask gap = 2 EUR on 50000 EUR price → spread ≈ 0.004 %
+        md = make_market_data(bid=Decimal("49999"), ask=Decimal("50001"))
+        result = await strategy.analyze("BTC-EUR", md, [], Decimal("10000"))
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # MultiStrategy

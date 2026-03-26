@@ -21,7 +21,7 @@ def make_signal(
 
     return Signal(
         symbol=symbol,
-        strategy="Momentum",
+        strategy="market_making",
         signal_type=signal_type,
         strength=strength,
         price=price,
@@ -455,3 +455,169 @@ class TestLiveOrderResponseMapping:
         )
         order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert order.status == OrderStatus.PENDING
+
+
+def _make_signal_for_strategy(
+    strategy: str,
+    signal_type: str = "BUY",
+    strength: float = 0.8,
+    price: Decimal = Decimal("50000"),
+) -> Signal:
+    """Create a Signal with an explicit lowercase strategy name for threshold/order-type tests."""
+    from datetime import UTC, datetime
+
+    return Signal(
+        symbol="BTC-EUR",
+        strategy=strategy,
+        signal_type=signal_type,
+        strength=strength,
+        price=price,
+        reason="test signal",
+        timestamp=datetime.now(UTC),
+    )
+
+
+class TestSignalStrengthFilter:
+    """Signal strength filtering prevents weak signals from reaching the exchange."""
+
+    @pytest.mark.asyncio
+    async def test_breakout_below_threshold_returns_none(self, paper_executor):
+        signal = _make_signal_for_strategy("breakout", strength=0.5)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+    @pytest.mark.asyncio
+    async def test_breakout_at_threshold_executes(self, paper_executor):
+        signal = _make_signal_for_strategy("breakout", strength=0.7)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_momentum_below_threshold_returns_none(self, paper_executor):
+        signal = _make_signal_for_strategy("momentum", strength=0.5)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+    @pytest.mark.asyncio
+    async def test_momentum_above_threshold_executes(self, paper_executor):
+        signal = _make_signal_for_strategy("momentum", strength=0.7)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_market_making_accepts_low_strength(self, paper_executor):
+        # market_making threshold is 0.3 — deliberately the lowest
+        signal = _make_signal_for_strategy("market_making", strength=0.35)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_market_making_below_threshold_filtered(self, paper_executor):
+        signal = _make_signal_for_strategy("market_making", strength=0.25)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_strategy_uses_default_threshold_filters(self, paper_executor):
+        # default = 0.5; strength 0.4 should be filtered
+        signal = _make_signal_for_strategy("unknown_strategy", strength=0.4)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+    @pytest.mark.asyncio
+    async def test_unknown_strategy_at_default_threshold_executes(self, paper_executor):
+        # default = 0.5; strength 0.5 is not strictly less than threshold → executes
+        signal = _make_signal_for_strategy("unknown_strategy", strength=0.5)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_display_name_market_making_executes_above_its_threshold(self, paper_executor):
+        """'Market Making' (display name) normalises to 'market_making' with threshold 0.3."""
+        signal = _make_signal_for_strategy("Market Making", strength=0.35)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.status == OrderStatus.FILLED
+
+    @pytest.mark.asyncio
+    async def test_display_name_momentum_filtered_below_its_threshold(self, paper_executor):
+        """'Momentum' normalises to 'momentum' with threshold 0.6; strength 0.5 must be filtered."""
+        signal = _make_signal_for_strategy("Momentum", strength=0.5)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+    @pytest.mark.asyncio
+    async def test_display_name_multi_strategy_normalises_hyphen(self, paper_executor):
+        """'Multi-Strategy' normalises to 'multi_strategy' (hyphen → underscore)."""
+        # multi_strategy threshold is 0.55; 0.5 < 0.55 → filtered
+        signal = _make_signal_for_strategy("Multi-Strategy", strength=0.5)
+        assert await paper_executor.execute_signal(signal, Decimal("10000")) is None
+
+
+class TestStrategyOrderType:
+    """Each strategy maps to the order type that best matches its execution needs."""
+
+    @pytest.mark.asyncio
+    async def test_momentum_uses_market_order(self, paper_executor):
+        signal = _make_signal_for_strategy("momentum", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.MARKET
+
+    @pytest.mark.asyncio
+    async def test_breakout_uses_market_order(self, paper_executor):
+        signal = _make_signal_for_strategy("breakout", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.MARKET
+
+    @pytest.mark.asyncio
+    async def test_market_making_uses_limit_order(self, paper_executor):
+        signal = _make_signal_for_strategy("market_making", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.LIMIT
+
+    @pytest.mark.asyncio
+    async def test_mean_reversion_uses_limit_order(self, paper_executor):
+        signal = _make_signal_for_strategy("mean_reversion", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.LIMIT
+
+    @pytest.mark.asyncio
+    async def test_range_reversion_uses_limit_order(self, paper_executor):
+        signal = _make_signal_for_strategy("range_reversion", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.LIMIT
+
+    @pytest.mark.asyncio
+    async def test_unknown_strategy_defaults_to_limit_order(self, paper_executor):
+        signal = _make_signal_for_strategy("unknown_strategy", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.LIMIT
+
+    @pytest.mark.asyncio
+    async def test_display_name_momentum_uses_market_order(self, paper_executor):
+        """'Momentum' display name must normalise to 'momentum' and select MARKET order."""
+        signal = _make_signal_for_strategy("Momentum", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.MARKET
+
+    @pytest.mark.asyncio
+    async def test_display_name_breakout_uses_market_order(self, paper_executor):
+        """'Breakout' display name must normalise to 'breakout' and select MARKET order."""
+        signal = _make_signal_for_strategy("Breakout", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.MARKET
+
+    @pytest.mark.asyncio
+    async def test_display_name_mean_reversion_uses_limit_order(self, paper_executor):
+        """'Mean Reversion' display name must normalise and select LIMIT order."""
+        signal = _make_signal_for_strategy("Mean Reversion", strength=0.8)
+        result = await paper_executor.execute_signal(signal, Decimal("10000"))
+        assert result is not None
+        assert result.order_type == OrderType.LIMIT

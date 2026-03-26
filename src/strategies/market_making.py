@@ -15,7 +15,7 @@ class MarketMakingStrategy(BaseStrategy):
 
     def __init__(
         self,
-        spread_threshold: float = 0.002,  # 0.2% minimum spread
+        spread_threshold: float = 0.0005,  # 0.05% minimum spread (above Revolut X maker fee)
         order_book_depth: int = 5,
         inventory_target: float = 0.5,  # Target 50% long/short balance
     ):
@@ -48,7 +48,9 @@ class MarketMakingStrategy(BaseStrategy):
 
         # Check if spread is wide enough to be profitable
         if spread < self.spread_threshold:
-            logger.debug(f"{symbol}: Spread {spread:.4f} below threshold {self.spread_threshold}")
+            logger.info(
+                f"{symbol}: Spread {spread:.4f} below threshold {self.spread_threshold} — no signal"
+            )
             return None
 
         # Calculate net inventory: positive = net long, negative = net short

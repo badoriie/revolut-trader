@@ -1,4 +1,5 @@
 import asyncio
+import time
 from collections import deque
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -21,6 +22,18 @@ from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.db_persistence import DatabasePersistence
+
+# Recommended polling interval per strategy — balances signal freshness against API cost.
+# Market-making and breakout react to order-book changes in seconds; mean-reversion and
+# range-reversion operate on slower statistical drift.  Override with --interval if needed.
+_STRATEGY_INTERVALS: dict[StrategyType, int] = {
+    StrategyType.MARKET_MAKING: 5,
+    StrategyType.BREAKOUT: 5,
+    StrategyType.MOMENTUM: 10,
+    StrategyType.MULTI_STRATEGY: 10,
+    StrategyType.MEAN_REVERSION: 15,
+    StrategyType.RANGE_REVERSION: 15,
+}
 
 
 class TradingBot:
@@ -57,7 +70,9 @@ class TradingBot:
         # Use deque with maxlen to prevent unbounded memory growth
         # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
         self.portfolio_snapshots: deque[PortfolioSnapshot] = deque(maxlen=1000)
-        self.save_counter = 0  # Counter for periodic saves
+        # Time-based periodic save: triggers _save_data() every 60 seconds.
+        # Initialised to 0.0 so the first iteration always saves (monotonic() >> 60).
+        self._last_saved_at: float = 0.0
 
         logger.info("Trading Bot initialized")
         logger.info(f"Strategy: {self.strategy_type}")
@@ -120,8 +135,10 @@ class TradingBot:
                 "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
             )
 
-        # Initialize risk manager
-        self.risk_manager = RiskManager(risk_level=self.risk_level)
+        # Initialize risk manager with strategy so per-strategy overrides apply.
+        self.risk_manager = RiskManager(
+            risk_level=self.risk_level, strategy=self.strategy_type.value
+        )
 
         # Initialize order executor
         self.executor = OrderExecutor(
@@ -273,8 +290,13 @@ class TradingBot:
         """
         logger.info(f"=== Trading Iteration {iteration} ===")
 
+        market_data_map = await self._fetch_all_market_data()
+
         await asyncio.gather(
-            *[self._process_symbol(symbol) for symbol in self.trading_pairs],
+            *[
+                self._process_symbol(symbol, market_data_map.get(symbol))
+                for symbol in self.trading_pairs
+            ],
             return_exceptions=True,
         )
 
@@ -288,10 +310,10 @@ class TradingBot:
                 trading_mode=self.trading_mode.value,
             )
 
-        self.save_counter += 1
-        if self.save_counter >= 10:
+        now = time.monotonic()
+        if now - self._last_saved_at >= 60.0:
             self._save_data()
-            self.save_counter = 0
+            self._last_saved_at = now
 
         self._check_risk_limits()
 
@@ -331,25 +353,42 @@ class TradingBot:
         )
         return True, interval
 
-    async def run_trading_loop(self, interval: int = 60):
+    def _default_interval(self) -> int:
+        """Return the recommended loop interval in seconds for the active strategy.
+
+        Faster strategies (market making, breakout) need fresh order-book data
+        every 5 seconds.  Trend-following strategies (momentum, multi) are
+        comfortable at 10 seconds.  Statistical strategies (mean reversion,
+        range reversion) operate on slower drift and run at 15 seconds.
+
+        Returns:
+            Recommended polling interval in seconds.
+        """
+        return _STRATEGY_INTERVALS.get(self.strategy_type, 10)
+
+    async def run_trading_loop(self, interval: int | None = None):
         """Main trading loop.
 
         Args:
-            interval: Seconds between iterations.
+            interval: Seconds between iterations.  Pass ``None`` (default) to
+                      let the bot pick the optimal interval for the active
+                      strategy via :meth:`_default_interval`.  Pass an explicit
+                      value to override (e.g. ``--interval 30`` from the CLI).
         """
-        logger.info(f"Starting trading loop (interval: {interval}s)")
+        effective_interval = interval if interval is not None else self._default_interval()
+        logger.info(f"Starting trading loop (interval: {effective_interval}s)")
 
         iteration = 0
         while self.is_running:
             try:
                 iteration += 1
                 await self._run_iteration(iteration)
-                await asyncio.sleep(interval)
+                await asyncio.sleep(effective_interval)
             except KeyboardInterrupt:
                 logger.info("Received shutdown signal")
                 break
             except Exception as e:
-                should_continue, sleep_time = self._handle_loop_exception(e, interval)
+                should_continue, sleep_time = self._handle_loop_exception(e, effective_interval)
                 if not should_continue:
                     break
                 await asyncio.sleep(sleep_time)
@@ -368,12 +407,19 @@ class TradingBot:
             else:
                 self.cash_balance += order_value
 
-    async def _process_symbol(self, symbol: str):
-        """Process a single trading pair."""
+    async def _process_symbol(self, symbol: str, market_data: MarketData | None = None):
+        """Process a single trading pair.
+
+        Args:
+            symbol:      Trading pair (e.g. ``"BTC-EUR"``).
+            market_data: Pre-fetched MarketData from the batch call, or ``None``
+                         to trigger a per-symbol fallback fetch.
+        """
         assert self.executor is not None
         assert self.strategy is not None
         try:
-            market_data = await self._fetch_market_data(symbol)
+            if market_data is None:
+                market_data = await self._fetch_market_data(symbol)
             if not market_data:
                 return
 
@@ -395,6 +441,45 @@ class TradingBot:
 
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e!s}", exc_info=True)
+
+    async def _fetch_all_market_data(self) -> dict[str, "MarketData"]:
+        """Fetch market data for all trading pairs in a single batch API call.
+
+        Uses GET /tickers to retrieve all pairs with one request instead of
+        one GET /order-book/{symbol} request per pair, reducing API call count
+        from N (pairs) to 1 per iteration.
+
+        Returns:
+            Dict mapping normalised symbol (``"BTC-EUR"``) to MarketData.
+            Returns an empty dict if the API call fails — callers fall back
+            to per-symbol fetches in that case.
+        """
+        assert self.api_client is not None
+        try:
+            tickers = await self.api_client.get_tickers(symbols=self.trading_pairs)
+            result: dict[str, MarketData] = {}
+            now = datetime.now(UTC)
+            for ticker in tickers:
+                raw_symbol = ticker.get("symbol", "")
+                # API returns "BTC/EUR"; trading_pairs use "BTC-EUR"
+                symbol = raw_symbol.replace("/", "-")
+                if symbol not in self.trading_pairs:
+                    continue
+                last = Decimal(str(ticker.get("last_price") or ticker.get("last", 0)))
+                result[symbol] = MarketData(
+                    symbol=symbol,
+                    timestamp=now,
+                    bid=Decimal(str(ticker.get("bid", 0))),
+                    ask=Decimal(str(ticker.get("ask", 0))),
+                    last=last,
+                    volume_24h=Decimal("0"),
+                    high_24h=Decimal("0"),
+                    low_24h=Decimal("0"),
+                )
+            return result
+        except Exception as e:
+            logger.error(f"Failed to batch fetch market data: {e!s}")
+            return {}
 
     async def _fetch_market_data(self, symbol: str) -> MarketData | None:
         """Fetch current market data for a symbol.
@@ -524,7 +609,7 @@ async def main():
 
     try:
         await bot.start()
-        await bot.run_trading_loop(interval=60)
+        await bot.run_trading_loop()  # interval chosen from strategy
     except KeyboardInterrupt:
         logger.info("Shutdown requested")
     finally:

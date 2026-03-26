@@ -72,10 +72,11 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 **Component hierarchy:**
 
 - `TradingBot` (orchestrator) owns: `RevolutAPIClient` or `MockRevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
-- Each trading loop iteration: fetch market data → `strategy.analyze()` → `risk_manager.validate()` → `executor.execute()` → persist
+- Each trading loop iteration: batch-fetch all tickers via `get_tickers()` (1 API call) → `strategy.analyze()` → `executor.execute_signal()` (signal strength filter + order type selection) → `risk_manager.validate()` → place order → persist
+- Portfolio state is saved every 60 seconds of wall-clock time (time-based, not iteration-based)
 - Graceful shutdown: `bot.stop()` → `executor.graceful_shutdown(trailing_stop_pct, max_wait_seconds)` (cancel orders → close losing positions immediately → close profitable positions via trailing stop or immediately) → save final state → end DB session. **Guarantee: all bot-opened positions are closed before the bot exits (EUR → trade → EUR contract).**
 
-**Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Adding a strategy only requires a new file implementing `BaseStrategy`.
+**Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Each strategy ships with tuned defaults for trading interval, order type, minimum signal strength, and stop-loss/take-profit percentages — see `_STRATEGY_INTERVALS` in `src/bot.py`, `_STRATEGY_MIN_SIGNAL_STRENGTH` and `_STRATEGY_ORDER_TYPE` in `src/execution/executor.py`, and `_STRATEGY_RISK_OVERRIDES` in `src/risk_management/risk_manager.py`. `_STRATEGY_RISK_OVERRIDES` only overrides SL/TP (not position size) so risk levels remain meaningfully distinct. Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 **Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never trades with more than this amount (e.g., account holds 50,000 EUR but MAX_CAPITAL=5,000 → bot uses 5,000). `SHUTDOWN_TRAILING_STOP_PCT` is optional — when set (e.g., `0.5` for 0.5%), profitable positions on shutdown wait for a trailing stop before closing; when absent, profitable positions are closed immediately. `SHUTDOWN_MAX_WAIT_SECONDS` is optional — hard timeout (default 120s) before force-closing a profitable position whose trailing stop has not triggered. Config fails fast with actionable error messages if 1Password fields are missing.
 
@@ -87,7 +88,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
-**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, position management, and graceful shutdown via the API client. On shutdown, `graceful_shutdown(trailing_stop_pct, max_wait_seconds)` runs three phases: (1) cancel all pending orders; (2) close losing positions immediately at market; (3) close profitable/breakeven positions via trailing stop wait then market close (or immediately if no trailing stop configured). **Guarantee: `self.positions` is empty when `graceful_shutdown` returns — no bot-opened position is ever left open.** Returns a `ShutdownSummary` so the bot can update its cash balance. Pre-existing crypto (not opened by the bot) is never touched: the SELL guard in `execute_signal` blocks any sell for a symbol with no tracked position.
+**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, position management, and graceful shutdown via the API client. Before placing any order, `execute_signal` applies two strategy-aware filters: (1) **signal strength threshold** — each strategy has a minimum confidence floor (`_STRATEGY_MIN_SIGNAL_STRENGTH`); signals below it are discarded without placing an order; (2) **order type selection** — speed-critical strategies (momentum, breakout) use MARKET orders; patient strategies use LIMIT orders (`_STRATEGY_ORDER_TYPE`). On shutdown, `graceful_shutdown(trailing_stop_pct, max_wait_seconds)` runs three phases: (1) cancel all pending orders; (2) close losing positions immediately at market; (3) close profitable/breakeven positions via trailing stop wait then market close (or immediately if no trailing stop configured). **Guarantee: `self.positions` is empty when `graceful_shutdown` returns — no bot-opened position is ever left open.** Returns a `ShutdownSummary` so the bot can update its cash balance. Pre-existing crypto (not opened by the bot) is never touched: the SELL guard in `execute_signal` blocks any sell for a symbol with no tracked position.
 
 **Tests** (`tests/`):
 
@@ -208,26 +209,26 @@ Claude Code must handle this proactively without being asked.
 
 ## Key Files
 
-| File                                  | Purpose                                                         |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `src/bot.py`                          | Main orchestrator — start here to understand flow               |
-| `src/config.py`                       | Pydantic config + 1Password loading                             |
-| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                 |
-| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)         |
-| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)       |
-| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)   |
-| `src/risk_management/risk_manager.py` | Risk validation and position sizing                             |
-| `src/execution/executor.py`           | Order execution and position management                         |
-| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                          |
-| `src/utils/onepassword.py`            | 1Password CLI wrapper (environment-aware item names)            |
-| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export |
-| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password              |
-| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)           |
-| `src/utils/rate_limiter.py`           | API rate limiting                                               |
-| `src/backtest/engine.py`              | Backtest engine with pagination, slippage, fees, Sharpe ratio   |
-| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                          |
-| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                     |
-| `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)      |
-| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules              |
-| `docs/ARCHITECTURE.md`                | Component details and data flow                                 |
-| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                      |
+| File                                  | Purpose                                                                                                                                                                                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/bot.py`                          | Main orchestrator — start here to understand flow                                                                                                                                                                                        |
+| `src/config.py`                       | Pydantic config + 1Password loading                                                                                                                                                                                                      |
+| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                                                                                                                                                                                          |
+| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)                                                                                                                                                                                  |
+| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)                                                                                                                                                                                |
+| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)                                                                                                                                                                            |
+| `src/risk_management/risk_manager.py` | Risk validation and position sizing                                                                                                                                                                                                      |
+| `src/execution/executor.py`           | Order execution and position management                                                                                                                                                                                                  |
+| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                                                                                                                                                                                                   |
+| `src/utils/onepassword.py`            | 1Password CLI wrapper (environment-aware item names)                                                                                                                                                                                     |
+| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export                                                                                                                                                                          |
+| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password                                                                                                                                                                                       |
+| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                                                                                                                                                    |
+| `src/utils/rate_limiter.py`           | API rate limiting                                                                                                                                                                                                                        |
+| `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, per-strategy order type (MARKET/LIMIT), intra-bar SL/TP via candle high/low, LIMIT fill verification, 0.1% spread, taker fees, Sharpe ratio |
+| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                                                                                                                                                   |
+| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                                                                                                                                                              |
+| `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)                                                                                                                                                                               |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
+| `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
+| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |

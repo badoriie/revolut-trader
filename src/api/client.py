@@ -50,7 +50,7 @@ class RevolutAPIClient:
     required) are dispatched via ``_public_request``; all others via ``_request``.
     """
 
-    def __init__(self, max_requests_per_minute: int = 60) -> None:
+    def __init__(self, max_requests_per_minute: int = 200) -> None:
         self.api_key = op.get("REVOLUT_API_KEY")
         self._base_urls = [url.rstrip("/") for url in REVOLUT_API_BASE_URLS]
         self.base_url = self._base_urls[0]

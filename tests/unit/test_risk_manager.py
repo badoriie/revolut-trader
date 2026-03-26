@@ -583,3 +583,90 @@ class TestEdgeCases:
         )
         assert not is_valid
         assert "portfolio" in reason.lower()
+
+
+class TestStrategyRiskOverrides:
+    """Per-strategy stop-loss, take-profit, and position-size overrides."""
+
+    def test_market_making_has_tight_stop_loss(self):
+        rm = RiskManager(RiskLevel.MODERATE, strategy="market_making")
+        assert rm.risk_params["stop_loss_pct"] == 0.5
+
+    def test_market_making_has_small_take_profit(self):
+        rm = RiskManager(RiskLevel.MODERATE, strategy="market_making")
+        assert rm.risk_params["take_profit_pct"] == 0.3
+
+    def test_breakout_has_wide_stop_loss(self):
+        rm = RiskManager(RiskLevel.MODERATE, strategy="breakout")
+        assert rm.risk_params["stop_loss_pct"] == 3.0
+
+    def test_breakout_has_large_take_profit(self):
+        rm = RiskManager(RiskLevel.MODERATE, strategy="breakout")
+        assert rm.risk_params["take_profit_pct"] == 5.0
+
+    def test_momentum_stop_loss_wider_than_mean_reversion(self):
+        rm_momentum = RiskManager(RiskLevel.MODERATE, strategy="momentum")
+        rm_mean_rev = RiskManager(RiskLevel.MODERATE, strategy="mean_reversion")
+        assert rm_momentum.risk_params["stop_loss_pct"] > rm_mean_rev.risk_params["stop_loss_pct"]
+
+    def test_overrides_do_not_change_max_open_positions(self):
+        rm = RiskManager(RiskLevel.MODERATE, strategy="market_making")
+        assert rm.risk_params["max_open_positions"] == 5  # MODERATE default
+
+    def test_no_strategy_uses_risk_level_defaults(self):
+        rm_base = RiskManager(RiskLevel.MODERATE)
+        rm_none = RiskManager(RiskLevel.MODERATE, strategy=None)
+        assert rm_none.risk_params["stop_loss_pct"] == rm_base.risk_params["stop_loss_pct"]
+
+    def test_unknown_strategy_uses_risk_level_defaults(self):
+        rm_base = RiskManager(RiskLevel.MODERATE)
+        rm_unknown = RiskManager(RiskLevel.MODERATE, strategy="nonexistent")
+        assert rm_unknown.risk_params["stop_loss_pct"] == rm_base.risk_params["stop_loss_pct"]
+
+    def test_calculate_stop_loss_uses_strategy_override(self):
+        from src.models.domain import OrderSide
+
+        rm = RiskManager(RiskLevel.MODERATE, strategy="market_making")
+        sl = rm.calculate_stop_loss(Decimal("50000"), OrderSide.BUY)
+        expected = (Decimal("50000") * (1 - Decimal("0.5") / 100)).quantize(Decimal("0.01"))
+        assert sl == expected
+
+    def test_strategy_override_applies_across_all_risk_levels(self):
+        # market_making SL override is absolute, regardless of risk level
+        for level in (RiskLevel.CONSERVATIVE, RiskLevel.MODERATE, RiskLevel.AGGRESSIVE):
+            rm = RiskManager(level, strategy="market_making")
+            assert rm.risk_params["stop_loss_pct"] == 0.5
+
+    def test_position_size_scales_with_risk_level_for_market_making(self):
+        """Position sizing must reflect the user's risk level, not a fixed strategy value.
+
+        The backtest matrix exists to show how different risk appetites affect
+        performance — if market_making always uses 2.0% regardless of risk level,
+        conservative/moderate/aggressive produce identical results, defeating the
+        purpose of the matrix.
+        """
+        rm_cons = RiskManager(RiskLevel.CONSERVATIVE, strategy="market_making")
+        rm_mod = RiskManager(RiskLevel.MODERATE, strategy="market_making")
+        rm_agg = RiskManager(RiskLevel.AGGRESSIVE, strategy="market_making")
+        assert (
+            rm_cons.risk_params["max_position_size_pct"]
+            < rm_mod.risk_params["max_position_size_pct"]
+        )
+        assert (
+            rm_mod.risk_params["max_position_size_pct"]
+            < rm_agg.risk_params["max_position_size_pct"]
+        )
+
+    def test_position_size_scales_with_risk_level_for_breakout(self):
+        """Position sizing must reflect the user's risk level, not a fixed strategy value."""
+        rm_cons = RiskManager(RiskLevel.CONSERVATIVE, strategy="breakout")
+        rm_mod = RiskManager(RiskLevel.MODERATE, strategy="breakout")
+        rm_agg = RiskManager(RiskLevel.AGGRESSIVE, strategy="breakout")
+        assert (
+            rm_cons.risk_params["max_position_size_pct"]
+            < rm_mod.risk_params["max_position_size_pct"]
+        )
+        assert (
+            rm_mod.risk_params["max_position_size_pct"]
+            < rm_agg.risk_params["max_position_size_pct"]
+        )
