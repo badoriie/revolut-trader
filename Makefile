@@ -202,7 +202,8 @@ setup:
 	@echo ""
 	@echo "Installing pre-commit hooks..."
 	@uv run pre-commit install
-	@echo "  Pre-commit hooks installed"
+	@uv run pre-commit install --hook-type commit-msg
+	@echo "  Pre-commit hooks installed (pre-commit + commit-msg)"
 	@echo ""
 	@echo "=== Setup complete! ==="
 	@echo ""
@@ -544,7 +545,8 @@ api-order:
 pre-commit-install:
 	@uv sync --extra dev --quiet
 	@uv run pre-commit install
-	@echo "Pre-commit hooks installed"
+	@uv run pre-commit install --hook-type commit-msg
+	@echo "Pre-commit hooks installed (pre-commit + commit-msg)"
 
 pre-commit:
 	@uv run pre-commit run --all-files

@@ -81,3 +81,10 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+  # Commit message — enforces Conventional Commits format
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.13.9
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
