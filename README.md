@@ -220,7 +220,8 @@ revolut-trader/
 Trading data is stored in an encrypted SQLite database per environment (`data/dev.db`, `data/int.db`, `data/prod.db`).
 
 ```bash
-make db-stats         # database overview
+make db               # database overview (stats + recent analytics + backtests)
+make db-stats         # database statistics
 make db-analytics     # trading analytics (DAYS=30)
 make db-backtests     # backtest results
 make db-export-csv    # export to CSV
@@ -234,7 +235,7 @@ See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 ```bash
 make test             # run tests with coverage
 make lint             # ruff check
-make format           # ruff format
+make format           # ruff format + ruff check --fix
 make typecheck        # pyright src/ cli/
 make check            # all of the above + tests
 make pre-commit       # run all pre-commit hooks
