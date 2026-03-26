@@ -553,6 +553,72 @@ class BacktestEngine:
     # Main simulation loop
     # ------------------------------------------------------------------
 
+    def _check_and_exit_position(self, symbol: str, market_data: MarketData) -> bool:
+        """Check whether an open position should be closed this bar and execute the exit.
+
+        Checks intra-bar SL/TP extremes first (mirrors live bot's frequent polling),
+        then falls back to a close-price check.  SL takes precedence over TP when
+        both are triggered by the same candle (conservative / worst-case assumption).
+
+        Args:
+            symbol:      Trading pair.
+            market_data: Current bar's market snapshot (provides low/high/close).
+
+        Returns:
+            ``True`` if the position was closed this bar; ``False`` otherwise.
+        """
+        if symbol not in self.positions:
+            return False
+
+        pos = self.positions[symbol]
+
+        # Intra-bar SL/TP: check the bar's low/high BEFORE updating to close price.
+        if pos.stop_loss is not None or pos.take_profit is not None:
+            sl_hit = (
+                pos.stop_loss is not None
+                and pos.side == OrderSide.BUY
+                and market_data.low_24h <= pos.stop_loss
+            )
+            tp_hit = (
+                pos.take_profit is not None
+                and pos.side == OrderSide.BUY
+                and market_data.high_24h >= pos.take_profit
+            )
+            if sl_hit or tp_hit:
+                exit_price = pos.stop_loss if sl_hit else pos.take_profit
+                exit_reason = "Stop-loss" if sl_hit else "Take-profit"
+                assert exit_price is not None  # narrowing for type checker
+                logger.debug(
+                    f"{exit_reason} triggered intra-bar for {symbol} at {exit_price:.4f} "
+                    f"(bar low={market_data.low_24h:.4f}, high={market_data.high_24h:.4f})"
+                )
+                self._execute_backtest_order(
+                    symbol=symbol,
+                    side=OrderSide.SELL,
+                    quantity=pos.quantity,
+                    price=exit_price,
+                    timestamp=market_data.timestamp,
+                    market_data=None,  # fill at exact SL/TP price, not bid
+                )
+                return True
+
+        # No intra-bar exit: update to close price and run the close-price check.
+        pos.update_price(market_data.last)
+        should_exit, exit_reason = pos.should_close()
+        if should_exit:
+            logger.debug(f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}")
+            self._execute_backtest_order(
+                symbol=symbol,
+                side=OrderSide.SELL,
+                quantity=pos.quantity,
+                price=market_data.last,
+                timestamp=market_data.timestamp,
+                market_data=market_data,
+            )
+            return True
+
+        return False
+
     async def _process_bar_symbol(
         self,
         symbol: str,
@@ -564,65 +630,9 @@ class BacktestEngine:
             symbol:      Trading pair.
             market_data: Current bar's market snapshot.
         """
-        # 1. Update open position with latest price + check SL/TP.
-        #
-        # Intra-bar SL/TP: in live trading the bot polls every few seconds and
-        # can catch a stop-loss or take-profit trigger mid-candle even when the
-        # closing price is outside the SL/TP range.  We mirror that here by
-        # checking the bar's low/high BEFORE updating to the close price.
-        #
-        # Priority when both SL and TP are triggered by the same candle
-        # (whipsaw): SL wins (conservative / worst-case assumption).
-        if symbol in self.positions:
-            pos = self.positions[symbol]
-
-            if pos.stop_loss is not None or pos.take_profit is not None:
-                # Check intra-bar extremes first (before updating to close price).
-                sl_hit = (
-                    pos.stop_loss is not None
-                    and pos.side == OrderSide.BUY
-                    and market_data.low_24h <= pos.stop_loss
-                )
-                tp_hit = (
-                    pos.take_profit is not None
-                    and pos.side == OrderSide.BUY
-                    and market_data.high_24h >= pos.take_profit
-                )
-
-                if sl_hit or tp_hit:
-                    # SL takes precedence (conservative worst-case).
-                    exit_price = pos.stop_loss if sl_hit else pos.take_profit
-                    exit_reason = "Stop-loss" if sl_hit else "Take-profit"
-                    assert exit_price is not None  # narrowing for type checker
-                    logger.debug(
-                        f"{exit_reason} triggered intra-bar for {symbol} at {exit_price:.4f} "
-                        f"(bar low={market_data.low_24h:.4f}, high={market_data.high_24h:.4f})"
-                    )
-                    self._execute_backtest_order(
-                        symbol=symbol,
-                        side=OrderSide.SELL,
-                        quantity=pos.quantity,
-                        price=exit_price,
-                        timestamp=market_data.timestamp,
-                        # Pass None so the exit fills at exactly SL/TP price, not bid.
-                        market_data=None,
-                    )
-                    return  # Skip strategy signal this bar
-
-            # No intra-bar exit: update to close price and run the close-price check.
-            pos.update_price(market_data.last)
-            should_exit, exit_reason = pos.should_close()
-            if should_exit:
-                logger.debug(f"{exit_reason} triggered for {symbol} at {market_data.last:.4f}")
-                self._execute_backtest_order(
-                    symbol=symbol,
-                    side=OrderSide.SELL,
-                    quantity=pos.quantity,
-                    price=market_data.last,
-                    timestamp=market_data.timestamp,
-                    market_data=market_data,
-                )
-                return  # Skip strategy signal this bar
+        # 1. Check whether an open position should exit this bar.
+        if self._check_and_exit_position(symbol, market_data):
+            return
 
         # 2. Ask the strategy for a signal
         positions_value = sum(p.quantity * p.current_price for p in self.positions.values())
