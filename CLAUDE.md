@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **GitHub Copilot users:** see `.github/copilot-instructions.md` for the tool-agnostic equivalent of these instructions. When updating architecture, rules, or conventions here, keep that file in sync.
+
 ## Commands
 
 **Package manager: `uv`** — always prefix Python commands with `uv run`.
@@ -235,6 +237,7 @@ Every code change **must** include corresponding documentation updates. This is 
 - `CHANGELOG.md` — auto-generated from GitHub Releases by the release workflow (do not edit manually)
 - Inline docstrings — logic changes, new functions, modified behavior
 - `CLAUDE.md` — architectural changes, new components, workflow changes
+- `.github/copilot-instructions.md` — keep in sync with `CLAUDE.md` (tool-agnostic sections)
 - `docs/` files — API changes, strategy changes, development guidelines
 
 Claude Code must handle this proactively without being asked.
