@@ -99,8 +99,8 @@ class TradeDB(Base):
     strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    pnl: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
-    fee: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    pnl: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
+    fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
 
     def __repr__(self) -> str:
         return (

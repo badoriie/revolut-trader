@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.backtest.engine import SPREAD_PCT, TAKER_FEE_PCT, BacktestEngine, BacktestResults
+from src.backtest.engine import SPREAD_PCT, BacktestEngine, BacktestResults
 from src.config import RiskLevel, StrategyType
 from src.models.domain import CandleData, OrderSide, Signal
+from src.utils.fees import TAKER_FEE_PCT
 
 
 def make_candle(

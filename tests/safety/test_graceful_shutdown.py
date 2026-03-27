@@ -228,6 +228,8 @@ class TestGracefulShutdownPositionEvaluation:
         unbounded loss.
         """
         # BUY at 50000, now at 49000 → unrealized_pnl = -1000
+        # Close order: SELL at 49000, qty=1, MARKET → fee = 49000 * 0.0009 = 44.1
+        # Net PnL = -1000 - 44.1 = -1044.1
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.BUY, Decimal("50000"), Decimal("49000")
         )
@@ -236,7 +238,7 @@ class TestGracefulShutdownPositionEvaluation:
 
         assert summary.positions_closed == 1
         assert summary.positions_trailing_stopped == 0
-        assert summary.closed_positions_pnl == Decimal("-1000")
+        assert summary.closed_positions_pnl == Decimal("-1044.1000")
         # Position MUST be removed
         assert "BTC-EUR" not in paper_executor.positions
 
@@ -328,6 +330,8 @@ class TestGracefulShutdownPositionEvaluation:
 
         Short losing = price went up (entry 50000, current 51000, pnl = -1000).
         Close order should be a BUY (opposite side).
+        Close order: BUY at 51000, qty=1, MARKET → fee = 51000 * 0.0009 = 45.9
+        Net PnL = -1000 - 45.9 = -1045.9
         """
         paper_executor.positions["BTC-EUR"] = _make_position(
             "BTC-EUR", OrderSide.SELL, Decimal("50000"), Decimal("51000")
@@ -336,7 +340,7 @@ class TestGracefulShutdownPositionEvaluation:
         summary = await paper_executor.graceful_shutdown(**_DEFAULT_SHUTDOWN_ARGS)
 
         assert summary.positions_closed == 1
-        assert summary.closed_positions_pnl == Decimal("-1000")
+        assert summary.closed_positions_pnl == Decimal("-1045.9000")
         assert "BTC-EUR" not in paper_executor.positions
 
     @pytest.mark.asyncio

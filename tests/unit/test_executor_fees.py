@@ -164,6 +164,87 @@ async def test_close_limit_order_no_fee():
 
 
 @pytest.mark.asyncio
+async def test_partial_close_buy_position_deducts_fee_from_realized_pnl():
+    """Partially closing a BUY position must deduct the commission from realized_pnl."""
+    executor = make_executor()
+    entry_price = Decimal("50000")
+    close_price = Decimal("51000")
+    full_qty = Decimal("0.2")
+    close_qty = Decimal("0.1")  # partial close
+
+    executor.positions["BTC-EUR"] = Position(
+        symbol="BTC-EUR",
+        side=OrderSide.BUY,
+        quantity=full_qty,
+        entry_price=entry_price,
+        current_price=close_price,
+        unrealized_pnl=(close_price - entry_price) * full_qty,
+    )
+
+    close_order = Order(
+        symbol="BTC-EUR",
+        side=OrderSide.SELL,
+        order_type=OrderType.MARKET,
+        quantity=close_qty,
+        price=close_price,
+    )
+    await executor._execute_paper_order(close_order)
+    await executor._update_positions(close_order)
+
+    # Gross PnL = (51000 - 50000) * 0.1 = 100 EUR
+    # Fee = 51000 * 0.1 * 0.0009
+    expected_fee = close_price * close_qty * Decimal("0.0009")
+    expected_net = (close_price - entry_price) * close_qty - expected_fee
+
+    assert close_order.realized_pnl is not None
+    assert close_order.realized_pnl == pytest.approx(expected_net, rel=Decimal("0.001"))
+    # Position should still be open with remaining quantity
+    assert "BTC-EUR" in executor.positions
+    assert executor.positions["BTC-EUR"].quantity == full_qty - close_qty
+
+
+@pytest.mark.asyncio
+async def test_partial_close_short_position_deducts_fee_from_realized_pnl():
+    """Partially closing a SELL (short) position must deduct the commission from realized_pnl."""
+    executor = make_executor()
+    entry_price = Decimal("50000")
+    close_price = Decimal("49000")  # price fell — short is profitable
+    full_qty = Decimal("0.2")
+    close_qty = Decimal("0.1")  # partial close
+
+    executor.positions["BTC-EUR"] = Position(
+        symbol="BTC-EUR",
+        side=OrderSide.SELL,
+        quantity=full_qty,
+        entry_price=entry_price,
+        current_price=close_price,
+        unrealized_pnl=(entry_price - close_price) * full_qty,
+    )
+
+    # Closing a short means buying back
+    close_order = Order(
+        symbol="BTC-EUR",
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=close_qty,
+        price=close_price,
+    )
+    await executor._execute_paper_order(close_order)
+    await executor._update_positions(close_order)
+
+    # Gross PnL = (50000 - 49000) * 0.1 = 100 EUR
+    # Fee = 49000 * 0.1 * 0.0009
+    expected_fee = close_price * close_qty * Decimal("0.0009")
+    expected_net = (entry_price - close_price) * close_qty - expected_fee
+
+    assert close_order.realized_pnl is not None
+    assert close_order.realized_pnl == pytest.approx(expected_net, rel=Decimal("0.001"))
+    # Position should still be open with remaining quantity
+    assert "BTC-EUR" in executor.positions
+    assert executor.positions["BTC-EUR"].quantity == full_qty - close_qty
+
+
+@pytest.mark.asyncio
 async def test_closing_order_has_realized_pnl_set():
     """Any order that closes a position must have realized_pnl set (not None)."""
     executor = make_executor()

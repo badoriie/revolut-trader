@@ -3,7 +3,8 @@
 Simulates realistic execution against Revolut X candle data:
 - Paginated candle fetching (API hard limit: 1 000 candles per request)
 - Bid/ask slippage — buys fill at ask, sells fill at bid
-- Taker fee deduction on every fill (~0.09 % per Revolut X fee schedule)
+- Fee deduction on every fill via ``calculate_fee()``: taker rate (0.09 %) for
+  MARKET orders, maker rate (0 %) for LIMIT orders — matches live trading costs
 - Stop-loss / take-profit levels derived from the active RiskManager
 - SL/TP checked on every bar so open positions exit at the correct candle
 - O(1) candle lookup via pre-indexed dicts (was O(n) per bar)
@@ -47,7 +48,7 @@ from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
-from src.utils.fees import TAKER_FEE_PCT
+from src.utils.fees import calculate_fee
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -60,10 +61,6 @@ VALID_INTERVALS: frozenset[int] = frozenset(
 
 # API constraint: (until − since) / interval_ms ≤ 1 000 candles per request
 MAX_CANDLES_PER_REQUEST: int = 1000
-
-# Re-exported from src.utils.fees for backtest consumers that import TAKER_FEE_PCT directly.
-# Revolut X taker fee (see their published fee schedule): 0.09%
-# TAKER_FEE_PCT is imported above — do not redefine here.
 
 # Simulated bid/ask half-spread applied to every candle close price (0.1 %)
 # Matches real Revolut X bid-ask spreads (~0.05-0.1 %) for representative P&L.
@@ -372,7 +369,7 @@ class BacktestEngine:
             side:       ``BUY``.
             quantity:   Order quantity in base currency units.
             exec_price: Execution price after slippage.
-            fee:        Taker fee for this fill.
+            fee:        Fee for this fill (taker or maker rate).
             order_value: ``quantity × exec_price``.
 
         Returns:
@@ -428,7 +425,7 @@ class BacktestEngine:
             symbol:      Trading pair.
             quantity:    Order quantity in base currency units.
             exec_price:  Execution price after slippage.
-            fee:         Taker fee for this fill.
+            fee:         Fee for this fill (taker or maker rate).
             order_value: ``quantity × exec_price``.
             timestamp:   Bar timestamp for the trade log.
 
@@ -498,8 +495,8 @@ class BacktestEngine:
 
         Fee
         ~~~
-        ``TAKER_FEE_PCT`` (0.09 %) is deducted from cash on every fill and
-        accumulated in ``results.total_fees``.
+        ``calculate_fee()`` is used: taker rate (0.09 %) for MARKET orders,
+        maker rate (0 %) for LIMIT orders.  Matches live trading costs exactly.
 
         Stop-loss / take-profit
         ~~~~~~~~~~~~~~~~~~~~~~~
@@ -547,7 +544,7 @@ class BacktestEngine:
             exec_price = market_data.ask if side == OrderSide.BUY else market_data.bid
 
         order_value = quantity * exec_price
-        fee = order_value * TAKER_FEE_PCT
+        fee = calculate_fee(order_value, order_type)
 
         if side == OrderSide.BUY:
             return self._execute_buy(symbol, side, quantity, exec_price, fee, order_value)

@@ -484,9 +484,9 @@ class OrderExecutor:
                 positions_closed += 1
                 if used_trailing:
                     positions_trailing_stopped += 1
-                    trailing_stopped_pnl += position.unrealized_pnl
                     fee = close_order.commission if close_order else Decimal("0")
                     net_pnl = position.unrealized_pnl - fee
+                    trailing_stopped_pnl += net_pnl
                     logger.info(
                         f"Closed profitable position {symbol} | "
                         f"Gross P&L: {position.unrealized_pnl:.4f} | "
@@ -494,9 +494,9 @@ class OrderExecutor:
                         f"Net P&L: {net_pnl:.4f}"
                     )
                 else:
-                    closed_positions_pnl += position.unrealized_pnl
                     fee = close_order.commission if close_order else Decimal("0")
                     net_pnl = position.unrealized_pnl - fee
+                    closed_positions_pnl += net_pnl
                     logger.info(
                         f"Closed position {symbol} | "
                         f"Gross P&L: {position.unrealized_pnl:.4f} | "
