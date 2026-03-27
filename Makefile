@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
 # Environment — dev (default), int, prod
@@ -51,6 +51,8 @@ help:
 	@echo "  make backtest          - Backtest one strategy using real data (int env by default)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=..."
 	@echo "                           Override env: make backtest BACKTEST_ENV=dev"
+	@echo "  make backtest-hf       - High-frequency backtest (1-minute candles, closest to live 5s polling)"
+	@echo "                           STRATEGY=... DAYS=... RISK=... PAIRS=..."
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
@@ -411,6 +413,25 @@ backtest:
 		--interval $$INTERVAL --pairs $$PAIRS --capital $$CAPITAL \
 		&& echo "Backtest complete — results saved to database (make db-backtests ENV=$(BACKTEST_ENV))" \
 		|| echo "Backtest failed - check logs above"
+
+backtest-hf:
+	@STRATEGY=$${STRATEGY:-market_making}; \
+	DAYS=$${DAYS:-7}; \
+	PAIRS=$${PAIRS:-BTC-EUR,ETH-EUR}; \
+	CAPITAL=$${CAPITAL:-10000}; \
+	RISK=$${RISK:-conservative}; \
+	echo ""; \
+	echo "============================================================"; \
+	echo "  HIGH-FREQUENCY BACKTEST (1-minute candles)"; \
+	echo "  Note: Live bot polls every 5s; 1-min candles are the"; \
+	echo "        highest granularity available from Revolut X API."; \
+	echo "============================================================"; \
+	echo "Environment: $(BACKTEST_ENV) | Strategy: $$STRATEGY | Risk: $$RISK | Days: $$DAYS | Interval: 1 min | Pairs: $$PAIRS"; \
+	ENVIRONMENT=$(BACKTEST_ENV) uv run python cli/backtest.py --strategy $$STRATEGY --risk $$RISK --days $$DAYS \
+		--interval 1 --pairs $$PAIRS --capital $$CAPITAL \
+		&& echo "Backtest complete — results saved to database (make db-backtests ENV=$(BACKTEST_ENV))" \
+		|| echo "Backtest failed - check logs above"
+
 
 backtest-compare:
 	@echo ""; \

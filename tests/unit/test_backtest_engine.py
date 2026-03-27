@@ -6,9 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.backtest.engine import SPREAD_PCT, TAKER_FEE_PCT, BacktestEngine, BacktestResults
+from src.backtest.engine import SPREAD_PCT, BacktestEngine, BacktestResults
 from src.config import RiskLevel, StrategyType
 from src.models.domain import CandleData, OrderSide, Signal
+from src.utils.fees import TAKER_FEE_PCT
 
 
 def make_candle(
@@ -518,6 +519,7 @@ class TestComparisonTable:
                 "risk_level": "conservative",
                 "return_pct": 5.0,
                 "total_pnl": 500.0,
+                "total_fees": 4.5,
                 "total_trades": 10,
                 "winning_trades": 6,
                 "losing_trades": 4,
@@ -531,6 +533,7 @@ class TestComparisonTable:
                 "risk_level": "conservative",
                 "return_pct": 8.0,
                 "total_pnl": 800.0,
+                "total_fees": 7.2,
                 "total_trades": 8,
                 "winning_trades": 5,
                 "losing_trades": 3,
@@ -565,6 +568,7 @@ class TestComparisonTable:
                 "risk_level": "moderate",
                 "return_pct": -2.0,
                 "total_pnl": -200.0,
+                "total_fees": 1.8,
                 "total_trades": 5,
                 "winning_trades": 1,
                 "losing_trades": 4,
@@ -578,6 +582,7 @@ class TestComparisonTable:
                 "risk_level": "moderate",
                 "return_pct": 12.0,
                 "total_pnl": 1200.0,
+                "total_fees": 10.8,
                 "total_trades": 15,
                 "winning_trades": 10,
                 "losing_trades": 5,

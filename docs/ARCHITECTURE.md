@@ -38,9 +38,10 @@ run_trading_loop()
         ├── executor.execute_signal()
         │   ├── RiskManager.calculate_position_size()
         │   ├── RiskManager.validate_order()    → two-layer check
-        │   └── Paper: simulate fill
-        │       Live:  API.create_order()
-        └── persistence.save_trade()            → encrypted SQLite
+        │   ├── Paper: simulate fill + calculate_fee() → order.commission
+        │   │   Live:  API.create_order()
+        │   └── _update_positions(): set order.realized_pnl = gross_pnl - fee
+        └── persistence.save_trade()            → pnl + fee stored in trades table
     └── save_portfolio_snapshot()
     └── RiskManager.update_daily_pnl()          → suspend if limit hit
 
@@ -127,20 +128,21 @@ ______________________________________________________________________
 
 ## Key Files
 
-| Layer        | File                                  | Responsibility                           |
-| ------------ | ------------------------------------- | ---------------------------------------- |
-| Entry        | `cli/run.py`                          | CLI args, starts async loop              |
-| Orchestrator | `src/bot.py`                          | Ties all components together             |
-| Config       | `src/config.py`                       | Pydantic settings, loaded from 1Password |
-| API          | `src/api/client.py`                   | 17 Revolut X endpoints, Ed25519 auth     |
-| Risk         | `src/risk_management/risk_manager.py` | Position sizing, limits, SL/TP           |
-| Execution    | `src/execution/executor.py`           | Order lifecycle, position tracking       |
-| Strategies   | `src/strategies/`                     | Signal generation                        |
-| Models       | `src/models/domain.py`                | Order, Position, Signal, MarketData      |
-| DB models    | `src/models/db.py`                    | SQLAlchemy ORM (SQLite, WAL mode)        |
-| Persistence  | `src/utils/db_persistence.py`         | All CRUD operations                      |
-| Encryption   | `src/utils/db_encryption.py`          | Fernet encryption, key in 1Password      |
-| Indicators   | `src/utils/indicators.py`             | SMA/EMA/RSI/BB — all O(1) incremental    |
+| Layer        | File                                  | Responsibility                                            |
+| ------------ | ------------------------------------- | --------------------------------------------------------- |
+| Entry        | `cli/run.py`                          | CLI args, starts async loop                               |
+| Orchestrator | `src/bot.py`                          | Ties all components together                              |
+| Config       | `src/config.py`                       | Pydantic settings, loaded from 1Password                  |
+| API          | `src/api/client.py`                   | 17 Revolut X endpoints, Ed25519 auth                      |
+| Risk         | `src/risk_management/risk_manager.py` | Position sizing, limits, SL/TP                            |
+| Execution    | `src/execution/executor.py`           | Order lifecycle, position tracking                        |
+| Strategies   | `src/strategies/`                     | Signal generation                                         |
+| Models       | `src/models/domain.py`                | Order, Position, Signal, MarketData                       |
+| DB models    | `src/models/db.py`                    | SQLAlchemy ORM (SQLite, WAL mode)                         |
+| Persistence  | `src/utils/db_persistence.py`         | All CRUD operations                                       |
+| Encryption   | `src/utils/db_encryption.py`          | Fernet encryption, key in 1Password                       |
+| Fees         | `src/utils/fees.py`                   | Fee constants + `calculate_fee()` — 0% maker, 0.09% taker |
+| Indicators   | `src/utils/indicators.py`             | SMA/EMA/RSI/BB — all O(1) incremental                     |
 
 ______________________________________________________________________
 

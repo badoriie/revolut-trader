@@ -23,12 +23,52 @@ make backtest STRATEGY=market_making DAYS=30
 # Test momentum strategy with moderate risk
 make backtest STRATEGY=momentum DAYS=60
 
+# High-frequency backtest with 1-minute candles (closest to live 5s polling)
+make backtest-hf STRATEGY=breakout DAYS=7
+
 # View stored results
 make db-backtests
 
 # Export to CSV for spreadsheet analysis
 make db-export-csv
 ```
+
+## High-Frequency Backtesting
+
+The live bot polls the Revolut X API every 5 seconds to make trading decisions based on the latest ticker data. However, the API's historical candle data is only available at specific intervals (1, 5, 15, 30, 60, 240, 1440+ minutes).
+
+To simulate the live bot's behavior as closely as possible, use **1-minute candles** — the highest granularity available:
+
+```bash
+make backtest-hf                           # 1-min candles, 7 days default
+make backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
+```
+
+**Important differences between live and backtest:**
+
+| Aspect               | Live Bot                                     | Backtest (1-min candles)                                 |
+| -------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| **Data granularity** | 5-second polling, latest ticker              | 1-minute OHLCV candles (highest available from API)      |
+| **Decision points**  | Every 5 seconds                              | Every 1 minute (at candle close)                         |
+| **Intra-candle**     | Sees all price movements within 1-min window | Only sees open, high, low, close, volume summary         |
+| **Stop-loss / TP**   | Checked every 5 seconds against latest price | Checked against candle high/low (intra-bar simulation)   |
+| **Fill realism**     | Real order book, actual slippage             | Simulated bid/ask spread (0.1%), conservative fill rules |
+| **Cost simulation**  | Real fees (0.09% taker)                      | Same fee (0.09% taker) deducted per fill                 |
+
+**When to use high-frequency backtesting:**
+
+- Testing strategies that rely on rapid price movements (e.g., breakout, momentum)
+- Evaluating short-term performance (7-14 days)
+- Validating stop-loss behavior with higher precision
+- Comparing backtest results closely to live paper trading runs
+
+**Trade-offs:**
+
+- **More data, slower execution**: 1-minute candles generate ~1,440 bars per day (vs. 24 for hourly). Backtests take longer and consume more API quota.
+- **API limits**: Revolut X limits candle requests to 1,000 candles per call. The engine automatically paginates, but many requests may be needed for long periods.
+- **Not a perfect match**: 5-second polling can react to micro-movements that don't appear in 1-minute candle summaries. Backtest results remain an approximation.
+
+For longer-term strategy validation (30+ days), use hourly candles (`INTERVAL=60`) or the default settings. For short-term / high-frequency validation, use `make backtest-hf`.
 
 ## Command Line Options
 
@@ -49,8 +89,9 @@ make db-export-csv
                   Default: 30
 
 --interval, -i    Candle interval in minutes
-                  Choices: 5, 15, 30, 60, 240, 1440
+                  Choices: 1, 5, 15, 30, 60, 240, 1440
                   Default: 60 (1 hour)
+                  Note: Use 1 for highest granularity (closest to live 5s polling)
 
 --capital, -c     Initial capital in EUR
                   Default: 10000
@@ -278,7 +319,7 @@ ERROR | No historical data available
 ValueError: Invalid interval
 ```
 
-**Solution**: Use one of the supported intervals: 5, 15, 30, 60, 240, 1440.
+**Solution**: Use one of the supported intervals: 1, 5, 15, 30, 60, 240, 1440.
 
 ### Insufficient Data
 

@@ -99,7 +99,8 @@ class TradeDB(Base):
     strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     filled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    pnl: Mapped[float | None] = mapped_column(Numeric(20, 10), nullable=True)
+    pnl: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
+    fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
 
     def __repr__(self) -> str:
         return (
@@ -258,12 +259,25 @@ def create_db_engine(url: str = DB_URL):
 
 
 def init_database(engine) -> None:
-    """Create all tables if they do not already exist (idempotent)."""
+    """Create all tables if they do not already exist (idempotent).
+
+    Also applies any schema migrations that add new columns to existing tables.
+    Each migration is guarded with a try/except so it is safe to run repeatedly.
+    """
     Base.metadata.create_all(engine)
 
     # Ensure WAL checkpoint runs on first connection so the DB file exists
     with engine.connect() as conn:
         conn.execute(text("PRAGMA wal_checkpoint(PASSIVE)"))
+
+    # Migration: add fee column to trades table (introduced for fee tracking).
+    # Safe to run on both new and existing databases — silently skips if column exists.
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE trades ADD COLUMN fee NUMERIC(20,10)"))
+            conn.commit()
+        except Exception:  # nosec B110
+            pass  # column already exists — no action needed
 
 
 def get_session_factory(engine):

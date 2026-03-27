@@ -110,6 +110,8 @@ class Order(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     strategy: str | None = None
+    commission: Decimal = Decimal("0")
+    realized_pnl: Decimal | None = None
 
 
 class Trade(BaseModel):
@@ -181,8 +183,10 @@ class ShutdownSummary(BaseModel):
     positions_evaluated: int
     positions_closed: int  # always == positions_evaluated after shutdown
     positions_trailing_stopped: int  # subset of positions_closed: closed via trailing stop
-    closed_positions_pnl: Decimal = Decimal("0")  # immediate closes (losers)
-    trailing_stopped_pnl: Decimal = Decimal("0")  # trailing-stop closes (winners/breakeven)
+    closed_positions_pnl: Decimal = Decimal("0")  # net P&L of immediate closes (losers)
+    trailing_stopped_pnl: Decimal = Decimal(
+        "0"
+    )  # net P&L of trailing-stop closes (winners/breakeven)
     filled_close_orders: list["Order"] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 

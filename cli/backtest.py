@@ -58,6 +58,7 @@ async def run_backtest(args) -> None:
         results_dict = {
             "final_capital": float(results.final_capital),
             "total_pnl": float(results.total_pnl),
+            "total_fees": float(results.total_fees),
             "return_pct": results.return_pct,
             "total_trades": results.total_trades,
             "winning_trades": results.winning_trades,
@@ -140,8 +141,8 @@ Examples:
         "-i",
         type=int,
         default=60,
-        choices=[5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60)",
+        choices=[1, 5, 15, 30, 60, 240, 1440],
+        help="Candle interval in minutes (default: 60, use 1 for highest granularity)",
     )
     parser.add_argument(
         "--capital",

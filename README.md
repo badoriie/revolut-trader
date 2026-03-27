@@ -46,6 +46,8 @@ See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
 ```bash
 make backtest                              # 30 days, default strategy
 make backtest STRATEGY=momentum DAYS=90    # specific strategy and period
+make backtest-hf                           # high-frequency: 1-min candles (closest to live 5s polling)
+make backtest-hf STRATEGY=breakout DAYS=7  # high-frequency with specific strategy
 make db-backtests                          # view stored results
 make db-export-csv                         # export to CSV
 ```
@@ -156,6 +158,20 @@ Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trad
 ```bash
 make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
 ```
+
+## Trading Fees
+
+Fee tracking is built into every trade. Fees are deducted from the cash balance in real-time and stored alongside each trade record for accurate P&L reporting.
+
+| Order Type | Role  | Fee   |
+| ---------- | ----- | ----- |
+| LIMIT      | Maker | 0%    |
+| MARKET     | Taker | 0.09% |
+
+- **LIMIT orders** (market making, mean reversion, range reversion, multi-strategy) — no fee.
+- **MARKET orders** (momentum, breakout, and all SL/TP close orders) — 0.09% taker fee deducted from realized P&L and cash balance.
+
+Fee data is available in trade history exports and the analytics report (`total_fees`, `losing_trades` fields).
 
 ## Project Structure
 
