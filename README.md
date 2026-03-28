@@ -75,7 +75,7 @@ feature branches → PR to main
 ```
 
 - **Feature branches** — all development happens here, pre-commit hooks run lint, typecheck, security, and tests locally
-- **PR to `main`** — CI runs all checks with `ENVIRONMENT=int`, merge blocked until all pass
+- **PR to `main`** — CI runs all checks with `ENVIRONMENT=dev`, merge blocked until all pass
 - **Manual release** — production validation via Actions console (requires semver version + "I UNDERSTAND" confirmation)
 
 Each environment has its own 1Password items:
@@ -209,6 +209,7 @@ revolut-trader/
 │   └── analytics_report.py   # Comprehensive analytics report with charts
 ├── tests/
 │   ├── conftest.py           # Fixtures, ENVIRONMENT=dev setup
+│   ├── test_config.py        # Configuration loading and validation tests
 │   ├── safety/               # Safety-critical tests (order limits, position sizing)
 │   ├── unit/                 # Component unit tests
 │   └── mocks/                # Mock 1Password for testing
@@ -236,6 +237,7 @@ make db-backtests     # backtest results
 make db-report        # comprehensive analytics report with charts (DAYS=30)
 make db-export        # export data to JSON
 make db-export-csv    # export to CSV
+make db-encrypt-setup  # generate and store encryption key in 1Password
 make db-encrypt-status # check encryption status
 ```
 
@@ -256,7 +258,7 @@ make pre-commit       # run all pre-commit hooks
 
 GitHub Actions workflows:
 
-- **CI** (`.github/workflows/ci.yml`) — runs on PRs to `main` (`ENVIRONMENT=int`), merge blocked until all pass:
+- **CI** (`.github/workflows/ci.yml`) — runs on PRs to `main` (`ENVIRONMENT=dev`) and on post-merge pushes to `main` (`ENVIRONMENT=int`), merge blocked until all pass:
   - Lint & Format — ruff check + format verification
   - Type Check — pyright strict checking on `src/` and `cli/`
   - Security Scan — bandit static analysis

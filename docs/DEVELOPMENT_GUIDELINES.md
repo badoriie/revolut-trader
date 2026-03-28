@@ -325,7 +325,7 @@ Single `main` branch. Pre-commit hooks handle dev checks locally; CI runs on PRs
 | Stage                   | Environment | Checks                                                        |
 | ----------------------- | ----------- | ------------------------------------------------------------- |
 | Pre-commit (local)      | dev         | Lint, typecheck, security, tests (before each commit)         |
-| PR to `main`            | int         | CI: same checks, `ENVIRONMENT=int`, merge blocked until green |
+| PR to `main`            | dev         | CI: same checks, `ENVIRONMENT=dev`, merge blocked until green |
 | Manual release workflow | prod        | CI: same checks, `ENVIRONMENT=prod`, creates semver tag       |
 
 ```
@@ -333,7 +333,7 @@ feature branch → PR to main
 ```
 
 - **Pre-commit hooks** run lint, typecheck, security, and tests locally before each commit.
-- PR to `main` triggers CI with `ENVIRONMENT=int` — merge is blocked until all checks pass.
+- PR to `main` triggers CI with `ENVIRONMENT=dev` — merge is blocked until all checks pass.
 - **Backtest matrix** — manual `workflow_dispatch` with configurable parameters via Actions console.
 - **Release workflow** — manual `workflow_dispatch` for production release. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient.
 - Dependabot PRs target `main` — dependency updates trigger int CI automatically.

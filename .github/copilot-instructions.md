@@ -95,6 +95,17 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 **Safety**: Pre-existing crypto is never touched — the SELL guard in `execute_signal` blocks any sell for a symbol the bot did not open. All trading pairs must end with `-{BASE_CURRENCY}` (currency mismatch validation). Separate API keys per environment in 1Password.
 
+**Tests** (`tests/`):
+
+- `tests/conftest.py` — shared fixtures, sets `ENVIRONMENT=dev` before `Settings` singleton is created
+- `tests/test_config.py` — configuration loading and validation tests
+- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions, graceful shutdown)
+- `tests/unit/` — component unit tests (calculations, indicators, risk manager, executor, strategies, backtest engine)
+- `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
+- Coverage must be ≥ 97% (enforced by CI and pre-commit)
+
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
+
 ## Key Files
 
 | File                                  | Purpose                                                                                                 |
@@ -120,6 +131,9 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                             |
 | `docs/revolut-x-api-docs.md`          | Revolut X API reference — single source of truth                                                        |
 | `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                        |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                      |
+| `docs/ARCHITECTURE.md`                | Component details and data flow                                                                         |
+| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                              |
 | `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts   |
 
 ## Commit Message Convention
