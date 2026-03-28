@@ -331,8 +331,54 @@ class TestCloseOrderOnStopTakeProfit:
             close_order = mock_execute.call_args[0][0]
             assert close_order.order_type == OrderType.MARKET
 
+    @pytest.mark.asyncio
+    async def test_update_market_prices_returns_close_order_on_sl(self, paper_executor):
+        """update_market_prices must return the filled close Order when SL fires
+        so the caller (bot._process_symbol) can update cash balance and persist the trade."""
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.stop_loss = Decimal("49000")
+        paper_executor.positions["BTC-EUR"] = pos
 
-class TestRealizedPnL:
+        close_order = await paper_executor.update_market_prices("BTC-EUR", Decimal("48000"))
+
+        assert close_order is not None
+        assert close_order.status == OrderStatus.FILLED
+        assert close_order.side == OrderSide.SELL
+        assert close_order.symbol == "BTC-EUR"
+
+    @pytest.mark.asyncio
+    async def test_update_market_prices_returns_close_order_on_tp(self, paper_executor):
+        """update_market_prices must return the filled close Order when TP fires."""
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.take_profit = Decimal("52000")
+        paper_executor.positions["BTC-EUR"] = pos
+
+        close_order = await paper_executor.update_market_prices("BTC-EUR", Decimal("53000"))
+
+        assert close_order is not None
+        assert close_order.status == OrderStatus.FILLED
+        assert close_order.side == OrderSide.SELL
+
+    @pytest.mark.asyncio
+    async def test_update_market_prices_returns_none_when_no_sl_tp_hit(self, paper_executor):
+        """update_market_prices returns None when price does not hit SL or TP."""
+        pos = make_position(quantity=Decimal("0.1"), entry_price=Decimal("50000"))
+        pos.stop_loss = Decimal("49000")
+        pos.take_profit = Decimal("52000")
+        paper_executor.positions["BTC-EUR"] = pos
+
+        # Price is between SL and TP
+        result = await paper_executor.update_market_prices("BTC-EUR", Decimal("50500"))
+        assert result is None
+        assert "BTC-EUR" in paper_executor.positions  # Position still open
+
+    @pytest.mark.asyncio
+    async def test_update_market_prices_returns_none_when_no_position(self, paper_executor):
+        """update_market_prices returns None when there is no position to check."""
+        result = await paper_executor.update_market_prices("BTC-EUR", Decimal("50000"))
+        assert result is None
+
+
     @pytest.mark.asyncio
     async def test_reduce_buy_position_positive_pnl(self, paper_executor):
         """Selling part of a BUY position above entry price yields positive PnL."""
