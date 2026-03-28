@@ -105,19 +105,20 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal)                                                     |
 | `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns)                                                     |
 | `src/risk_management/risk_manager.py` | Risk validation and position sizing                                                                     |
-| `src/execution/executor.py`           | Order execution and position management                                                                  |
+| `src/execution/executor.py`           | Order execution and position management                                                                 |
 | `src/strategies/base_strategy.py`     | Abstract base all strategies implement                                                                  |
 | `src/utils/onepassword.py`            | 1Password CLI wrapper                                                                                   |
 | `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations                                                      |
 | `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password                                                      |
-| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                  |
+| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                   |
 | `src/utils/rate_limiter.py`           | API rate limiting                                                                                       |
-| `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — 0% maker / 0.09% taker                                   |
+| `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — 0% maker / 0.09% taker                                    |
 | `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, taker fees |
 | `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                  |
 | `tests/test_config.py`                | Configuration loading and validation tests                                                              |
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                             |
 | `docs/revolut-x-api-docs.md`          | Revolut X API reference — single source of truth                                                        |
+| `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                        |
 
 ## Commit Message Convention
 

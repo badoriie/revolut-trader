@@ -87,7 +87,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
-**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys, public keys, trading configuration, and the database encryption key from the environment-specific items. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
+**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys (Ed25519 — public keys are uploaded directly to the Revolut X platform, not stored in 1Password), trading configuration, and the database encryption key from the environment-specific items. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
@@ -239,6 +239,7 @@ Every code change **must** include corresponding documentation updates. This is 
 - Inline docstrings — logic changes, new functions, modified behavior
 - `CLAUDE.md` — architectural changes, new components, workflow changes
 - `.github/copilot-instructions.md` — keep in sync with `CLAUDE.md` (tool-agnostic sections)
+- `docs/USER_GUIDE.md` — user-facing changes: new config keys, new commands, changed behavior
 - `docs/` files — API changes, strategy changes, development guidelines
 
 Claude Code must handle this proactively without being asked.
@@ -266,6 +267,7 @@ Claude Code must handle this proactively without being asked.
 | `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                                                                                                                                                   |
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                                                                                                                                                              |
 | `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)                                                                                                                                                                               |
+| `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                                                                                                                                                         |
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
