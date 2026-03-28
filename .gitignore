@@ -37,6 +37,9 @@ venv/
 # IDE
 .idea/
 
+# macOS
+.DS_Store
+
 # Revolut Trader
 
 # Runtime logs

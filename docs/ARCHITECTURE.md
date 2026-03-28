@@ -2,64 +2,94 @@
 
 ## Component Hierarchy
 
-```
-cli/run.py  (entry point)
-    └── TradingBot  (src/bot.py)  — orchestrator
-        ├── RevolutAPIClient  (src/api/client.py)
-        │   └── RateLimiter  (src/utils/rate_limiter.py)
-        ├── RiskManager  (src/risk_management/risk_manager.py)
-        ├── OrderExecutor  (src/execution/executor.py)
-        │   ├── RevolutAPIClient
-        │   └── RiskManager
-        ├── BaseStrategy  (src/strategies/)
-        │   ├── MomentumStrategy         — EMA(12/26) + RSI
-        │   ├── MarketMakingStrategy     — bid/ask spread
-        │   ├── MeanReversionStrategy    — Bollinger Bands
-        │   ├── BreakoutStrategy         — rolling high/low + RSI
-        │   ├── RangeReversionStrategy   — 24h range position + RSI
-        │   └── MultiStrategy            — weighted voting across all
-        ├── DatabasePersistence  (src/utils/db_persistence.py)
-        │   ├── SQLAlchemy ORM  (src/models/db.py)
-        │   └── DatabaseEncryption  (src/utils/db_encryption.py)
-        └── Config  (src/config.py)
-            └── 1Password  (src/utils/onepassword.py)
+```mermaid
+graph TD
+    CLI["cli/run.py\n(entry point)"]
+    Bot["TradingBot\nsrc/bot.py"]
+    API["RevolutAPIClient\nsrc/api/client.py"]
+    MockAPI["MockRevolutAPIClient\nsrc/api/mock_client.py"]
+    Rate["RateLimiter\nsrc/utils/rate_limiter.py"]
+    Risk["RiskManager\nsrc/risk_management/risk_manager.py"]
+    Exec["OrderExecutor\nsrc/execution/executor.py"]
+    Strat["BaseStrategy\nsrc/strategies/"]
+    Momentum["MomentumStrategy\nEMA(12/26) + RSI"]
+    MarketMaking["MarketMakingStrategy\nbid/ask spread"]
+    MeanRev["MeanReversionStrategy\nBollinger Bands"]
+    Breakout["BreakoutStrategy\nrolling high/low + RSI"]
+    RangeRev["RangeReversionStrategy\n24h range + RSI"]
+    Multi["MultiStrategy\nweighted voting"]
+    DB["DatabasePersistence\nsrc/utils/db_persistence.py"]
+    ORM["SQLAlchemy ORM\nsrc/models/db.py"]
+    Enc["DatabaseEncryption\nsrc/utils/db_encryption.py"]
+    Cfg["Config\nsrc/config.py"]
+    OP["1Password\nsrc/utils/onepassword.py"]
+
+    CLI --> Bot
+    Bot --> API
+    Bot --> MockAPI
+    Bot --> Risk
+    Bot --> Exec
+    Bot --> Strat
+    Bot --> DB
+    Bot --> Cfg
+    API --> Rate
+    MockAPI --> Rate
+    Exec --> API
+    Exec --> Risk
+    Strat --> Momentum
+    Strat --> MarketMaking
+    Strat --> MeanRev
+    Strat --> Breakout
+    Strat --> RangeRev
+    Strat --> Multi
+    DB --> ORM
+    DB --> Enc
+    Cfg --> OP
 ```
 
 ______________________________________________________________________
 
 ## Main Data Flow (strategy-dependent interval: 5s / 10s / 15s)
 
+```mermaid
+flowchart TD
+    Start([run_trading_loop]) --> Tickers["get_tickers()\n1 batch API call → dict[symbol, MarketData]"]
+    Tickers --> ForEach{for each symbol}
+    ForEach --> Analyze["strategy.analyze()\n→ Signal: BUY / SELL / HOLD"]
+    Analyze --> SigCheck{signal strength\n≥ min threshold?}
+    SigCheck -- No --> Discard([discard signal])
+    SigCheck -- Yes --> CalcSize["RiskManager.calculate_position_size()"]
+    CalcSize --> Validate["RiskManager.validate_order()\ntwo-layer check"]
+    Validate -- Rejected --> Discard
+    Validate -- Approved --> Mode{Paper or Live?}
+    Mode -- Paper --> SimFill["simulate fill\n+ calculate_fee() → order.commission"]
+    Mode -- Live --> APIOrder["API.create_order()"]
+    SimFill --> UpdatePos["_update_positions()\nrealized_pnl = gross_pnl − commission"]
+    APIOrder --> UpdatePos
+    UpdatePos --> SaveTrade["persistence.save_trade()\npnl + fee stored in trades table"]
+    SaveTrade --> ForEach
+    ForEach --> Snapshot["save_portfolio_snapshot()\nevery 60s wall-clock"]
+    Snapshot --> DailyPnL["RiskManager.update_daily_pnl()\nsuspend trading if limit hit"]
 ```
-run_trading_loop()
-    └── RevolutAPIClient.get_tickers()          → dict[symbol, MarketData]  (1 batch call)
-    └── [parallel for each symbol]
-        ├── MarketData (from batch)             → pre-fetched, no per-symbol call
-        ├── strategy.analyze()                  → Signal (BUY/SELL/HOLD)
-        ├── executor.execute_signal()
-        │   ├── RiskManager.calculate_position_size()
-        │   ├── RiskManager.validate_order()    → two-layer check
-        │   ├── Paper: simulate fill + calculate_fee() → order.commission
-        │   │   Live:  API.create_order()
-        │   └── _update_positions(): set order.realized_pnl = gross_pnl - fee
-        └── persistence.save_trade()            → pnl + fee stored in trades table
-    └── save_portfolio_snapshot()
-    └── RiskManager.update_daily_pnl()          → suspend if limit hit
 
-stop()  (graceful shutdown on Ctrl-C or error)
-    └── executor.graceful_shutdown(trailing_stop_pct, max_wait_seconds)
-        ├── Phase 1: cancel_all_orders()           → cancel unmonitored orders
-        ├── Phase 2: for each position (unrealized_pnl < 0):
-        │   └── close immediately via market order
-        ├── Phase 3: for each position (unrealized_pnl ≥ 0):
-        │   ├── if SHUTDOWN_TRAILING_STOP_PCT set:
-        │   │   ├── poll get_ticker() every 2s
-        │   │   ├── track high-watermark, trailing_stop = watermark × (1 - pct%)
-        │   │   ├── close when price ≤ trailing_stop OR timeout expires
-        │   └── else: close immediately via market order
-        └── return ShutdownSummary             → bot updates cash balance
-            GUARANTEE: executor.positions == {} after return
-    └── persistence.save_data()                → final snapshot to DB
-    └── persistence.end_session()              → record final metrics
+## Graceful Shutdown Flow
+
+```mermaid
+flowchart TD
+    Stop(["stop()\nCtrl-C or error"]) --> P1["Phase 1\ncancel_all_orders()"]
+    P1 --> P2{for each losing position\nunrealized_pnl < 0}
+    P2 --> CloseImm1["close immediately\nvia MARKET order"]
+    CloseImm1 --> P3{for each profitable position\nunrealized_pnl ≥ 0}
+    P3 --> HasTrail{SHUTDOWN_TRAILING_STOP_PCT\nconfigured?}
+    HasTrail -- Yes --> Poll["poll get_ticker() every 2s\ntrack high-watermark"]
+    Poll --> TrailCheck{"price ≤ watermark × (1 − pct%)\nOR timeout?"}
+    TrailCheck -- No --> Poll
+    TrailCheck -- Yes --> CloseTrail["close via MARKET order"]
+    HasTrail -- No --> CloseImm2["close immediately\nvia MARKET order"]
+    CloseTrail --> Summary["return ShutdownSummary\nGUARANTEE: positions == {}"]
+    CloseImm2 --> Summary
+    Summary --> SaveData["persistence.save_data()\nfinal snapshot to DB"]
+    SaveData --> EndSession["persistence.end_session()\nrecord final metrics"]
 ```
 
 ______________________________________________________________________
