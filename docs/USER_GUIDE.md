@@ -21,6 +21,7 @@ ______________________________________________________________________
 1. [Deploying Unattended (Raspberry Pi / Server)](#11-deploying-unattended-raspberry-pi--server)
 1. [Troubleshooting](#12-troubleshooting)
 1. [FAQ](#13-faq)
+1. [Trading Terminology](#14-trading-terminology)
 
 ______________________________________________________________________
 
@@ -400,13 +401,43 @@ make db-analytics     # trading analytics (default: last 30 days)
 make db-analytics DAYS=7   # last 7 days
 make db-backtests     # list recent backtest runs with metrics
 make db-export-csv    # export trades and snapshots to CSV files
+make db-report        # comprehensive analytics report with charts (default: last 30 days)
+make db-report DAYS=7 DIR=data/reports  # custom window and output directory
 ```
 
-The analytics report shows:
+The basic `db-analytics` report shows:
 
 - Total trades and win rate
 - Total P&L and fees
 - Portfolio return percentage over the period
+
+### Comprehensive analytics report
+
+`make db-report` produces a deeper analysis of all data in the database:
+
+```bash
+# Install chart dependencies first (one-time):
+uv sync --extra analytics
+
+# Generate the report (saves to data/reports/):
+make db-report DAYS=30
+```
+
+The report includes:
+
+- **Core metrics**: win rate, total P&L, return %, fees, Sharpe ratio, Sortino ratio, max drawdown, profit factor
+- **Per-symbol breakdown**: trade count, win rate, P&L, and fee totals for every traded pair
+- **Per-strategy breakdown**: same metrics grouped by strategy for live/paper trades
+- **Backtest summary**: best strategy, success rate, and average return across all stored backtest runs
+- **Improvement suggestions**: rule-based observations flagging low win rates, high fee drag, excessive drawdown, weak Sharpe, and consistently losing symbols
+- **Charts** (requires `--extra analytics`):
+  - `equity_curve.png` — portfolio value over time
+  - `drawdown.png` — peak-to-trough drawdown percentage
+  - `pnl_distribution.png` — histogram of individual trade P&Ls
+  - `symbol_performance.png` — P&L bar chart by trading pair
+  - `backtest_comparison.png` — best backtest return by strategy
+
+A `report.md` markdown file is also written to the output directory, making it easy to paste into GitHub Actions job summaries or share with collaborators.
 
 ### Verifying encryption
 
@@ -597,3 +628,144 @@ The bot will never sell a cryptocurrency it did not purchase itself. If you hold
 
 **Q: Which environments use real money?**
 Only `prod` (`make run-live`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
+
+______________________________________________________________________
+
+## 14. Trading Terminology
+
+Plain-language definitions for every term that appears in this app's configuration, output, or reports. No prior trading knowledge needed.
+
+______________________________________________________________________
+
+### Portfolio & Positions
+
+**Trading pair** (`TRADING_PAIRS`)
+Written as `BASE-QUOTE` — for example `BTC-EUR`. The bot buys and sells the left side (BTC) using the right side (EUR) as the payment currency. All pairs in this app must end in your `BASE_CURRENCY`.
+
+**Portfolio**
+Everything the bot manages: your cash (EUR) plus the current value of any open holdings. Shown as **Total Value** in analytics output.
+
+**Capital** (`INITIAL_CAPITAL`, `MAX_CAPITAL`)
+The EUR the bot is allowed to trade with. `INITIAL_CAPITAL` sets the starting amount for paper/mock mode. `MAX_CAPITAL` caps spending even if your account holds more — useful when you want the bot to use only a portion of your balance.
+
+**Position**
+An active holding in one asset. When the bot buys BTC, it opens a BTC position. When it sells, it closes the position and returns to EUR.
+
+**P&L (Profit and Loss)**
+The money made or lost. Shown throughout the app as `Total P&L`, `Daily P&L`, etc.
+
+- **Realised P&L** — locked-in gain or loss from already-closed positions. This is in your cash balance.
+- **Unrealised P&L** — the paper gain or loss on positions you still hold. It changes every time the price moves and only becomes real when you sell.
+
+**Return %**
+Total gain or loss as a percentage of starting capital. `+8.5%` on €10,000 means you made €850.
+
+**Fee**
+The cost Revolut X charges per trade. Market orders: **0.09%** of the trade value. Limit orders: **0%**. Fees are deducted from your P&L and shown as `Total Fees` in every report.
+
+______________________________________________________________________
+
+### Orders & Signals
+
+**Market order**
+Executes immediately at the current market price. Guarantees a fast fill but costs the 0.09% taker fee. Used by `momentum` and `breakout` strategies where speed matters.
+
+**Limit order**
+Executes only at a price you specify (or better). Has no fee (0% maker). May not fill immediately. Used by `mean_reversion`, `range_reversion`, `market_making`, and `multi_strategy`.
+
+**Spread**
+The built-in gap between the buy price and sell price on any exchange. The backtesting engine models this as ~0.1% — meaning backtests deduct this cost on every trade to stay realistic.
+
+**Signal**
+The decision a strategy produces each loop: buy, sell, or do nothing. Comes with a confidence score between 0 and 1.
+
+**Signal strength** (min confidence threshold)
+How confident the strategy is in its signal. Each strategy has a minimum threshold — signals below it are discarded without placing an order. This prevents the bot from trading on weak, unreliable signals.
+
+**Candle / interval** (`INTERVAL` in backtests)
+A candle summarises price activity over a fixed time window: opening price, highest price, lowest price, closing price. The `INTERVAL` parameter sets how long each candle covers (in minutes). A 60-minute interval means the bot looks at one-hour snapshots of price data. Shorter intervals give more signals but more noise; longer intervals give cleaner trends but fewer trades.
+
+______________________________________________________________________
+
+### Indicators (used by the strategies)
+
+The strategies use these calculations on recent price history to decide when to buy or sell. They are selected automatically by the strategy — you do not configure them directly.
+
+| Indicator                            | Used by                | What it does                                                                                                                                                                                |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **EMA** (Exponential Moving Average) | `momentum`             | Tracks the average price with more weight on recent data. A fast EMA crossing above a slow EMA suggests upward momentum.                                                                    |
+| **RSI** (Relative Strength Index)    | `momentum`, `breakout` | A 0–100 score measuring how fast the price has been moving. Above 70 suggests the price may be overextended; below 30 suggests it may be undervalued.                                       |
+| **Bollinger Bands**                  | `mean_reversion`       | Three lines around the price: a middle average and upper/lower boundaries. When price touches the upper band it may be stretched too high; lower band too low — both can signal a reversal. |
+
+______________________________________________________________________
+
+### Risk Controls
+
+**Stop-loss** (per-strategy %, e.g. `2.5%`)
+A safety exit. If a position's loss reaches this percentage, the bot sells immediately. For example, buying BTC at €50,000 with a 2.5% stop-loss means the bot sells automatically if the price drops to €48,750 — capping the loss.
+
+**Take-profit** (per-strategy %, e.g. `4.0%`)
+A gain-locking exit. When a position's profit reaches this percentage, the bot sells to secure the gain. With a 4% take-profit on the same BTC purchase, the bot sells at €52,000.
+
+**Trailing stop** (`SHUTDOWN_TRAILING_STOP_PCT`)
+A stop-loss that follows the price upward but never moves down. Used only during bot shutdown for profitable positions. If BTC rises to €55,000 and you set a 0.5% trailing stop, the bot waits until the price pulls back 0.5% from its peak (€54,725) before selling — locking in most of the gain rather than selling immediately.
+
+**Position size** (set by `RISK_LEVEL`)
+How much of your portfolio is committed to a single trade, as a percentage. Conservative: 1.5%, Moderate: 3%, Aggressive: 5%. Smaller = less risk per trade.
+
+**Max daily loss** (set by `RISK_LEVEL`)
+A daily circuit breaker. Once cumulative losses hit this percentage of the portfolio, the bot stops opening new trades for the rest of the day. Conservative: 3%, Moderate: 5%, Aggressive: 10%.
+
+**Max open positions** (set by `RISK_LEVEL`)
+The maximum number of different assets the bot holds at once. Conservative: 3, Moderate: 5, Aggressive: 8.
+
+______________________________________________________________________
+
+### Performance Metrics
+
+Appear in backtest results (`make db-backtests`) and the analytics report (`make db-report`).
+
+**Win rate**
+Percentage of closed trades that made money. 24 wins out of 42 trades = 57% win rate. Always read alongside profit factor — a high win rate with tiny gains and large losses is still a losing strategy.
+
+**Profit factor**
+Total profit from winning trades ÷ total loss from losing trades. `1.87` means you earned €1.87 for every €1 lost. Above 1.0 = net profitable. Above 1.5 = solid. Above 2.0 = excellent.
+
+**Max drawdown**
+The largest peak-to-trough fall in portfolio value over a period, as a percentage. If your portfolio hit €11,500 then dropped to €10,350 before recovering, the drawdown was 10%. It shows the worst stretch you would have had to sit through. Lower is better.
+
+**Sharpe ratio**
+Return relative to overall volatility — "how much am I earning per unit of risk?" Higher is better.
+
+| Value     | Meaning                         |
+| --------- | ------------------------------- |
+| Below 0   | Losing on a risk-adjusted basis |
+| 0 – 0.5   | Weak                            |
+| 0.5 – 1.0 | Acceptable                      |
+| 1.0 – 2.0 | Good                            |
+| Above 2.0 | Excellent                       |
+
+**Sortino ratio**
+Like Sharpe, but only penalises downward volatility (losses). Upward swings are not counted against the strategy. A Sortino higher than Sharpe means the strategy's volatility comes mostly from gains, not losses — which is a good sign.
+
+**Equity curve**
+The `equity_curve.png` chart in `make db-report`. A line showing portfolio total value over time. Steadily rising = healthy. Flat or declining = investigate.
+
+______________________________________________________________________
+
+### Bot Modes & Environments
+
+**Mock mode** (`make run-mock`, `ENVIRONMENT=dev`)
+Fully simulated — fake prices, no API calls, no credentials needed. Use it to explore the interface and test configuration changes without connecting to anything.
+
+**Paper trading** (`make run-paper`, `ENVIRONMENT=int`)
+Real live market data from Revolut X, but all orders are simulated in software. Your balance is never touched. Always paper-trade before going live.
+
+**Live trading** (`make run-live`, `ENVIRONMENT=prod`)
+Real orders sent to Revolut X. Real money. Requires prod credentials in 1Password and an explicit confirmation prompt.
+
+**Backtesting** (`make backtest`, `make backtest-compare`)
+Replaying a strategy against historical candle data to estimate how it would have performed. The engine applies the same fees, spread, stop-loss/take-profit logic, and signal filters as the live bot, so results are as realistic as possible.
+
+**Session**
+One complete run of the bot from start to graceful shutdown. The database records each session with its start time, end time, total trades, and final balance — visible in `make db-stats`.

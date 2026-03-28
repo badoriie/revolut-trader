@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import desc, func
+from sqlalchemy import case, desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -426,6 +426,142 @@ class DatabasePersistence:
                 return analytics
         except SQLAlchemyError:
             return {}
+
+    def get_symbol_analytics(self, days: int = 30) -> list[dict[str, Any]]:
+        """Per-symbol trade breakdown: counts, win rate, and P&L over the last *days* days.
+
+        Only trades that have a recorded P&L (i.e. closing/reducing trades) are
+        included so that open BUY legs don't distort win-rate figures.
+
+        Args:
+            days: Look-back window in calendar days.
+
+        Returns:
+            List of symbol dicts sorted by total P&L (descending), or ``[]`` on error.
+        """
+        try:
+            since = datetime.now(UTC) - timedelta(days=days)
+            with self._session() as sess:
+                rows = (
+                    sess.query(
+                        TradeDB.symbol,
+                        func.count(TradeDB.id).label("total_trades"),
+                        func.sum(case((TradeDB.pnl > 0, 1), else_=0)).label("winning"),
+                        func.sum(case((TradeDB.pnl < 0, 1), else_=0)).label("losing"),
+                        func.sum(TradeDB.pnl).label("total_pnl"),
+                        func.avg(TradeDB.pnl).label("avg_pnl"),
+                        func.sum(TradeDB.fee).label("total_fees"),
+                    )
+                    .filter(TradeDB.created_at >= since, TradeDB.pnl.isnot(None))
+                    .group_by(TradeDB.symbol)
+                    .order_by(desc(func.sum(TradeDB.pnl)))
+                    .all()
+                )
+                return [
+                    {
+                        "symbol": r.symbol,
+                        "total_trades": r.total_trades,
+                        "winning": int(r.winning or 0),
+                        "losing": int(r.losing or 0),
+                        "win_rate": float(r.winning / r.total_trades * 100)
+                        if r.total_trades
+                        else 0.0,
+                        "total_pnl": float(r.total_pnl) if r.total_pnl is not None else 0.0,
+                        "avg_pnl": float(r.avg_pnl) if r.avg_pnl is not None else 0.0,
+                        "total_fees": float(r.total_fees) if r.total_fees is not None else 0.0,
+                    }
+                    for r in rows
+                ]
+        except SQLAlchemyError:
+            return []
+
+    def get_strategy_live_analytics(self, days: int = 30) -> list[dict[str, Any]]:
+        """Per-strategy trade breakdown from live/paper trades over the last *days* days.
+
+        Mirrors ``get_symbol_analytics`` but groups by strategy instead of symbol.
+        Only trades with a recorded P&L are included.
+
+        Args:
+            days: Look-back window in calendar days.
+
+        Returns:
+            List of strategy dicts sorted by total P&L (descending), or ``[]`` on error.
+        """
+        try:
+            since = datetime.now(UTC) - timedelta(days=days)
+            with self._session() as sess:
+                rows = (
+                    sess.query(
+                        TradeDB.strategy,
+                        func.count(TradeDB.id).label("total_trades"),
+                        func.sum(case((TradeDB.pnl > 0, 1), else_=0)).label("winning"),
+                        func.sum(case((TradeDB.pnl < 0, 1), else_=0)).label("losing"),
+                        func.sum(TradeDB.pnl).label("total_pnl"),
+                        func.avg(TradeDB.pnl).label("avg_pnl"),
+                        func.sum(TradeDB.fee).label("total_fees"),
+                    )
+                    .filter(TradeDB.created_at >= since, TradeDB.pnl.isnot(None))
+                    .group_by(TradeDB.strategy)
+                    .order_by(desc(func.sum(TradeDB.pnl)))
+                    .all()
+                )
+                return [
+                    {
+                        "strategy": r.strategy or "unknown",
+                        "total_trades": r.total_trades,
+                        "winning": int(r.winning or 0),
+                        "losing": int(r.losing or 0),
+                        "win_rate": float(r.winning / r.total_trades * 100)
+                        if r.total_trades
+                        else 0.0,
+                        "total_pnl": float(r.total_pnl) if r.total_pnl is not None else 0.0,
+                        "avg_pnl": float(r.avg_pnl) if r.avg_pnl is not None else 0.0,
+                        "total_fees": float(r.total_fees) if r.total_fees is not None else 0.0,
+                    }
+                    for r in rows
+                ]
+        except SQLAlchemyError:
+            return []
+
+    def get_portfolio_value_series(
+        self, days: int = 90, limit: int = 10_000
+    ) -> list[dict[str, Any]]:
+        """Return a time-ordered series of portfolio values for charting and Sharpe computation.
+
+        Unlike ``load_portfolio_snapshots``, this method returns only the fields
+        needed for financial analytics — timestamp, total_value, total_pnl, and
+        cash_balance — and converts values to ``float`` for downstream numerical
+        libraries.
+
+        Args:
+            days: Look-back window in calendar days.
+            limit: Maximum number of rows to return (applied after the date filter).
+
+        Returns:
+            List of dicts with keys ``timestamp`` (ISO string), ``total_value``,
+            ``total_pnl``, ``cash_balance``, all as ``float``, or ``[]`` on error.
+        """
+        try:
+            since = datetime.now(UTC) - timedelta(days=days)
+            with self._session() as sess:
+                rows = (
+                    sess.query(PortfolioSnapshotDB)
+                    .filter(PortfolioSnapshotDB.timestamp >= since)
+                    .order_by(PortfolioSnapshotDB.timestamp)
+                    .limit(limit)
+                    .all()
+                )
+                return [
+                    {
+                        "timestamp": r.timestamp.isoformat(),
+                        "total_value": float(r.total_value),
+                        "total_pnl": float(r.total_pnl),
+                        "cash_balance": float(r.cash_balance),
+                    }
+                    for r in rows
+                ]
+        except SQLAlchemyError:
+            return []
 
     # ---------------------------------------------------------------------------
     # Backtest runs

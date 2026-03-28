@@ -48,6 +48,7 @@ make db-stats                # show database statistics
 make db-analytics            # trading analytics (DAYS=30)
 make db-encrypt-setup        # generate and store encryption key in 1Password
 make db-encrypt-status       # check if encryption is active
+make db-report               # comprehensive analytics report with charts (DAYS=30, DIR=data/reports)
 
 # API utilities (use ENV to select API keys)
 make api-test ENV=int
@@ -119,6 +120,7 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                             |
 | `docs/revolut-x-api-docs.md`          | Revolut X API reference — single source of truth                                                        |
 | `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                        |
+| `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts   |
 
 ## Commit Message Convention
 

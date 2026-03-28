@@ -49,6 +49,7 @@ make db-stats                # show database statistics
 make db-analytics            # trading analytics (DAYS=30)
 make db-encrypt-setup        # generate and store encryption key in 1Password
 make db-encrypt-status       # check if encryption is active
+make db-report               # comprehensive analytics report with charts (DAYS=30, DIR=data/reports)
 
 # API utilities (use ENV to select API keys)
 make api-test ENV=int
@@ -109,9 +110,11 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
 
-**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export).
+**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions).
 
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `release.yml` (manual production release — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`).
+**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols.
+
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `analytics.yml` (manual analytics report — runs a quick backtest to populate DB, then generates the full report with charts as artifacts and posts markdown to the job summary), `release.yml` (manual production release — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`).
 
 ## Commit Message Convention
 
@@ -271,3 +274,4 @@ Claude Code must handle this proactively without being asked.
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
+| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |

@@ -26,6 +26,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+analytics = [
+    "matplotlib~=3.10",
+    "numpy~=2.2",
+]
 dev = [
     "pytest~=9.0",
     "pytest-asyncio~=1.3",

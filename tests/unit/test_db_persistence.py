@@ -529,3 +529,125 @@ class TestAnalyticsFeeAndLosingTrades:
     def test_analytics_losing_trades_zero_when_no_trades(self, db_persistence):
         analytics = db_persistence.get_analytics(days=30)
         assert analytics["losing_trades"] == 0
+
+
+class TestSymbolAnalytics:
+    def test_empty_returns_empty_list(self, db_persistence):
+        assert db_persistence.get_symbol_analytics(days=30) == []
+
+    def test_single_symbol_winning_trade(self, db_persistence):
+        db_persistence.save_trade(
+            make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("100"))
+        )
+        results = db_persistence.get_symbol_analytics(days=30)
+        assert len(results) == 1
+        assert results[0]["symbol"] == "BTC-EUR"
+        assert results[0]["winning"] == 1
+        assert results[0]["losing"] == 0
+        assert results[0]["win_rate"] == pytest.approx(100.0)
+        assert results[0]["total_pnl"] == pytest.approx(100.0)
+
+    def test_multiple_symbols_sorted_by_pnl(self, db_persistence):
+        db_persistence.save_trade(make_order_with_pnl(symbol="ETH-EUR", realized_pnl=Decimal("50")))
+        db_persistence.save_trade(
+            make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("200"))
+        )
+        results = db_persistence.get_symbol_analytics(days=30)
+        assert results[0]["symbol"] == "BTC-EUR"
+        assert results[1]["symbol"] == "ETH-EUR"
+
+    def test_trades_without_pnl_excluded(self, db_persistence):
+        db_persistence.save_trade(make_order_with_pnl(symbol="BTC-EUR", realized_pnl=None))
+        results = db_persistence.get_symbol_analytics(days=30)
+        assert results == []
+
+    def test_win_rate_mixed_results(self, db_persistence):
+        win_order = make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("100"))
+        win_order.order_id = "order-win-btc"
+        loss_order = make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("-50"))
+        loss_order.order_id = "order-loss-btc"
+        db_persistence.save_trade(win_order)
+        db_persistence.save_trade(loss_order)
+        results = db_persistence.get_symbol_analytics(days=30)
+        assert len(results) == 1
+        assert results[0]["winning"] == 1
+        assert results[0]["losing"] == 1
+        assert results[0]["win_rate"] == pytest.approx(50.0)
+
+    def test_returns_empty_on_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("fail")):
+            assert db_persistence.get_symbol_analytics() == []
+
+
+class TestStrategyLiveAnalytics:
+    def test_empty_returns_empty_list(self, db_persistence):
+        assert db_persistence.get_strategy_live_analytics(days=30) == []
+
+    def test_single_strategy_aggregated(self, db_persistence):
+        db_persistence.save_trade(make_order_with_pnl(symbol="BTC-EUR", realized_pnl=Decimal("80")))
+        db_persistence.save_trade(make_order_with_pnl(symbol="ETH-EUR", realized_pnl=Decimal("20")))
+        results = db_persistence.get_strategy_live_analytics(days=30)
+        assert len(results) == 1
+        assert results[0]["strategy"] == "momentum"
+        assert results[0]["total_trades"] == 2
+        assert results[0]["total_pnl"] == pytest.approx(100.0)
+
+    def test_multiple_strategies_sorted_by_pnl(self, db_persistence):
+        order_a = Order(
+            order_id="order-strat-a",
+            symbol="BTC-EUR",
+            side=OrderSide.SELL,
+            order_type=OrderType.LIMIT,
+            quantity=Decimal("0.1"),
+            price=Decimal("51000"),
+            status=OrderStatus.FILLED,
+            strategy="breakout",
+            filled_quantity=Decimal("0.1"),
+        )
+        order_a.realized_pnl = Decimal("300")
+        db_persistence.save_trade(order_a)
+        db_persistence.save_trade(make_order_with_pnl(symbol="ETH-EUR", realized_pnl=Decimal("50")))
+        results = db_persistence.get_strategy_live_analytics(days=30)
+        assert results[0]["strategy"] == "breakout"
+
+    def test_returns_empty_on_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("fail")):
+            assert db_persistence.get_strategy_live_analytics() == []
+
+
+class TestPortfolioValueSeries:
+    def test_empty_returns_empty_list(self, db_persistence):
+        assert db_persistence.get_portfolio_value_series(days=30) == []
+
+    def test_returns_float_values(self, db_persistence):
+        db_persistence.save_portfolio_snapshot(make_snapshot(10000.0), "m", "c", "p")
+        results = db_persistence.get_portfolio_value_series(days=30)
+        assert len(results) == 1
+        assert isinstance(results[0]["total_value"], float)
+        assert results[0]["total_value"] == pytest.approx(10000.0)
+
+    def test_returns_required_keys(self, db_persistence):
+        db_persistence.save_portfolio_snapshot(make_snapshot(), "m", "c", "p")
+        results = db_persistence.get_portfolio_value_series(days=30)
+        keys = results[0].keys()
+        assert "timestamp" in keys
+        assert "total_value" in keys
+        assert "total_pnl" in keys
+        assert "cash_balance" in keys
+
+    def test_chronological_order(self, db_persistence):
+        for v in [10000.0, 10100.0, 10200.0]:
+            db_persistence.save_portfolio_snapshot(make_snapshot(v), "m", "c", "p")
+        results = db_persistence.get_portfolio_value_series(days=30)
+        values = [r["total_value"] for r in results]
+        assert values == sorted(values)
+
+    def test_respects_limit(self, db_persistence):
+        for _ in range(10):
+            db_persistence.save_portfolio_snapshot(make_snapshot(), "m", "c", "p")
+        results = db_persistence.get_portfolio_value_series(days=30, limit=5)
+        assert len(results) == 5
+
+    def test_returns_empty_on_sqlalchemy_error(self, db_persistence):
+        with patch.object(db_persistence, "_session", side_effect=SQLAlchemyError("fail")):
+            assert db_persistence.get_portfolio_value_series() == []

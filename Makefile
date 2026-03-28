@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
 # Environment — dev (default), int, prod
@@ -99,6 +99,7 @@ help:
 	@echo "  make db-export-csv     - Export data to CSV"
 	@echo "  make db-encrypt-setup  - Generate and store encryption key in 1Password"
 	@echo "  make db-encrypt-status - Check if database encryption is active"
+	@echo "  make db-report         - Comprehensive analytics report with charts (DAYS=30)"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
@@ -664,3 +665,6 @@ db-encrypt-setup:
 
 db-encrypt-status:
 	@ENVIRONMENT=$(ENV) uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled)"
+
+db-report:
+	ENVIRONMENT=$(ENV) uv run python cli/analytics_report.py --days $${DAYS:-30} --output-dir $${DIR:-data/reports}

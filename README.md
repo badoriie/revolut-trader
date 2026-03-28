@@ -186,6 +186,7 @@ revolut-trader/
 │   │   ├── ci.yml            # CI pipeline (lint, typecheck, security, tests)
 │   │   ├── sonarcloud.yml    # SonarCloud code scanning
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
+│   │   ├── analytics.yml     # Manual analytics report with charts (via Actions console)
 │   │   └── release.yml       # Manual production release workflow
 │   ├── copilot-instructions.md  # GitHub Copilot instructions (mirrors CLAUDE.md)
 │   └── dependabot.yml        # Automated dependency updates
@@ -204,7 +205,8 @@ revolut-trader/
 │   ├── backtest.py           # Single strategy backtest
 │   ├── backtest_compare.py   # Multi-strategy comparison + matrix
 │   ├── api_test.py           # API connectivity and endpoint testing
-│   └── db_manage.py          # Database management and export
+│   ├── db_manage.py          # Database management and export
+│   └── analytics_report.py   # Comprehensive analytics report with charts
 ├── tests/
 │   ├── conftest.py           # Fixtures, ENVIRONMENT=dev setup
 │   ├── safety/               # Safety-critical tests (order limits, position sizing)
@@ -232,6 +234,7 @@ make db               # database overview (stats + analytics + recent backtests)
 make db-stats         # database statistics
 make db-analytics     # trading analytics (DAYS=30)
 make db-backtests     # backtest results
+make db-report        # comprehensive analytics report with charts (DAYS=30)
 make db-export        # export data to JSON
 make db-export-csv    # export to CSV
 make db-encrypt-status # check encryption status
@@ -261,6 +264,7 @@ GitHub Actions workflows:
   - Tests — pytest with coverage (≥ 97%)
 - **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
+- **Analytics Report** (`.github/workflows/analytics.yml`) — manual workflow that runs a quick backtest to populate the database, then generates a comprehensive analytics report (Sharpe, Sortino, drawdown, profit factor, per-symbol/strategy tables, rule-based suggestions). Posts markdown summary to the job summary and uploads chart PNGs as build artifacts
 - **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with the new changelog section as release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient
 
 Dependabot targets `main` — dependency PRs trigger int CI automatically.
