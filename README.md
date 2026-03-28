@@ -183,6 +183,7 @@ revolut-trader/
 │   │   ├── sonarcloud.yml    # SonarCloud code scanning
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
 │   │   └── release.yml       # Manual production release workflow
+│   ├── copilot-instructions.md  # GitHub Copilot instructions (mirrors CLAUDE.md)
 │   └── dependabot.yml        # Automated dependency updates
 ├── src/
 │   ├── api/                  # Revolut API client (Ed25519 auth) + mock client
@@ -222,9 +223,11 @@ revolut-trader/
 Trading data is stored in an encrypted SQLite database per environment (`data/dev.db`, `data/int.db`, `data/prod.db`).
 
 ```bash
-make db-stats         # database overview
+make db               # database overview (stats + analytics + recent backtests)
+make db-stats         # database statistics
 make db-analytics     # trading analytics (DAYS=30)
 make db-backtests     # backtest results
+make db-export        # export data to JSON
 make db-export-csv    # export to CSV
 make db-encrypt-status # check encryption status
 ```
@@ -236,7 +239,7 @@ See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 ```bash
 make test             # run tests with coverage
 make lint             # ruff check
-make format           # ruff format
+make format           # ruff format + ruff check --fix
 make typecheck        # pyright src/ cli/
 make check            # all of the above + tests
 make pre-commit       # run all pre-commit hooks

@@ -87,7 +87,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
-**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys, bot tokens, trading configuration, and the database encryption key from the environment-specific items. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
+**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys, public keys, trading configuration, and the database encryption key from the environment-specific items. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
 
 **Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
 
