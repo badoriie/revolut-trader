@@ -207,10 +207,11 @@ revolut-trader/
 │   ├── unit/                 # Component unit tests
 │   └── mocks/                # Mock 1Password for testing
 ├── docs/                     # Documentation
-│   ├── ARCHITECTURE.md       # Component details and data flow
-│   ├── BACKTESTING.md        # Backtesting guide
-│   ├── DEVELOPMENT_GUIDELINES.md  # TDD, coding standards, contribution rules
-│   ├── 1PASSWORD.md          # Credential and config setup
+│   ├── USER_GUIDE.md             # End-to-end user guide
+│   ├── ARCHITECTURE.md           # Component details and data flow
+│   ├── BACKTESTING.md            # Backtesting guide
+│   ├── DEVELOPMENT_GUIDELINES.md # TDD, coding standards, contribution rules
+│   ├── 1PASSWORD.md              # Credential and config setup
 │   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
 │   ├── revolut-trader.drawio     # Architecture diagram (draw.io)
@@ -312,14 +313,15 @@ make api-test   # test API connectivity
 
 ## Documentation
 
-| Document                                                   | Purpose                                            |
-| ---------------------------------------------------------- | -------------------------------------------------- |
-| [Architecture](docs/ARCHITECTURE.md)                       | Component details and data flow                    |
-| [Backtesting Guide](docs/BACKTESTING.md)                   | Metrics, interpretation, best practices            |
-| [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, contribution rules |
-| [1Password Setup](docs/1PASSWORD.md)                       | Credential and configuration management            |
-| [Raspberry Pi Deployment](docs/RASPBERRY_PI_DEPLOYMENT.md) | Running on Raspberry Pi                            |
-| [Revolut X API Docs](docs/revolut-x-api-docs.md)           | API reference (source of truth for all API code)   |
+| Document                                                   | Purpose                                                     |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| [User Guide](docs/USER_GUIDE.md)                           | End-to-end guide: setup, configuration, running, monitoring |
+| [Architecture](docs/ARCHITECTURE.md)                       | Component details and data flow                             |
+| [Backtesting Guide](docs/BACKTESTING.md)                   | Metrics, interpretation, best practices                     |
+| [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, contribution rules          |
+| [1Password Setup](docs/1PASSWORD.md)                       | Credential and configuration management                     |
+| [Raspberry Pi Deployment](docs/RASPBERRY_PI_DEPLOYMENT.md) | Running on Raspberry Pi                                     |
+| [Revolut X API Docs](docs/revolut-x-api-docs.md)           | API reference (source of truth for all API code)            |
 
 ## Warnings
 

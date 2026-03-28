@@ -2,6 +2,7 @@
 
 | Document                                                 | Description                                                                |
 | -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [USER_GUIDE.md](USER_GUIDE.md)                           | End-to-end user guide: setup, configuration, running, monitoring           |
 | [ARCHITECTURE.md](ARCHITECTURE.md)                       | Component hierarchy, data flow, key files, safety layers                   |
 | [DEVELOPMENT_GUIDELINES.md](DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, testing, performance, pre-commit checklist |
 | [1PASSWORD.md](1PASSWORD.md)                             | Credential & configuration setup, commands, troubleshooting                |
