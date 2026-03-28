@@ -186,7 +186,8 @@ revolut-trader/
 │   │   ├── ci.yml            # CI pipeline (lint, typecheck, security, tests)
 │   │   ├── sonarcloud.yml    # SonarCloud code scanning
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
-│   │   └── release.yml       # Manual production release workflow
+│   │   ├── release.yml       # Manual production release workflow
+│   │   └── diagrams.yml      # Auto-generate architecture diagrams (pyreverse)
 │   ├── copilot-instructions.md  # GitHub Copilot instructions (mirrors CLAUDE.md)
 │   └── dependabot.yml        # Automated dependency updates
 ├── src/
@@ -219,7 +220,6 @@ revolut-trader/
 │   ├── 1PASSWORD.md              # Credential and config setup
 │   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
-│   ├── revolut-trader.drawio     # Architecture diagram (draw.io)
 │   └── README.md                 # Documentation index
 └── Makefile                  # All project commands
 ```
@@ -264,6 +264,7 @@ GitHub Actions workflows:
 - **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
 - **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with the new changelog section as release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient
+- **Diagrams** (`.github/workflows/diagrams.yml`) — auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts (90-day retention)
 
 Dependabot targets `main` — dependency PRs trigger int CI automatically.
 
