@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -8,11 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.head_ref }}
+  group: ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
-  ENVIRONMENT: int
+  # main branch (post-merge push) → int; feature branch PRs → dev
+  ENVIRONMENT: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'int' || 'dev' }}
   PYTHON_VERSION: "3.11"
 
 jobs:
@@ -71,7 +74,7 @@ jobs:
         run: uv run bandit -c pyproject.toml -r src/ cli/
 
   test:
-    name: Tests (int)
+    name: Tests (${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'int' || 'dev' }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

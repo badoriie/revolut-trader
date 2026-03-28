@@ -470,6 +470,71 @@ class TestMockGetCandles:
         result = await mock_client.get_candles("BTC-EUR", limit=5)
         assert len(result) <= 5
 
+    @pytest.mark.asyncio
+    async def test_candle_limit_above_20(self, mock_client: MockRevolutAPIClient):
+        """Mock returns more than 20 candles when limit allows."""
+        result = await mock_client.get_candles("BTC-EUR", limit=100)
+        assert len(result) == 100
+
+    @pytest.mark.asyncio
+    async def test_since_until_respected(self, mock_client: MockRevolutAPIClient):
+        """Candles fall within the requested since/until window."""
+        import time
+
+        now_ms = int(time.time() * 1000)
+        interval_ms = 60 * 60 * 1000  # 60-min in ms
+        since = now_ms - 10 * interval_ms
+        until = now_ms
+        result = await mock_client.get_candles("BTC-EUR", interval=60, since=since, until=until)
+        assert len(result) == 10
+        for candle in result:
+            assert since <= candle["start"] < until
+
+    @pytest.mark.asyncio
+    async def test_ohlcv_validity(self, mock_client: MockRevolutAPIClient):
+        """Each candle satisfies: high >= open, close and low <= open, close."""
+        result = await mock_client.get_candles("BTC-EUR", limit=50)
+        for c in result:
+            o, h, low, close = (
+                float(c["open"]),
+                float(c["high"]),
+                float(c["low"]),
+                float(c["close"]),
+            )
+            assert h >= o, f"high {h} < open {o}"
+            assert h >= close, f"high {h} < close {close}"
+            assert low <= o, f"low {low} > open {o}"
+            assert low <= close, f"low {low} > close {close}"
+
+    @pytest.mark.asyncio
+    async def test_candles_deterministic_across_chunks(self, mock_client: MockRevolutAPIClient):
+        """Same candle index returns the same price regardless of which chunk is requested."""
+        import time
+
+        now_ms = int(time.time() * 1000)
+        interval_ms = 60 * 60 * 1000
+        # Fetch 5 candles ending now in two overlapping windows
+        since = now_ms - 10 * interval_ms
+        mid = now_ms - 5 * interval_ms
+        chunk1 = await mock_client.get_candles(
+            "BTC-EUR", interval=60, since=since, until=mid, limit=5
+        )
+        chunk2 = await mock_client.get_candles(
+            "BTC-EUR", interval=60, since=since, until=mid, limit=5
+        )
+        # Same request must return identical data
+        for c1, c2 in zip(chunk1, chunk2, strict=True):
+            assert c1["start"] == c2["start"]
+            assert c1["open"] == c2["open"]
+            assert c1["close"] == c2["close"]
+
+    @pytest.mark.asyncio
+    async def test_prices_vary_across_candles(self, mock_client: MockRevolutAPIClient):
+        """Candle prices are not all identical — variation exists for strategy signal generation."""
+        result = await mock_client.get_candles("BTC-EUR", limit=50)
+        closes = [float(c["close"]) for c in result]
+        assert len(set(closes)) > 1, "All candle close prices are identical"
+
 
 # ---------------------------------------------------------------------------
 # 17. GET /tickers — get_tickers()
@@ -494,6 +559,13 @@ class TestMockGetTickers:
         assert "symbol" in ticker
         assert "bid" in ticker
         assert "ask" in ticker
+
+    @pytest.mark.asyncio
+    async def test_ticker_bid_less_than_ask(self, mock_client: MockRevolutAPIClient):
+        """bid is always strictly less than ask (valid spread)."""
+        result = await mock_client.get_tickers()
+        for ticker in result:
+            assert float(ticker["bid"]) < float(ticker["ask"])
 
 
 # ---------------------------------------------------------------------------

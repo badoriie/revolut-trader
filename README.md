@@ -204,7 +204,8 @@ revolut-trader/
 │   ├── backtest.py           # Single strategy backtest
 │   ├── backtest_compare.py   # Multi-strategy comparison + matrix
 │   ├── api_test.py           # API connectivity and endpoint testing
-│   └── db_manage.py          # Database management and export
+│   ├── db_manage.py          # Database management and export
+│   └── analytics_report.py   # Comprehensive analytics report with charts
 ├── tests/
 │   ├── conftest.py           # Fixtures, ENVIRONMENT=dev setup
 │   ├── safety/               # Safety-critical tests (order limits, position sizing)
@@ -232,6 +233,7 @@ make db               # database overview (stats + analytics + recent backtests)
 make db-stats         # database statistics
 make db-analytics     # trading analytics (DAYS=30)
 make db-backtests     # backtest results
+make db-report        # comprehensive analytics report with charts (DAYS=30)
 make db-export        # export data to JSON
 make db-export-csv    # export to CSV
 make db-encrypt-status # check encryption status

@@ -1,14 +1,20 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check run-mock run-paper run-live run-dev run-int run-prod backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore pre-commit-install pre-commit db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
 
 # ============================================================================
-# Environment — dev (default), int, prod
+# Environment — auto-detected from git context, or explicit override
+#   tagged commit → prod  (real API, live trading)
+#   main branch   → int   (real API, paper trading)
+#   other branch  → dev   (mock API, no credentials)
 # ============================================================================
 
-ENV ?= dev
+_GIT_DIR    := $(shell git rev-parse --git-dir 2>/dev/null)
+_GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+_GIT_TAG    := $(shell git describe --exact-match HEAD 2>/dev/null)
+# No git repo (e.g. downloaded release zip) → prod
+_DEFAULT_ENV := $(if $(_GIT_DIR),$(if $(_GIT_TAG),prod,$(if $(filter main,$(_GIT_BRANCH)),int,dev)),prod)
 
-# Backtest targets default to int (real historical data).
-# Override with: make backtest BACKTEST_ENV=dev
-BACKTEST_ENV ?= int
+ENV ?= $(_DEFAULT_ENV)
+BACKTEST_ENV ?= $(_DEFAULT_ENV)
 
 # ============================================================================
 # 1Password vault/item names — environment-suffixed
@@ -48,9 +54,9 @@ help:
 	@echo "  make run-mock          - Run with mock API (dev env, no credentials needed)"
 	@echo "  make run-paper         - Run paper trading (int env, real API, no real trades)"
 	@echo "  make run-live          - Run live trading (prod env, REAL MONEY)"
-	@echo "  make backtest          - Backtest one strategy using real data (int env by default)"
+	@echo "  make backtest          - Backtest one strategy (env auto-detected from branch)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=..."
-	@echo "                           Override env: make backtest BACKTEST_ENV=dev"
+	@echo "                           Override env: make backtest BACKTEST_ENV=dev|int"
 	@echo "  make backtest-hf       - High-frequency backtest (1-minute candles, closest to live 5s polling)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... PAIRS=..."
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
@@ -99,6 +105,7 @@ help:
 	@echo "  make db-export-csv     - Export data to CSV"
 	@echo "  make db-encrypt-setup  - Generate and store encryption key in 1Password"
 	@echo "  make db-encrypt-status - Check if database encryption is active"
+	@echo "  make db-report         - Comprehensive analytics report with charts (DAYS=30)"
 	@echo ""
 	@echo "Quick Start:"
 	@echo "  1. make setup"
@@ -208,7 +215,7 @@ setup:
 	@echo "  data/ created"
 	@echo ""
 	@echo "Installing dependencies..."
-	@uv sync --extra dev
+	@uv sync --extra dev --extra analytics
 	@echo ""
 	@echo "Installing pre-commit hooks..."
 	@uv run pre-commit install
@@ -224,7 +231,7 @@ setup:
 
 install:
 	@echo "Installing dependencies with uv..."
-	@uv sync --extra dev
+	@uv sync --extra dev --extra analytics
 	@echo "Done"
 
 clean:
@@ -664,3 +671,6 @@ db-encrypt-setup:
 
 db-encrypt-status:
 	@ENVIRONMENT=$(ENV) uv run python -c "from src.utils.db_encryption import DatabaseEncryption; e = DatabaseEncryption(); print('Encryption enabled:', e.is_enabled)"
+
+db-report:
+	ENVIRONMENT=$(ENV) uv run python cli/analytics_report.py --days $${DAYS:-30} --output-dir $${DIR:-data/reports}
