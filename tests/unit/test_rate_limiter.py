@@ -36,11 +36,9 @@ class AdvancingClock:
     """Sleep stub that advances the shared clock by the requested duration.
 
     Advances by ``seconds + 1e-9`` to mirror real OS sleep behaviour: actual
-    sleep always overshoots slightly.  This matters because the rate limiter's
-    expiry check is strict (``<``), so advancing by exactly ``sleep_time``
-    would land on the boundary and never expire the entry, causing an infinite
-    spin (sleep_time collapses to 0 and the ``if sleep_time > 0`` guard blocks
-    the await forever).
+    sleep always overshoots slightly.  The rate limiter's expiry check uses
+    ``<=`` so an exact-boundary advance would work too, but the epsilon keeps
+    the model realistic and provides a small safety margin.
     """
 
     _EPSILON = 1e-9
@@ -112,6 +110,19 @@ class TestWindowExpiry:
 
         assert len(advancing.calls) == 0
 
+    async def test_exact_boundary_expires_entry(self):
+        """An entry at exactly now - time_window must be treated as expired.
+
+        Previously the expiry check used strict ``<``, so advancing by exactly
+        ``time_window`` left the entry alive; combined with sleep_time collapsing
+        to 0 (skipped by the guard), this caused an infinite spin.
+        """
+        clock, advance = make_clock(start=0.0)
+        rl = RateLimiter(max_requests=1, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()  # t=0
+        advance(1.0)  # exactly at the boundary — must expire the t=0 entry
+        assert rl.current_usage == 0
+
     async def test_partial_expiry_counts_correctly(self):
         clock, advance = make_clock(start=0.0)
         rl = RateLimiter(max_requests=3, time_window=1.0, clock=clock, sleep=noop_sleep)
@@ -152,6 +163,18 @@ class TestBlocking:
 
         await rl.acquire()  # must sleep 1.5 s
         assert advancing.calls[0] == pytest.approx(1.5)
+
+    async def test_exact_boundary_does_not_hang(self):
+        """Calling acquire() when the clock sits exactly at the boundary must
+        not hang.  With a strict ``<`` expiry, sleep_time was 0 and the guard
+        blocked the await, causing an infinite synchronous spin.
+        """
+        clock, advance = make_clock(start=0.0)
+        rl = RateLimiter(max_requests=1, time_window=1.0, clock=clock, sleep=noop_sleep)
+        await rl.acquire()  # t=0 — fills the single slot
+        advance(1.0)  # now = exactly time_window; entry must be expired by <=
+        await rl.acquire()  # must not hang
+        assert rl.current_usage == 1
 
     async def test_no_sleep_when_capacity_becomes_available(self):
         # max_requests=1 forces expiry to matter: without the advance the
