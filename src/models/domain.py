@@ -1,24 +1,24 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     CONDITIONAL = "CONDITIONAL"  # Revolut: trigger-based order (was STOP_LOSS)
     TPSL = "TPSL"  # Revolut: take-profit / stop-loss order (was TAKE_PROFIT)
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     PENDING = "PENDING"
     OPEN = "OPEN"
     FILLED = "FILLED"

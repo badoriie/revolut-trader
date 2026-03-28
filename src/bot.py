@@ -12,7 +12,7 @@ from src.api.client import RevolutAPIClient
 from src.api.mock_client import MockRevolutAPIClient
 from src.config import RiskLevel, StrategyType, TradingMode, settings
 from src.execution.executor import OrderExecutor
-from src.models.domain import MarketData, Order, PortfolioSnapshot
+from src.models.domain import MarketData, Order, OrderStatus, PortfolioSnapshot
 from src.risk_management.risk_manager import RiskManager
 from src.strategies.base_strategy import BaseStrategy
 from src.strategies.breakout import BreakoutStrategy
@@ -429,7 +429,12 @@ class TradingBot:
             if not market_data:
                 return
 
-            await self.executor.update_market_prices(symbol, market_data.last)
+            # update_market_prices returns a filled close order when SL/TP fires.
+            # Process it immediately so cash balance and trade history stay accurate.
+            close_order = await self.executor.update_market_prices(symbol, market_data.last)
+            if close_order and close_order.status == OrderStatus.FILLED:
+                self._process_filled_order(close_order)
+
             portfolio_value = await self.executor.get_portfolio_value(self.cash_balance)
 
             signal = await self.strategy.analyze(
@@ -442,7 +447,7 @@ class TradingBot:
             if signal:
                 logger.info(f"Signal generated: {signal.signal_type} {symbol} - {signal.reason}")
                 order = await self.executor.execute_signal(signal, portfolio_value)
-                if order and order.status.value == "FILLED":
+                if order and order.status == OrderStatus.FILLED:
                     self._process_filled_order(order)
 
         except Exception as e:

@@ -195,7 +195,11 @@ class OrderExecutor:
         logger.info(
             f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}"
         )
-        order.order_id = f"paper_{order.symbol}_{int(order.created_at.timestamp())}"
+        import uuid
+
+        order.order_id = (
+            f"paper_{order.symbol}_{int(order.created_at.timestamp())}_{uuid.uuid4().hex[:8]}"
+        )
         order.status = OrderStatus.FILLED
         order.filled_quantity = order.quantity
         if order.price is not None:
@@ -321,12 +325,18 @@ class OrderExecutor:
                     f"@ {order.price}, SL: {stop_loss}, TP: {take_profit}"
                 )
 
-    async def update_market_prices(self, symbol: str, current_price: Decimal) -> None:
+    async def update_market_prices(self, symbol: str, current_price: Decimal) -> Order | None:
         """Update the position price and trigger a close order if SL/TP is hit.
 
         The position lock is held only while updating the price and checking the
         trigger condition.  The closing order is placed *after* releasing the lock
         to avoid a deadlock with ``_update_positions`` (which also acquires the lock).
+
+        Returns:
+            The filled close Order if a SL/TP was triggered and the position was
+            closed, or ``None`` if no close occurred.  The caller is responsible for
+            calling ``bot._process_filled_order`` on the returned order so that the
+            cash balance and trade history are updated correctly.
         """
         should_close = False
         close_reason = ""
@@ -342,19 +352,24 @@ class OrderExecutor:
                     )
 
         if should_close:
-            await self._close_position(symbol, current_price, close_reason)
+            return await self._close_position(symbol, current_price, close_reason)
+        return None
 
-    async def _close_position(self, symbol: str, price: Decimal, reason: str) -> None:
+    async def _close_position(self, symbol: str, price: Decimal, reason: str) -> Order | None:
         """Build and execute a market close order for an open position.
 
         Args:
             symbol: Trading pair to close.
             price:  Current market price (used as the order price for paper fills).
             reason: Human-readable reason for the close (e.g. "stop_loss").
+
+        Returns:
+            The executed close Order so callers can update cash balance and persist
+            the trade.  Returns ``None`` if the position had already been removed.
         """
         async with self._position_lock:
             if symbol not in self.positions:
-                return
+                return None
             position = self.positions[symbol]
 
         logger.info(f"Closing position {symbol} due to {reason} at {price}")
@@ -376,6 +391,8 @@ class OrderExecutor:
 
         if close_order.status == OrderStatus.FILLED:
             await self._update_positions(close_order)
+
+        return close_order
 
     async def _shutdown_cancel_orders(self) -> tuple[int, list[str]]:
         """Phase 1 of graceful shutdown: cancel all pending/open orders.

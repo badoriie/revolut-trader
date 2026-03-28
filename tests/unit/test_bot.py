@@ -900,8 +900,96 @@ class TestProcessSymbol:
         mock_api.get_ticker.assert_not_called()
         bot.strategy.analyze.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_process_symbol_sl_tp_close_updates_cash_balance(
+        self, bot, mock_api, mock_persistence
+    ):
+        """When stop-loss or take-profit fires, the close order must be processed
+        by the bot so cash_balance and trade history are kept accurate."""
+        from datetime import UTC, datetime
 
-class TestCheckRiskLimitsDailyLoss:
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.models.domain import MarketData, OrderSide, Position
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+
+        # Open BUY position at 50 000 with a stop-loss at 49 000
+        pos = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.1"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            stop_loss=Decimal("49000"),
+        )
+        bot.executor.positions["BTC-EUR"] = pos
+
+        # Strategy returns no signal (SL fires, not a new order)
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(return_value=None)
+
+        # Price drops below stop-loss
+        market_data = MarketData(
+            symbol="BTC-EUR",
+            timestamp=datetime.now(UTC),
+            bid=Decimal("47900"),
+            ask=Decimal("48100"),
+            last=Decimal("48000"),
+            volume_24h=Decimal("0"),
+            high_24h=Decimal("0"),
+            low_24h=Decimal("0"),
+        )
+
+        initial_balance = bot.cash_balance
+        await bot._process_symbol("BTC-EUR", market_data)
+
+        # Position must be closed
+        assert "BTC-EUR" not in bot.executor.positions
+        # Cash balance must reflect the sale proceeds (should increase since SELL was executed)
+        assert bot.cash_balance > initial_balance
+        # Trade must be persisted
+        mock_persistence.save_trade.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_symbol_sl_tp_close_returns_none_when_no_position(
+        self, bot, mock_api, mock_persistence
+    ):
+        """update_market_prices returns None when no position exists — no cash change."""
+        from datetime import UTC, datetime
+
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.models.domain import MarketData
+        from src.risk_management.risk_manager import RiskManager
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MagicMock()
+        bot.strategy.analyze = AsyncMock(return_value=None)
+
+        market_data = MarketData(
+            symbol="BTC-EUR",
+            timestamp=datetime.now(UTC),
+            bid=Decimal("48000"),
+            ask=Decimal("48100"),
+            last=Decimal("48000"),
+            volume_24h=Decimal("0"),
+            high_24h=Decimal("0"),
+            low_24h=Decimal("0"),
+        )
+
+        initial_balance = bot.cash_balance
+        await bot._process_symbol("BTC-EUR", market_data)
+
+        # No position, no SL/TP fire → balance unchanged
+        assert bot.cash_balance == initial_balance
+        mock_persistence.save_trade.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_daily_loss_limit_hit_logs_critical(self, bot, mock_persistence):
         from src.risk_management.risk_manager import RiskManager

@@ -1,11 +1,11 @@
 import os
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     """Deployment environment — determines which 1Password items and DB to use."""
 
     DEV = "dev"
@@ -13,12 +13,12 @@ class Environment(str, Enum):
     PROD = "prod"
 
 
-class TradingMode(str, Enum):
+class TradingMode(StrEnum):
     PAPER = "paper"
     LIVE = "live"
 
 
-class StrategyType(str, Enum):
+class StrategyType(StrEnum):
     MARKET_MAKING = "market_making"
     MOMENTUM = "momentum"
     MEAN_REVERSION = "mean_reversion"
@@ -27,7 +27,7 @@ class StrategyType(str, Enum):
     RANGE_REVERSION = "range_reversion"
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     CONSERVATIVE = "conservative"
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
