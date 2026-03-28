@@ -326,7 +326,7 @@ Examples:
         "-i",
         type=int,
         default=60,
-        choices=[5, 15, 30, 60, 240, 1440],
+        choices=[1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320],
         help="Candle interval in minutes (default: 60)",
     )
     parser.add_argument(
