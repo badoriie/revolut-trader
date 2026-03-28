@@ -109,6 +109,22 @@ class TestMockGetCurrencies:
         assert "BTC" in result
         assert "ETH" in result
 
+    @pytest.mark.asyncio
+    async def test_asset_type_is_lowercase(self, mock_client: MockRevolutAPIClient):
+        """API docs: asset_type must be 'crypto' or 'fiat' (lowercase)."""
+        result = await mock_client.get_currencies()
+        assert result["BTC"]["asset_type"] == "crypto"
+        assert result["ETH"]["asset_type"] == "crypto"
+        assert result["EUR"]["asset_type"] == "fiat"
+
+    @pytest.mark.asyncio
+    async def test_status_is_lowercase(self, mock_client: MockRevolutAPIClient):
+        """API docs: status must be 'active' or 'inactive' (lowercase)."""
+        result = await mock_client.get_currencies()
+        assert result["BTC"]["status"] == "active"
+        assert result["ETH"]["status"] == "active"
+        assert result["EUR"]["status"] == "active"
+
 
 # ---------------------------------------------------------------------------
 # 3. GET /configuration/pairs — get_currency_pairs()
@@ -124,6 +140,13 @@ class TestMockGetCurrencyPairs:
         result = await mock_client.get_currency_pairs()
         assert isinstance(result, dict)
         assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_status_is_lowercase(self, mock_client: MockRevolutAPIClient):
+        """API docs: status must be 'active' or 'inactive' (lowercase)."""
+        result = await mock_client.get_currency_pairs()
+        for pair_data in result.values():
+            assert pair_data["status"] == "active"
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +164,13 @@ class TestMockGetLastPublicTrades:
         assert "data" in result
         assert "metadata" in result
         assert isinstance(result["data"], list)
+
+    @pytest.mark.asyncio
+    async def test_vp_is_revx(self, mock_client: MockRevolutAPIClient):
+        """API docs: vp (venue of publication) must always be 'REVX'."""
+        result = await mock_client.get_last_public_trades()
+        for trade in result["data"]:
+            assert trade["vp"] == "REVX"
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +381,16 @@ class TestMockGetPublicTrades:
         result = await mock_client.get_public_trades("BTC-EUR")
         assert "data" in result
         assert "metadata" in result
+
+    @pytest.mark.asyncio
+    async def test_trade_fields_match_api_docs(self, mock_client: MockRevolutAPIClient):
+        """API docs: vp must be 'REVX', pn must be 'MONE', qn must be 'UNIT'."""
+        result = await mock_client.get_public_trades("BTC-EUR")
+        assert len(result["data"]) > 0
+        for trade in result["data"]:
+            assert trade["vp"] == "REVX", f"Expected vp='REVX', got {trade['vp']!r}"
+            assert trade["pn"] == "MONE", f"Expected pn='MONE', got {trade.get('pn')!r}"
+            assert trade["qn"] == "UNIT", f"Expected qn='UNIT', got {trade.get('qn')!r}"
 
 
 # ---------------------------------------------------------------------------

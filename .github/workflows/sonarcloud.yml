@@ -54,7 +54,7 @@ jobs:
             -Dsonar.sources=src/,cli/
             -Dsonar.tests=tests/
             -Dsonar.coverage.exclusions=cli/**
-            -Dsonar.python.version=3.11
+            -Dsonar.python.version=${{ env.PYTHON_VERSION }}
             -Dsonar.qualitygate.wait=true
 
       - name: Fetch SonarCloud issues report
