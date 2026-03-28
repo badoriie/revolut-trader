@@ -378,7 +378,6 @@ class TestCloseOrderOnStopTakeProfit:
         result = await paper_executor.update_market_prices("BTC-EUR", Decimal("50000"))
         assert result is None
 
-
     @pytest.mark.asyncio
     async def test_reduce_buy_position_positive_pnl(self, paper_executor):
         """Selling part of a BUY position above entry price yields positive PnL."""

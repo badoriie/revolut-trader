@@ -990,7 +990,6 @@ class TestProcessSymbol:
         assert bot.cash_balance == initial_balance
         mock_persistence.save_trade.assert_not_called()
 
-
     @pytest.mark.asyncio
     async def test_daily_loss_limit_hit_logs_critical(self, bot, mock_persistence):
         from src.risk_management.risk_manager import RiskManager
