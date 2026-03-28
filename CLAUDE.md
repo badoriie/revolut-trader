@@ -36,7 +36,7 @@ make run-paper               # paper trading (int env, real API, no real trades)
 make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
-make backtest                # STRATEGY=momentum DAYS=30 BACKTEST_ENV=int
+make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
 make backtest-hf             # high-frequency: 1-min candles (closest to live 5s polling)
 make backtest-compare        # compare all strategies side-by-side (DAYS=... RISK=...)
 make backtest-matrix         # all strategies × all risk levels matrix
@@ -69,7 +69,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
 
-**Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. Dev checks are handled by pre-commit hooks locally. CI runs on PRs to `main` with `ENVIRONMENT=int`. Production release is a manual workflow with `ENVIRONMENT=prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
+**Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. The environment follows the branch: feature branches use `dev` (mock API, no credentials), `main` uses `int` (real API, paper trading), released tags use `prod` (real money). CI enforces this automatically: PRs from feature branches run with `ENVIRONMENT=dev`; post-merge pushes to `main` run with `ENVIRONMENT=int`; the release workflow runs with `ENVIRONMENT=prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use. `TRADING_MODE` is derived from environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int); prod fetches real balance from the API. Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`).
 
 **Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`. The API client uses `RateLimiter` (`src/utils/rate_limiter.py`) to respect API rate limits.
 
@@ -114,7 +114,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols.
 
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests on PRs), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix), `analytics.yml` (manual analytics report — runs a quick backtest to populate DB, then generates the full report with charts as artifacts and posts markdown to the job summary), `release.yml` (manual production release — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`).
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`).
 
 ## Commit Message Convention
 

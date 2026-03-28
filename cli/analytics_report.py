@@ -751,9 +751,9 @@ def _build_markdown(
         f"| Initial Portfolio Value | {f'€{initial:,.2f}' if initial else 'N/A'} |",
         f"| Final Portfolio Value | {f'€{final:,.2f}' if final else 'N/A'} |",
         f"| Max Drawdown | {max_dd:.2f}% |",
-        f"| Sharpe Ratio | {sharpe:.3f if sharpe else 'N/A'} |",
-        f"| Sortino Ratio | {sortino:.3f if sortino else 'N/A'} |",
-        f"| Profit Factor | {profit_factor:.2f if profit_factor else 'N/A'} |",
+        f"| Sharpe Ratio | {f'{sharpe:.3f}' if sharpe else 'N/A'} |",
+        f"| Sortino Ratio | {f'{sortino:.3f}' if sortino else 'N/A'} |",
+        f"| Profit Factor | {f'{profit_factor:.2f}' if profit_factor else 'N/A'} |",
         "",
     ]
 

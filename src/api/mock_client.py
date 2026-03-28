@@ -6,6 +6,8 @@ docs/revolut-x-api-docs.md.  No network calls, no 1Password, no Ed25519 keys.
 Used when ENVIRONMENT=dev so developers can run the bot without real API credentials.
 """
 
+import math
+import random
 import time
 import uuid
 from decimal import Decimal
@@ -38,6 +40,9 @@ _MOCK_PRICES: dict[str, dict[str, Decimal]] = {
 
 _DEFAULT_PRICE = {"bid": Decimal("100.00"), "ask": Decimal("101.00")}
 
+# Fixed epoch for deterministic candle indexing across chunk boundaries.
+_EPOCH_MS: int = 1577836800000  # 2020-01-01 00:00:00 UTC
+
 
 def _now_ms() -> int:
     """Current time as Unix epoch milliseconds."""
@@ -47,6 +52,29 @@ def _now_ms() -> int:
 def _price_for(symbol: str) -> dict[str, Decimal]:
     """Return bid/ask for a symbol, falling back to a default."""
     return _MOCK_PRICES.get(symbol, _DEFAULT_PRICE)
+
+
+def _dynamic_price_for(symbol: str) -> dict[str, Decimal]:
+    """Return bid/ask with gentle time-based oscillation for live trading simulation.
+
+    Prices oscillate ±0.3% so strategies receive changing market data each
+    polling cycle without drifting far from the base price.
+
+    Args:
+        symbol: Trading pair (e.g. "BTC-EUR").
+
+    Returns:
+        Dict with ``bid`` and ``ask`` as Decimals.
+    """
+    base = _price_for(symbol)
+    mid = (base["bid"] + base["ask"]) / 2
+    half_spread = (base["ask"] - base["bid"]) / 2
+    variation_pct = Decimal(str(math.sin(time.time() / 47.0) * 0.003))
+    new_mid = mid * (1 + variation_pct)
+    return {
+        "bid": new_mid - half_spread,
+        "ask": new_mid + half_spread,
+    }
 
 
 class MockRevolutAPIClient:
@@ -594,36 +622,62 @@ class MockRevolutAPIClient:
         until: int | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Return mock OHLCV candles.
+        """Return mock OHLCV candles covering the requested time window.
+
+        Candles are generated deterministically per (symbol, interval, candle_index)
+        so the same candle always has the same prices regardless of which chunk or
+        call produced it — essential for multi-chunk backtests.
 
         Args:
             symbol:   Trading pair.
             interval: Minutes per candle (default 60).
-            since:    Start timestamp (Unix epoch ms).
-            until:    End timestamp (Unix epoch ms).
-            limit:    Max candles returned (default 100).
+            since:    Window start (Unix epoch ms). Defaults to ``limit`` candles before ``until``.
+            until:    Window end (Unix epoch ms). Defaults to now.
+            limit:    Max candles to return (default 100, no hard cap).
 
         Returns:
-            List of ``{"start", "open", "high", "low", "close", "volume"}`` dicts.
+            List of ``{"start", "open", "high", "low", "close", "volume"}`` dicts
+            ordered oldest-first within ``[since, until)``.
         """
-        _ = (since, until)  # Mock ignores date range
         prices = _price_for(symbol)
-        base_price = (prices["bid"] + prices["ask"]) / 2
-        ts = _now_ms()
+        base_price = float((prices["bid"] + prices["ask"]) / 2)
         interval_ms = interval * 60 * 1000
+        now_ms = _now_ms()
+
+        end_ts = until if until is not None else now_ms
+        start_ts = since if since is not None else (end_ts - limit * interval_ms)
+
+        n_candles = min(int((end_ts - start_ts) // interval_ms), limit)
+        if n_candles <= 0:
+            return []
+
+        volatility = base_price * 0.002  # ±0.2% noise per candle
 
         candles = []
-        for i in range(min(limit, 20)):
-            offset = Decimal(str(i * 10))
-            candle_start = ts - (20 - i) * interval_ms
+        for i in range(n_candles):
+            candle_start = start_ts + i * interval_ms
+            # Global index from fixed epoch — makes prices deterministic across chunks
+            candle_index = (candle_start - _EPOCH_MS) // interval_ms
+            rng = random.Random(abs(hash(f"{symbol}:{interval}:{candle_index}")) % (2**32))  # nosec B311
+
+            # Slow sinusoidal trend (full cycle every ~200 candles) + per-candle noise
+            trend_pct = math.sin(candle_index * math.pi / 100) * 0.05
+            mid = base_price * (1 + trend_pct)
+
+            o = mid + rng.uniform(-volatility, volatility)
+            c = mid + rng.uniform(-volatility, volatility)
+            h = max(o, c) + abs(rng.uniform(0, volatility))
+            low = max(min(o, c) - abs(rng.uniform(0, volatility)), mid * 0.001)
+            vol = rng.uniform(0.05, 2.0)
+
             candles.append(
                 {
                     "start": candle_start,
-                    "open": str(base_price - offset),
-                    "high": str(base_price + Decimal("50") - offset),
-                    "low": str(base_price - Decimal("50") - offset),
-                    "close": str(base_price + Decimal("10") - offset),
-                    "volume": str(Decimal("0.5") + Decimal("0.01") * i),
+                    "open": str(round(o, 8)),
+                    "high": str(round(h, 8)),
+                    "low": str(round(low, 8)),
+                    "close": str(round(c, 8)),
+                    "volume": str(round(vol, 8)),
                 }
             )
 
@@ -645,9 +699,10 @@ class MockRevolutAPIClient:
             List of ``{"symbol", "bid", "ask", "mid", "last_price"}`` dicts.
         """
         tickers = []
-        for sym, prices in _MOCK_PRICES.items():
+        for sym in _MOCK_PRICES:
             if symbols and sym not in symbols:
                 continue
+            prices = _dynamic_price_for(sym)
             mid = (prices["bid"] + prices["ask"]) / 2
             tickers.append(
                 {
@@ -676,7 +731,7 @@ class MockRevolutAPIClient:
             ``{"bid": Decimal, "ask": Decimal, "last": Decimal,
               "volume": Decimal, "symbol": str}``
         """
-        prices = _price_for(symbol)
+        prices = _dynamic_price_for(symbol)
         bid = prices["bid"]
         ask = prices["ask"]
         last = (bid + ask) / 2

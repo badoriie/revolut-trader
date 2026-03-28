@@ -186,7 +186,6 @@ revolut-trader/
 │   │   ├── ci.yml            # CI pipeline (lint, typecheck, security, tests)
 │   │   ├── sonarcloud.yml    # SonarCloud code scanning
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
-│   │   ├── analytics.yml     # Manual analytics report with charts (via Actions console)
 │   │   └── release.yml       # Manual production release workflow
 │   ├── copilot-instructions.md  # GitHub Copilot instructions (mirrors CLAUDE.md)
 │   └── dependabot.yml        # Automated dependency updates
@@ -264,7 +263,6 @@ GitHub Actions workflows:
   - Tests — pytest with coverage (≥ 97%)
 - **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
-- **Analytics Report** (`.github/workflows/analytics.yml`) — manual workflow that runs a quick backtest to populate the database, then generates a comprehensive analytics report (Sharpe, Sortino, drawdown, profit factor, per-symbol/strategy tables, rule-based suggestions). Posts markdown summary to the job summary and uploads chart PNGs as build artifacts
 - **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with the new changelog section as release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient
 
 Dependabot targets `main` — dependency PRs trigger int CI automatically.
