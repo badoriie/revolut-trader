@@ -11,6 +11,10 @@
 
 A production-ready algorithmic trading bot for Revolut X Crypto API with multiple strategies, robust risk management, and comprehensive monitoring.
 
+## Architecture
+
+See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, trading loop data flow, and graceful shutdown diagrams.
+
 ## Features
 
 - **6 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy, Breakout, Range Reversion
