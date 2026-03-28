@@ -195,7 +195,11 @@ class OrderExecutor:
         logger.info(
             f"[PAPER] Executing order: {order.symbol} {order.side} {order.quantity} @ {order.price}"
         )
-        order.order_id = f"paper_{order.symbol}_{int(order.created_at.timestamp())}"
+        import uuid
+
+        order.order_id = (
+            f"paper_{order.symbol}_{int(order.created_at.timestamp())}_{uuid.uuid4().hex[:8]}"
+        )
         order.status = OrderStatus.FILLED
         order.filled_quantity = order.quantity
         if order.price is not None:
