@@ -46,8 +46,12 @@ class RateLimiter:
             while True:
                 now = self._clock()
 
-                # Remove requests outside the time window
-                while self.requests and self.requests[0] < now - self.time_window:
+                # Remove requests outside the time window.
+                # Uses <= so that an entry at exactly now - time_window is
+                # treated as expired; this prevents sleep_time collapsing to 0
+                # (entry not yet expired but sleep skipped) which would cause
+                # an infinite synchronous spin.
+                while self.requests and self.requests[0] <= now - self.time_window:
                     self.requests.popleft()
 
                 if len(self.requests) < self.max_requests:
@@ -69,8 +73,7 @@ class RateLimiter:
     def current_usage(self) -> int:
         """Get current number of requests in the time window."""
         now = self._clock()
-        # Clean up old requests
-        while self.requests and self.requests[0] < now - self.time_window:
+        while self.requests and self.requests[0] <= now - self.time_window:
             self.requests.popleft()
         return len(self.requests)
 
