@@ -32,32 +32,19 @@ See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, tradi
 
 Download `revt` for your platform from the [latest release](../../releases/latest):
 
-| Platform                                | File                      |
-| --------------------------------------- | ------------------------- |
-| macOS Apple Silicon (M1/M2/M3/M4)       | `revt-macos-arm64`        |
-| macOS Intel                             | `revt-macos-x86_64`       |
-| Linux x86_64 (servers, desktop)         | `revt-linux-x86_64`       |
-| Linux ARM64 (Raspberry Pi 4+, Graviton) | `revt-linux-arm64`        |
-| Windows x86_64                          | `revt-windows-x86_64.exe` |
+| Platform                                | File               |
+| --------------------------------------- | ------------------ |
+| macOS Apple Silicon (M1/M2/M3/M4)       | `revt-macos-arm64` |
+| Linux ARM64 (Raspberry Pi 4+, Graviton) | `revt-linux-arm64` |
 
 ```bash
 # macOS (Apple Silicon)
 curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-macos-arm64 \
   -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
 
-# macOS (Intel)
-curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-macos-x86_64 \
-  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
-
-# Linux x86_64
-curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-x86_64 \
-  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
-
 # Linux ARM64 (Raspberry Pi 4+ / ARM servers)
 curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-arm64 \
   -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
-
-# Windows — download revt-windows-x86_64.exe, rename to revt.exe, add to PATH
 ```
 
 Then:
