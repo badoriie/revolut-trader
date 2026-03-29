@@ -235,7 +235,7 @@ make db-stats         # database statistics
 make db-analytics     # trading analytics (DAYS=30)
 make db-backtests     # backtest results
 make db-report        # comprehensive analytics report with charts (DAYS=30)
-make db-export        # export data to JSON
+make db-export        # export data to a directory
 make db-export-csv    # export to CSV
 make db-encrypt-setup  # generate and store encryption key in 1Password
 make db-encrypt-status # check encryption status
@@ -258,12 +258,12 @@ make pre-commit       # run all pre-commit hooks
 
 GitHub Actions workflows:
 
-- **CI** (`.github/workflows/ci.yml`) — runs on PRs to `main` (`ENVIRONMENT=dev`) and on post-merge pushes to `main` (`ENVIRONMENT=int`), merge blocked until all pass:
+- **CI** (`.github/workflows/ci.yml`) — runs on PRs to `main` (`ENVIRONMENT=dev`, merge blocked until all pass) and on post-merge pushes to `main` (`ENVIRONMENT=int`):
   - Lint & Format — ruff check + format verification
   - Type Check — pyright strict checking on `src/` and `cli/`
   - Security Scan — bandit static analysis
   - Tests — pytest with coverage (≥ 97%)
-- **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs to `main`: bugs, vulnerabilities, code smells, coverage tracking
+- **SonarCloud** (`.github/workflows/sonarcloud.yml`) — code scanning on PRs and post-merge pushes to `main`: bugs, vulnerabilities, code smells, coverage tracking
 - **Backtest Matrix** (`.github/workflows/backtest.yml`) — manual workflow with configurable parameters (strategies, risk levels, days, interval, pairs, capital) via Actions console
 - **Release** (`.github/workflows/release.yml`) — manual workflow for production release from `main`. Commitizen auto-detects the next semver from conventional commits since the last tag, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release with the new changelog section as release notes. Inputs: confirm `"I UNDERSTAND"` + optional `increment` override (`patch`/`minor`/`major`) for when auto-detection isn't sufficient
 - **Diagrams** (`.github/workflows/diagrams.yml`) — auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts (90-day retention)

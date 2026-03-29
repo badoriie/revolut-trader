@@ -250,7 +250,7 @@ Sends real orders to Revolut X. Requires `ENV=prod` credentials in 1Password. Yo
 make run-live
 ```
 
-> **The bot will prompt:** `Are you sure you want to trade with real money? (yes/no)` — type `yes` to proceed.
+> **The bot will prompt:** `Type 'I UNDERSTAND' to continue:` — type `I UNDERSTAND` to proceed.
 
 ### Overriding settings at runtime
 

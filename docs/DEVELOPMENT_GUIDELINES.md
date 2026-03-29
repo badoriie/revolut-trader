@@ -263,7 +263,7 @@ ______________________________________________________________________
 <optional detailed description>
 ```
 
-**Types:** `feat`, `fix`, `test`, `refactor`, `docs`, `chore`
+**Types:** `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `perf`, `ci`, `style`
 
 ______________________________________________________________________
 
@@ -322,11 +322,12 @@ make run-live         # real API, live trading (requires confirmation)
 
 Single `main` branch. Pre-commit hooks handle dev checks locally; CI runs on PRs to `main`:
 
-| Stage                   | Environment | Checks                                                        |
-| ----------------------- | ----------- | ------------------------------------------------------------- |
-| Pre-commit (local)      | dev         | Lint, typecheck, security, tests (before each commit)         |
-| PR to `main`            | dev         | CI: same checks, `ENVIRONMENT=dev`, merge blocked until green |
-| Manual release workflow | prod        | CI: same checks, `ENVIRONMENT=prod`, creates semver tag       |
+| Stage                     | Environment | Checks                                                        |
+| ------------------------- | ----------- | ------------------------------------------------------------- |
+| Pre-commit (local)        | dev         | Lint, typecheck, security, tests (before each commit)         |
+| PR to `main`              | dev         | CI: same checks, `ENVIRONMENT=dev`, merge blocked until green |
+| Post-merge push to `main` | int         | CI: same checks, `ENVIRONMENT=int`, real API validation       |
+| Manual release workflow   | prod        | CI: same checks, `ENVIRONMENT=prod`, creates semver tag       |
 
 ```
 feature branch → PR to main
