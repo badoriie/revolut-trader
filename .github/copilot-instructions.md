@@ -139,6 +139,8 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                    |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                              |
 | `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts   |
+| `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command; defaults to `prod` when running as a frozen binary |
+| `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; produces `revt-macos-arm64` and `revt-linux-arm64` |
 
 ## Commit Message Convention
 

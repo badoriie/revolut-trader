@@ -224,12 +224,15 @@ revolut-trader/
 │   ├── config.py             # Pydantic config (loaded from 1Password)
 │   └── bot.py                # Main orchestrator
 ├── cli/                      # CLI entry points
+│   ├── revt.py               # Main CLI tool (revt command)
 │   ├── run.py                # Bot runner (--env, --strategy, --risk)
 │   ├── backtest.py           # Single strategy backtest
 │   ├── backtest_compare.py   # Multi-strategy comparison + matrix
 │   ├── api_test.py           # API connectivity and endpoint testing
 │   ├── db_manage.py          # Database management and export
 │   └── analytics_report.py   # Comprehensive analytics report with charts
+├── build/                    # Build configuration
+│   └── revt.spec             # PyInstaller spec for revt binary
 ├── tests/
 │   ├── conftest.py           # Fixtures, ENVIRONMENT=dev setup
 │   ├── test_config.py        # Configuration loading and validation tests
