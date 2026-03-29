@@ -6,7 +6,11 @@ name: Release (Prod)
 # git tag, and publishes a GitHub Release — all atomically.
 #
 # Workflow order:
-#   validate-inputs → check-version-bump → [lint, typecheck, security, test] → release
+#   validate-inputs → check-version-bump → [lint, typecheck, security, test, build-revt] → release
+#
+# The revt binaries are built in parallel with CI checks (from the current HEAD
+# of main), uploaded as workflow artifacts, then attached directly to the GitHub
+# Release in a single gh release create call — avoiding immutability issues.
 #
 # Use the `increment` input to force a specific bump type when the commit history
 # contains no conventional commits of the required type (e.g. only `chore:` fixes
@@ -173,12 +177,55 @@ jobs:
           --cov-report=xml:coverage.xml
           -q
 
+  # Builds run in parallel with CI checks — no dependency on the release tag.
+  # Binaries are stored as workflow artifacts and attached to the release later.
+  build-revt:
+    name: Build revt binary (${{ matrix.artifact }})
+    needs: check-version-bump
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── macOS ────────────────────────────────────────────────────────────
+          - os: macos-latest      # Apple Silicon M1/M2/M3/M4
+            artifact: revt-macos-arm64
+          # ── Linux ────────────────────────────────────────────────────────────
+          - os: ubuntu-24.04-arm  # Raspberry Pi 4+ / AWS Graviton / ARM servers
+            artifact: revt-linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - run: uv sync --extra dev
+
+      - name: Build standalone binary
+        run: |
+          uv run pyinstaller build/revt.spec \
+            --distpath dist \
+            --workpath build/.pyinstaller \
+            --noconfirm
+
+      - name: Rename binary to include platform suffix
+        shell: bash
+        run: mv dist/revt "dist/${{ matrix.artifact }}"
+
+      - name: Store binary as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          retention-days: 1
+
   release:
     name: Create Release
-    needs: [lint, typecheck, security, test]
+    needs: [lint, typecheck, security, test, build-revt]
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.bump.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -231,98 +278,34 @@ jobs:
           echo "--- release notes ---"
           cat release_notes.md
 
-      - name: Create GitHub Release (draft)
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           gh release create "${{ steps.bump.outputs.tag }}" \
             --title "${{ steps.bump.outputs.tag }}" \
             --notes-file release_notes.md \
-            --draft
+            --latest \
+            dist/revt-macos-arm64 \
+            dist/revt-linux-arm64
 
       - name: Post release summary
         run: |
           TAG="${{ steps.bump.outputs.tag }}"
           {
-            echo "## Production Release $TAG (draft — binaries uploading)"
+            echo "## Production Release $TAG"
             echo ""
             echo "All checks passed:"
             echo "- Lint & Format"
             echo "- Type Check"
             echo "- Security Scan"
             echo "- Tests (prod, ≥97% coverage)"
-            echo ""
-            echo "**Tag:** \`$TAG\`"
-            echo "Draft release created — will be published once binaries are attached."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  build-revt:
-    name: Build revt binary (${{ matrix.artifact }})
-    needs: release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # ── macOS ────────────────────────────────────────────────────────────
-          - os: macos-latest      # Apple Silicon M1/M2/M3/M4
-            artifact: revt-macos-arm64
-            exe_ext: ""
-          # ── Linux ────────────────────────────────────────────────────────────
-          - os: ubuntu-24.04-arm  # Raspberry Pi 4+ / AWS Graviton / ARM servers
-            artifact: revt-linux-arm64
-            exe_ext: ""
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.release.outputs.tag }}
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - run: uv python install ${{ env.PYTHON_VERSION }}
-
-      - run: uv sync --extra dev
-
-      - name: Build standalone binary
-        run: |
-          uv run pyinstaller build/revt.spec \
-            --distpath dist \
-            --workpath build/.pyinstaller \
-            --noconfirm
-
-      - name: Rename binary to include platform suffix
-        shell: bash
-        run: mv "dist/revt${{ matrix.exe_ext }}" "dist/${{ matrix.artifact }}"
-
-      - name: Upload binary to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          gh release upload "${{ needs.release.outputs.tag }}" \
-            "dist/${{ matrix.artifact }}" \
-            --clobber
-
-  publish-release:
-    name: Publish Release
-    needs: [release, build-revt]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Mark release as latest
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          gh release edit "${{ needs.release.outputs.tag }}" \
-            --repo "${{ github.repository }}" \
-            --draft=false \
-            --latest
-
-      - name: Post publish summary
-        run: |
-          TAG="${{ needs.release.outputs.tag }}"
-          {
-            echo "## Production Release $TAG — Published"
             echo ""
             echo "**Tag:** \`$TAG\`"
             echo "**Release:** [${TAG}](../../releases/tag/${TAG})"
