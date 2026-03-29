@@ -196,7 +196,7 @@ class Settings(BaseSettings):
             raise ValueError(msg)
 
     def _load_capital_config(self, op) -> None:
-        """Load optional capital-limiting config from 1Password."""
+        """Load optional capital-limiting and notification config from 1Password."""
         self.max_capital = _load_optional_float(
             op,
             "MAX_CAPITAL",
@@ -217,6 +217,8 @@ class Settings(BaseSettings):
             "(e.g. 120 for 2 minutes).\n"
             "Set it with: make opconfig-set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=120 ENV=dev",
         )
+        self.telegram_bot_token = op.get_optional("TELEGRAM_BOT_TOKEN")
+        self.telegram_chat_id = op.get_optional("TELEGRAM_CHAT_ID")
 
     # Logging
     log_level: str = Field(default="INFO")
@@ -241,6 +243,12 @@ class Settings(BaseSettings):
     # Maximum seconds to wait for a profitable position's trailing stop to trigger
     # before force-closing at market price.  None means "use system default of 120s".
     shutdown_max_wait_seconds: int | None = Field(default=None)
+
+    # Telegram notifications (optional — both must be set to enable).
+    # Store in 1Password with: make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=<token> ENV=<env>
+    #                          make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV=<env>
+    telegram_bot_token: str | None = Field(default=None)
+    telegram_chat_id: str | None = Field(default=None)
 
 
 settings = Settings()

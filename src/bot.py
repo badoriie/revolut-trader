@@ -22,6 +22,7 @@ from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.db_persistence import DatabasePersistence
+from src.utils.telegram import TelegramNotifier
 
 # Recommended polling interval per strategy — balances signal freshness against API cost.
 # Market-making and breakout react to order-book changes in seconds; mean-reversion and
@@ -60,12 +61,23 @@ class TradingBot:
         self.persistence = DatabasePersistence()
         self.current_session_id: int | None = None
 
+        # Telegram notifier — active only when both token and chat_id are configured.
+        self.notifier: TelegramNotifier | None = (
+            TelegramNotifier(
+                token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+            )
+            if settings.telegram_bot_token and settings.telegram_chat_id
+            else None
+        )
+
         # Currency display
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
         self.currency_symbol = currency_symbols.get(settings.base_currency, settings.base_currency)
 
         # State
         self.is_running = False
+        self._daily_loss_notified = False  # prevents repeated Telegram alerts per session
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
         # Use deque with maxlen to prevent unbounded memory growth
         # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
@@ -186,6 +198,14 @@ class TradingBot:
         self.is_running = True
         logger.info("Trading bot started successfully!")
 
+        if self.notifier:
+            await self.notifier.notify_started(
+                strategy=self.strategy_type.value,
+                risk_level=self.risk_level.value,
+                pairs=self.trading_pairs,
+                mode=self.trading_mode.value,
+            )
+
     async def stop(self):
         """Stop the trading bot gracefully.
 
@@ -222,6 +242,8 @@ class TradingBot:
             # Update cash balance for positions closed during shutdown
             for order in shutdown_summary.filled_close_orders:
                 self._process_filled_order(order)
+                if self.notifier:
+                    await self.notifier.notify_trade(order, self.currency_symbol)
 
             if shutdown_summary.errors:
                 for error in shutdown_summary.errors:
@@ -241,6 +263,18 @@ class TradingBot:
                 total_trades=total_trades,
             )
             logger.info(f"Trading session ended: {self.current_session_id}")
+
+        if self.notifier:
+            realized_pnl = (
+                self.portfolio_snapshots[-1].realized_pnl
+                if self.portfolio_snapshots
+                else Decimal("0")
+            )
+            await self.notifier.notify_stopped(
+                session_id=self.current_session_id,
+                realized_pnl=realized_pnl,
+                currency_symbol=self.currency_symbol,
+            )
 
         if self.api_client:
             await self.api_client.close()
@@ -317,6 +351,19 @@ class TradingBot:
 
         self._check_risk_limits()
 
+        if (
+            self.notifier
+            and self.risk_manager is not None
+            and self.risk_manager.daily_loss_limit_hit
+            and not self._daily_loss_notified
+            and self.portfolio_snapshots
+        ):
+            self._daily_loss_notified = True
+            await self.notifier.notify_daily_loss_limit(
+                self.portfolio_snapshots[-1].daily_pnl,
+                self.currency_symbol,
+            )
+
     def _handle_loop_exception(self, error: Exception, interval: int) -> tuple[bool, int]:
         """Classify a trading-loop exception into a retry decision.
 
@@ -390,6 +437,14 @@ class TradingBot:
             except Exception as e:
                 should_continue, sleep_time = self._handle_loop_exception(e, effective_interval)
                 if not should_continue:
+                    if (
+                        self.notifier
+                        and isinstance(e, httpx.HTTPStatusError)
+                        and e.response.status_code == 401
+                    ):
+                        await self.notifier.notify_error(
+                            "Authentication failed! Check API credentials."
+                        )
                     break
                 await asyncio.sleep(sleep_time)
 
@@ -449,6 +504,8 @@ class TradingBot:
                 order = await self.executor.execute_signal(signal, portfolio_value)
                 if order and order.status == OrderStatus.FILLED:
                     self._process_filled_order(order)
+                    if self.notifier:
+                        await self.notifier.notify_trade(order, self.currency_symbol)
 
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e!s}", exc_info=True)

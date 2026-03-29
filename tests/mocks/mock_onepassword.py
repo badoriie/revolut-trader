@@ -51,6 +51,27 @@ def create_mock_vault(environment: str = "dev", max_capital: str | None = None) 
     return base
 
 
+def create_mock_vault_with_telegram(
+    environment: str = "dev",
+    bot_token: str = "123456:TEST_TOKEN",
+    chat_id: str = "-100123456789",
+) -> dict[str, str]:
+    """Return a mock vault with Telegram notification fields set.
+
+    Args:
+        environment: The environment to mock (dev, int, prod).
+        bot_token:   Telegram Bot API token.
+        chat_id:     Target chat or channel ID.
+
+    Returns:
+        Dict with all required credentials, config, and Telegram fields.
+    """
+    vault = create_mock_vault(environment)
+    vault["TELEGRAM_BOT_TOKEN"] = bot_token
+    vault["TELEGRAM_CHAT_ID"] = chat_id
+    return vault
+
+
 def create_mock_vault_dev() -> dict[str, str]:
     """Return a mock vault for the dev environment."""
     return create_mock_vault("dev")

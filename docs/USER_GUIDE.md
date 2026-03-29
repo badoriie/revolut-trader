@@ -143,11 +143,13 @@ make opconfig-set KEY=<key> VALUE=<value> ENV=<env>
 
 ### Optional parameters
 
-| Key                          | Default                      | Example | Notes                                                                                                   |
-| ---------------------------- | ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`  | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with |
-| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`   | On shutdown, profitable positions wait for a trailing stop of this % before closing                     |
-| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`   | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position  |
+| Key                          | Default                      | Example         | Notes                                                                                                   |
+| ---------------------------- | ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`          | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with |
+| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`           | On shutdown, profitable positions wait for a trailing stop of this % before closing                     |
+| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`           | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position  |
+| `TELEGRAM_BOT_TOKEN`         | *(none — notifications off)* | `123:ABCdef...` | Telegram Bot API token from @BotFather — enables trade and status notifications                         |
+| `TELEGRAM_CHAT_ID`           | *(none — notifications off)* | `-100123456789` | Telegram chat or channel ID to send notifications to (both token and ID must be set)                    |
 
 ### Example: full configuration for paper trading
 
@@ -467,7 +469,46 @@ make opconfig-set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=180 ENV=int
 
 ______________________________________________________________________
 
-## 11. Deploying Unattended (Raspberry Pi / Server)
+## 11. Telegram Notifications (Optional)
+
+The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, or a critical error occurs (authentication failure, daily loss limit hit).
+
+### Set up a bot
+
+1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+1. Send `/newbot` and follow the prompts — copy the **API token** you receive
+1. Send a message to your new bot (needed to open the chat)
+1. Retrieve your **chat ID**:
+   ```bash
+   curl "https://api.telegram.org/bot<TOKEN>/getUpdates"
+   # Look for "chat":{"id": ...} in the response
+   ```
+   For a private channel, add the bot as admin and use the channel's negative ID (e.g. `-100123456789`).
+
+### Store credentials in 1Password
+
+```bash
+make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=<token>   ENV=prod
+make opconfig-set KEY=TELEGRAM_CHAT_ID   VALUE=<chat_id> ENV=prod
+```
+
+Both keys must be set — if either is missing, notifications are silently disabled.
+
+### What you receive
+
+| Event                  | Message                                         |
+| ---------------------- | ----------------------------------------------- |
+| Bot started            | Strategy, risk level, pairs, mode               |
+| Order filled           | Side, symbol, quantity, price, fee, P&L (sells) |
+| Shutdown complete      | Session ID, total realized P&L                  |
+| Daily loss limit hit   | Current day P&L, suspended notice               |
+| Authentication failure | Error description                               |
+
+Telegram failures never affect trading — errors are logged and discarded.
+
+______________________________________________________________________
+
+## 13. Deploying Unattended (Raspberry Pi / Server)
 
 See [Raspberry Pi Deployment](RASPBERRY_PI_DEPLOYMENT.md) for the complete guide.
 
@@ -511,7 +552,7 @@ sudo systemctl status revolut-trader
 
 ______________________________________________________________________
 
-## 12. Troubleshooting
+## 14. Troubleshooting
 
 ### API connection issues
 
@@ -578,7 +619,7 @@ Use only supported intervals (in minutes): `1`, `5`, `15`, `30`, `60`, `240`, `1
 
 ______________________________________________________________________
 
-## 13. FAQ
+## 15. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
 No. `make run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
@@ -628,7 +669,7 @@ Only `prod` (`make run ENV=prod` / `revt run`). Both `dev` and `int` are paper-t
 
 ______________________________________________________________________
 
-## 14. Trading Terminology
+## 16. Trading Terminology
 
 Plain-language definitions for every term that appears in this app's configuration, output, or reports. No prior trading knowledge needed.
 
