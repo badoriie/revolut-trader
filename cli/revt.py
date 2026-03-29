@@ -27,6 +27,8 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _OP_VAULT = "revolut-trader"
+_CANCELLED = "\nCancelled."
+_DAYS_HELP = "Look-back days (default: 30)"
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +146,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         try:
             confirm = input("Type 'I UNDERSTAND' to continue: ").strip()
         except (KeyboardInterrupt, EOFError):
-            print("\nCancelled.")
+            print(_CANCELLED)
             sys.exit(0)
         if confirm != "I UNDERSTAND":
             print("Cancelled.")
@@ -335,6 +337,17 @@ def _ops_status(env: str) -> None:
         print(f"  {item:<42} {'✓' if r.returncode == 0 else '✗  missing'}")
 
 
+def _mask_secret(val: str) -> str:
+    """Return a display-safe masked representation of a secret field value."""
+    if len(val) > 100:
+        return f"<set, {len(val)} chars>"
+    if len(val) > 8:
+        return val[:8] + "..."
+    if val:
+        return val[:4] + "..."
+    return "(empty)"
+
+
 def _ops_show(env: str) -> None:
     """Print stored credentials and configuration (secrets masked)."""
     if not _check_op():
@@ -356,16 +369,7 @@ def _ops_show(env: str) -> None:
                 "--reveal",
             )
             if r.returncode == 0:
-                val = r.stdout.strip()
-                if len(val) > 100:
-                    masked = f"<set, {len(val)} chars>"
-                elif len(val) > 8:
-                    masked = val[:8] + "..."
-                elif val:
-                    masked = val[:4] + "..."
-                else:
-                    masked = "(empty)"
-                print(f"  {field:<28}  {masked}")
+                print(f"  {field:<28}  {_mask_secret(r.stdout.strip())}")
 
     print(f"\n=== Configuration  ({_op_config_item(env)}) ===\n")
     print(f"  {'TRADING_MODE':<28}  (derived: dev/int → paper, prod → live)")
@@ -399,7 +403,7 @@ def _ops_set_creds(env: str) -> None:
     try:
         api_key = getpass.getpass("Revolut API Key: ").strip()
     except (KeyboardInterrupt, EOFError):
-        print("\nCancelled.")
+        print(_CANCELLED)
         return
 
     if api_key:
@@ -495,7 +499,7 @@ def _config_init(env: str) -> None:
         try:
             confirm = input("Reset to defaults? (y/N): ").strip()
         except (KeyboardInterrupt, EOFError):
-            print("\nCancelled.")
+            print(_CANCELLED)
             return
         if confirm.lower() != "y":
             print("Cancelled.")
@@ -795,7 +799,7 @@ examples:
         "--strategies",
         help="Comma-separated strategies for --compare (default: all)",
     )
-    p_bt.add_argument("--days", "-d", type=int, default=30, help="Look-back days (default: 30)")
+    p_bt.add_argument("--days", "-d", type=int, default=30, help=_DAYS_HELP)
     p_bt.add_argument(
         "--interval",
         "-i",
@@ -917,7 +921,7 @@ examples:
     db_sub.add_parser("stats", help="Database statistics overview")
 
     p_db_an = db_sub.add_parser("analytics", help="Trading analytics")
-    p_db_an.add_argument("--days", type=int, default=30, help="Look-back days (default: 30)")
+    p_db_an.add_argument("--days", type=int, default=30, help=_DAYS_HELP)
 
     p_db_bt = db_sub.add_parser("backtests", help="Recent backtest results")
     p_db_bt.add_argument(
@@ -927,7 +931,7 @@ examples:
     db_sub.add_parser("export", help="Export all data to CSV")
 
     p_db_rep = db_sub.add_parser("report", help="Full analytics report with charts")
-    p_db_rep.add_argument("--days", type=int, default=30, help="Look-back days (default: 30)")
+    p_db_rep.add_argument("--days", type=int, default=30, help=_DAYS_HELP)
     p_db_rep.add_argument(
         "--output-dir",
         dest="output_dir",
