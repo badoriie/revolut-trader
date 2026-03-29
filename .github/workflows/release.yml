@@ -217,7 +217,9 @@ jobs:
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Push commit and tag to main
-        run: git push origin main --follow-tags
+        run: |
+          git push origin main
+          git push origin "refs/tags/${{ steps.bump.outputs.tag }}"
 
       - name: Extract release notes from CHANGELOG.md
         run: |

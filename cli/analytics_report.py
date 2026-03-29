@@ -239,6 +239,86 @@ _LOW_WIN_RATE = 40.0
 _WEAK_SHARPE = 0.5
 
 
+def _check_no_trades(metrics: dict[str, Any]) -> list[str]:
+    """Return a suggestion if no trades exist in the selected window."""
+    if metrics.get("total_trades", 0) == 0:
+        return [
+            "No trading data found in the selected window. "
+            "Run the bot or a backtest first to generate analytics."
+        ]
+    return []
+
+
+def _check_win_rate(metrics: dict[str, Any]) -> list[str]:
+    """Return a suggestion if win rate is below the low-win-rate threshold."""
+    if (
+        metrics.get("total_trades", 0) >= _MIN_TRADES_FOR_SIGNAL
+        and metrics.get("win_rate", 0.0) < _LOW_WIN_RATE
+    ):
+        return [
+            f"Win rate is {metrics['win_rate']:.1f}% (below {_LOW_WIN_RATE:.0f}%). "
+            "Consider raising the minimum signal strength threshold "
+            "(STRATEGY_MIN_SIGNAL_STRENGTH) to trade only on high-confidence signals."
+        ]
+    return []
+
+
+def _check_fee_drag(metrics: dict[str, Any]) -> list[str]:
+    """Return a suggestion if fees represent a large fraction of gross P&L."""
+    total_fees = metrics.get("total_fees", 0.0)
+    total_pnl = metrics.get("total_pnl", 0.0)
+    if total_fees > 0 and total_pnl != 0:
+        fee_ratio = total_fees / abs(total_pnl)
+        if fee_ratio > _HIGH_FEE_RATIO:
+            return [
+                f"Fees represent {fee_ratio * 100:.0f}% of gross P&L (€{total_fees:.2f} fees vs "
+                f"€{abs(total_pnl):.2f} P&L). Switch MARKET-order strategies to LIMIT orders "
+                "(0% maker fee) where latency allows."
+            ]
+    return []
+
+
+def _check_drawdown(metrics: dict[str, Any]) -> list[str]:
+    """Return a suggestion if max drawdown exceeds warning thresholds."""
+    max_dd = metrics.get("max_drawdown_pct", 0.0)
+    if max_dd > _HIGH_DRAWDOWN:
+        return [
+            f"Max drawdown is {max_dd:.1f}% (above {_HIGH_DRAWDOWN:.0f}%). "
+            "Consider switching to the 'conservative' risk level or reducing INITIAL_CAPITAL "
+            "to limit per-trade position sizes."
+        ]
+    if max_dd > _CAUTION_DRAWDOWN:
+        return [
+            f"Max drawdown is {max_dd:.1f}%. Monitor closely — "
+            "sustained trading at this drawdown level may approach uncomfortable territory."
+        ]
+    return []
+
+
+def _check_symbol_losses(symbol_analytics: list[dict[str, Any]]) -> list[str]:
+    """Return a suggestion for each symbol with negative P&L and sufficient trade history."""
+    return [
+        f"Symbol {sym['symbol']} has negative P&L "
+        f"(€{sym['total_pnl']:.2f} over {sym['total_trades']} trades, "
+        f"win rate {sym.get('win_rate', 0):.0f}%). "
+        "Consider removing it from TRADING_PAIRS or adjusting its strategy."
+        for sym in symbol_analytics
+        if sym.get("total_trades", 0) >= 5 and sym.get("total_pnl", 0) < 0
+    ]
+
+
+def _check_best_backtest(backtest_analytics: dict[str, Any]) -> list[str]:
+    """Return a suggestion highlighting the best-performing backtest strategy."""
+    best = backtest_analytics.get("best_run")
+    if best:
+        return [
+            f"Best backtest strategy: {best['strategy']} "
+            f"(return {best.get('return_pct', 0):.1f}%, win rate {best.get('win_rate', 0):.1f}%). "
+            "Use 'make backtest-compare' to explore all strategies."
+        ]
+    return []
+
+
 def generate_suggestions(
     metrics: dict[str, Any],
     symbol_analytics: list[dict[str, Any]],
@@ -258,86 +338,18 @@ def generate_suggestions(
     Returns:
         Ordered list of human-readable suggestion strings.
     """
+    no_trades = _check_no_trades(metrics)
+    if no_trades:
+        return no_trades
+
     suggestions: list[str] = []
-
-    def check_no_trades(metrics):
-        if metrics.get("total_trades", 0) == 0:
-            return [
-                "No trading data found in the selected window. "
-                "Run the bot or a backtest first to generate analytics."
-            ]
-        return []
-
-    def check_win_rate(metrics):
-        if (
-            metrics.get("total_trades", 0) >= _MIN_TRADES_FOR_SIGNAL
-            and metrics.get("win_rate", 0.0) < _LOW_WIN_RATE
-        ):
-            return [
-                f"Win rate is {metrics['win_rate']:.1f}% (below {_LOW_WIN_RATE:.0f}%). "
-                "Consider raising the minimum signal strength threshold "
-                "(STRATEGY_MIN_SIGNAL_STRENGTH) to trade only on high-confidence signals."
-            ]
-        return []
-
-    def check_fee_drag(metrics):
-        total_fees = metrics.get("total_fees", 0.0)
-        total_pnl = metrics.get("total_pnl", 0.0)
-        if total_fees > 0 and total_pnl != 0:
-            fee_ratio = total_fees / abs(total_pnl)
-            if fee_ratio > _HIGH_FEE_RATIO:
-                return [
-                    f"Fees represent {fee_ratio * 100:.0f}% of gross P&L (€{total_fees:.2f} fees vs "
-                    f"€{abs(total_pnl):.2f} P&L). Switch MARKET-order strategies to LIMIT orders "
-                    "(0% maker fee) where latency allows."
-                ]
-        return []
-
-    def check_drawdown(metrics):
-        max_dd = metrics.get("max_drawdown_pct", 0.0)
-        if max_dd > _HIGH_DRAWDOWN:
-            return [
-                f"Max drawdown is {max_dd:.1f}% (above {_HIGH_DRAWDOWN:.0f}%). "
-                "Consider switching to the 'conservative' risk level or reducing INITIAL_CAPITAL "
-                "to limit per-trade position sizes."
-            ]
-        if max_dd > _CAUTION_DRAWDOWN:
-            return [
-                f"Max drawdown is {max_dd:.1f}%. Monitor closely — "
-                "sustained trading at this drawdown level may approach uncomfortable territory."
-            ]
-        return []
-
-    def check_symbol_losses(symbol_analytics):
-        return [
-            f"Symbol {sym['symbol']} has negative P&L "
-            f"(€{sym['total_pnl']:.2f} over {sym['total_trades']} trades, "
-            f"win rate {sym.get('win_rate', 0):.0f}%). "
-            "Consider removing it from TRADING_PAIRS or adjusting its strategy."
-            for sym in symbol_analytics
-            if sym.get("total_trades", 0) >= 5 and sym.get("total_pnl", 0) < 0
-        ]
-
-    def check_best_backtest(backtest_analytics):
-        best = backtest_analytics.get("best_run")
-        if best:
-            return [
-                f"Best backtest strategy: {best['strategy']} "
-                f"(return {best.get('return_pct', 0):.1f}%, win rate {best.get('win_rate', 0):.1f}%). "
-                "Use 'make backtest-compare' to explore all strategies."
-            ]
-        return []
-
-    suggestions.extend(check_no_trades(metrics))
-    if suggestions:
-        return suggestions
-    suggestions.extend(check_win_rate(metrics))
-    suggestions.extend(check_fee_drag(metrics))
-    suggestions.extend(check_drawdown(metrics))
+    suggestions.extend(_check_win_rate(metrics))
+    suggestions.extend(_check_fee_drag(metrics))
+    suggestions.extend(_check_drawdown(metrics))
     suggestions.extend(_sharpe_suggestions(metrics.get("sharpe_ratio")))
     suggestions.extend(_profit_factor_suggestions(metrics.get("profit_factor")))
-    suggestions.extend(check_symbol_losses(symbol_analytics))
-    suggestions.extend(check_best_backtest(backtest_analytics))
+    suggestions.extend(_check_symbol_losses(symbol_analytics))
+    suggestions.extend(_check_best_backtest(backtest_analytics))
     if not suggestions:
         suggestions.append(
             "No significant issues detected. Strategy appears healthy — "
