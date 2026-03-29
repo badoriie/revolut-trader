@@ -231,20 +231,20 @@ jobs:
           echo "--- release notes ---"
           cat release_notes.md
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (draft)
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           gh release create "${{ steps.bump.outputs.tag }}" \
             --title "${{ steps.bump.outputs.tag }}" \
             --notes-file release_notes.md \
-            --latest
+            --draft
 
       - name: Post release summary
         run: |
           TAG="${{ steps.bump.outputs.tag }}"
           {
-            echo "## Production Release $TAG"
+            echo "## Production Release $TAG (draft — binaries uploading)"
             echo ""
             echo "All checks passed:"
             echo "- Lint & Format"
@@ -253,7 +253,7 @@ jobs:
             echo "- Tests (prod, ≥97% coverage)"
             echo ""
             echo "**Tag:** \`$TAG\`"
-            echo "**Release:** [${TAG}](../../releases/tag/${TAG})"
+            echo "Draft release created — will be published once binaries are attached."
           } >> "$GITHUB_STEP_SUMMARY"
 
   build-revt:
@@ -303,3 +303,27 @@ jobs:
           gh release upload "${{ needs.release.outputs.tag }}" \
             "dist/${{ matrix.artifact }}" \
             --clobber
+
+  publish-release:
+    name: Publish Release
+    needs: [release, build-revt]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark release as latest
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh release edit "${{ needs.release.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest
+
+      - name: Post publish summary
+        run: |
+          TAG="${{ needs.release.outputs.tag }}"
+          {
+            echo "## Production Release $TAG — Published"
+            echo ""
+            echo "**Tag:** \`$TAG\`"
+            echo "**Release:** [${TAG}](../../releases/tag/${TAG})"
+          } >> "$GITHUB_STEP_SUMMARY"
