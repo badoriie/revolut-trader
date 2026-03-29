@@ -226,12 +226,15 @@ ______________________________________________________________________
 
 ## 7. Running the Bot
 
+The recommended way to run the bot is via the `revt` CLI, which is available after `uv sync`. It auto-detects the environment from your git branch (feature branch → `dev`, `main` → `int`, tagged release → `prod`) and can always be overridden with `--env`.
+
 ### Mode 1 — Mock trading (no credentials required)
 
-Uses a built-in fake API. Prices are simulated. No 1Password access needed. Good for exploring the interface and testing configuration changes.
+Uses a built-in fake API. Prices are simulated. No 1Password access needed.
 
 ```bash
-make run-mock
+revt run                             # auto-detects dev when on a feature branch
+revt run --env dev                   # explicit
 ```
 
 ### Mode 2 — Paper trading (real data, no real trades)
@@ -239,41 +242,32 @@ make run-mock
 Connects to the real Revolut X API to get live market data but executes all orders as simulations. Your balance is never touched. **This is the recommended mode before going live.**
 
 ```bash
-make run-paper
+revt run --env int
+revt run --env int --strategy momentum --risk moderate
 ```
 
 ### Mode 3 — Live trading (real money)
 
-Sends real orders to Revolut X. Requires `ENV=prod` credentials in 1Password. You will be asked to confirm before the bot starts.
+Sends real orders to Revolut X. Requires `prod` credentials in 1Password. You will be prompted to confirm before the bot starts.
 
 ```bash
-make run-live
+revt run --env prod
 ```
 
 > **The bot will prompt:** `Type 'I UNDERSTAND' to continue:` — type `I UNDERSTAND` to proceed.
 
-### Overriding settings at runtime
+### All `revt run` options
 
-You can override the 1Password configuration values from the command line for a single session:
+| Flag                 | Values                                                                                    | Notes                                         |
+| -------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `--env` / `-e`       | `dev` `int` `prod`                                                                        | Override auto-detected environment            |
+| `--strategy` / `-s`  | `market_making` `momentum` `mean_reversion` `multi_strategy` `breakout` `range_reversion` | Override `DEFAULT_STRATEGY`                   |
+| `--risk` / `-r`      | `conservative` `moderate` `aggressive`                                                    | Override `RISK_LEVEL` from 1Password          |
+| `--pairs` / `-p`     | `BTC-EUR,ETH-EUR,...`                                                                     | Override `TRADING_PAIRS` from 1Password       |
+| `--interval` / `-i`  | seconds                                                                                   | Override the strategy's default loop interval |
+| `--log-level` / `-l` | `DEBUG` `INFO` `WARNING` `ERROR`                                                          | Verbosity of console output                   |
 
-```bash
-uv run python cli/run.py \
-  --env int \
-  --strategy momentum \
-  --risk moderate \
-  --pairs BTC-EUR,ETH-EUR,SOL-EUR \
-  --interval 10 \
-  --log-level INFO
-```
-
-| Flag                 | Values                                 | Notes                                         |
-| -------------------- | -------------------------------------- | --------------------------------------------- |
-| `--env` / `-e`       | `dev` `int` `prod`                     | Override `ENVIRONMENT`                        |
-| `--strategy` / `-s`  | strategy name                          | Override `DEFAULT_STRATEGY` from 1Password    |
-| `--risk` / `-r`      | `conservative` `moderate` `aggressive` | Override `RISK_LEVEL` from 1Password          |
-| `--pairs` / `-p`     | `BTC-EUR,ETH-EUR,...`                  | Override `TRADING_PAIRS` from 1Password       |
-| `--interval` / `-i`  | seconds                                | Override the strategy's default loop interval |
-| `--log-level` / `-l` | `DEBUG` `INFO` `WARNING` `ERROR`       | Verbosity of console output                   |
+> **Environment override** — use `make run ENV=dev|int|prod` to force a specific environment instead of auto-detection.
 
 ### Stopping the bot
 
@@ -296,31 +290,34 @@ Backtesting lets you test a strategy on real historical data before using real m
 
 ```bash
 # Test the default strategy over 30 days
-make backtest
+revt backtest
 
 # Test a specific strategy and period
-make backtest STRATEGY=momentum DAYS=90 RISK=moderate
+revt backtest --strategy momentum --days 90 --risk moderate
 
 # High-frequency test: 1-minute candles (closest to live 5 s polling)
-make backtest-hf STRATEGY=breakout DAYS=7
+revt backtest --hf --strategy breakout --days 7
 
 # Compare all strategies side-by-side
-make backtest-compare DAYS=30
+revt backtest --compare --days 30
 
 # All strategies × all risk levels matrix
-make backtest-matrix DAYS=30
+revt backtest --matrix --days 30
 ```
 
-### Available backtest parameters
+### Available backtest options
 
-| Parameter  | Default           | Example           | Notes                      |
-| ---------- | ----------------- | ----------------- | -------------------------- |
-| `STRATEGY` | `market_making`   | `momentum`        | Single strategy name       |
-| `DAYS`     | `30`              | `90`              | Historical window          |
-| `RISK`     | `conservative`    | `moderate`        | Risk level                 |
-| `INTERVAL` | `60`              | `15`              | Candle interval in minutes |
-| `PAIRS`    | `BTC-EUR,ETH-EUR` | `BTC-EUR,SOL-EUR` | Trading pairs              |
-| `CAPITAL`  | `10000`           | `5000`            | Starting capital (EUR)     |
+| Flag         | Default           | Example                   | Notes                        |
+| ------------ | ----------------- | ------------------------- | ---------------------------- |
+| `--strategy` | `market_making`   | `--strategy momentum`     | Single strategy name         |
+| `--days`     | `30`              | `--days 90`               | Historical window            |
+| `--risk`     | `conservative`    | `--risk moderate`         | Risk level                   |
+| `--interval` | `60`              | `--interval 15`           | Candle interval in minutes   |
+| `--pairs`    | `BTC-EUR,ETH-EUR` | `--pairs BTC-EUR,SOL-EUR` | Trading pairs                |
+| `--capital`  | `10000`           | `--capital 5000`          | Starting capital (EUR)       |
+| `--hf`       | off               | `--hf`                    | 1-min candles mode           |
+| `--compare`  | off               | `--compare`               | All strategies side-by-side  |
+| `--matrix`   | off               | `--matrix`                | All strategies × risk levels |
 
 ### Valid candle intervals (minutes)
 
@@ -363,9 +360,9 @@ Sharpe Ratio    : 1.42
 ### Viewing past backtest results
 
 ```bash
-make db-backtests         # recent results (default: last 10)
-make db-backtests LIMIT=20  # last 20 results
-make db-export-csv          # export all results to CSV
+revt db backtests            # recent results (default: last 10)
+revt db backtests --limit 20 # last 20 results
+revt db export               # export all results to CSV
 ```
 
 ### Simulation accuracy
@@ -584,7 +581,7 @@ ______________________________________________________________________
 ## 13. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
-No. `make run-mock` uses a built-in simulated API with no credentials at all.
+No. `make run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
 
 **Q: Can I run multiple strategies at the same time?**
 The bot runs one strategy at a time. Use `multi_strategy` to get the benefits of multiple strategies in a single run — it combines signals from all strategies with weighted voting.
@@ -627,7 +624,7 @@ make api-order-book SYMBOL=BTC-EUR ENV=int
 The bot will never sell a cryptocurrency it did not purchase itself. If you hold BTC in your account from before you started the bot, the bot will not touch it.
 
 **Q: Which environments use real money?**
-Only `prod` (`make run-live`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
+Only `prod` (`make run ENV=prod` / `revt run`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
 
 ______________________________________________________________________
 
@@ -755,13 +752,13 @@ ______________________________________________________________________
 
 ### Bot Modes & Environments
 
-**Mock mode** (`make run-mock`, `ENVIRONMENT=dev`)
+**Mock mode** (`make run ENV=dev` / `revt run --env dev`, `ENVIRONMENT=dev`)
 Fully simulated — fake prices, no API calls, no credentials needed. Use it to explore the interface and test configuration changes without connecting to anything.
 
-**Paper trading** (`make run-paper`, `ENVIRONMENT=int`)
+**Paper trading** (`make run ENV=int` / `revt run --env int`, `ENVIRONMENT=int`)
 Real live market data from Revolut X, but all orders are simulated in software. Your balance is never touched. Always paper-trade before going live.
 
-**Live trading** (`make run-live`, `ENVIRONMENT=prod`)
+**Live trading** (`make run ENV=prod` / `revt run`, `ENVIRONMENT=prod`)
 Real orders sent to Revolut X. Real money. Requires prod credentials in 1Password and an explicit confirmation prompt.
 
 **Backtesting** (`make backtest`, `make backtest-compare`)

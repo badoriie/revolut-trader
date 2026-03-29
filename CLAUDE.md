@@ -31,10 +31,11 @@ make check                   # all of the above + tests
 # Run pre-commit hooks on all files
 make pre-commit
 
-# Run the bot
-make run-mock                # mock API (dev env, no credentials needed)
-make run-paper               # paper trading (int env, real API, no real trades)
-make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
+# Run the bot (env auto-detected: tagged commit→prod, main→int, other branch→dev)
+make run                     # env auto-detected; STRATEGY=... RISK=... PAIRS=... INTERVAL=...
+make run ENV=dev             # force dev (mock API, no credentials needed)
+make run ENV=int             # force int (paper trading, real API, no real trades)
+make run ENV=prod            # force prod (REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
@@ -64,6 +65,69 @@ make opshow ENV=dev          # show stored values for dev (masked)
 make opstatus                # check 1Password CLI status
 make opconfig-show ENV=dev   # show trading configuration for dev
 make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
+```
+
+### `revt` — user-facing CLI (production binary + source runner)
+
+The `revt` binary is built for **macOS ARM64** and **Linux ARM64 (Raspberry Pi 4+)** by the `build-revt` CI job and attached to every GitHub release as a downloadable asset. Users download it, `chmod +x`, put it in their PATH, and use it directly with no Python or uv required. When running as a frozen binary, `revt` always defaults to the `prod` environment.
+
+```bash
+# Build locally (for testing)
+uv run pyinstaller build/revt.spec --distpath dist --workpath build/.pyinstaller
+./dist/revt --help
+```
+
+After `uv sync`, a `revt` command is available. Environment is auto-detected from the git branch (same logic as the Makefile) and can always be overridden with `--env`.
+
+```bash
+# Run the bot
+revt run                                   # mock (dev branch) or paper (main)
+revt run --env prod                        # live trading — prompts for confirmation
+revt run --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR
+
+# Backtesting
+revt backtest                              # 30-day backtest, market_making, conservative
+revt backtest --hf                         # high-frequency (1-min candles)
+revt backtest --compare                    # all strategies side-by-side
+revt backtest --matrix                     # all strategies × all risk levels
+revt backtest --strategy breakout --days 60 --risk moderate
+
+# Credentials
+revt ops                                   # set API key (interactive)
+revt ops --show                            # show stored credentials + config
+revt ops --status                          # check 1Password CLI status
+revt ops --env prod                        # target prod environment
+
+# Configuration
+revt config show                           # view current config
+revt config show --env prod
+revt config set RISK_LEVEL aggressive
+revt config set MAX_CAPITAL 5000 --env prod
+revt config init --env prod                # create config with safe defaults
+revt config delete MAX_CAPITAL
+
+# API utilities (requires --env int or prod)
+revt api test                              # authenticated connection test
+revt api ready                             # check API permissions
+revt api balance                           # account balances
+revt api ticker --symbol BTC-EUR
+revt api tickers --symbols BTC-EUR,ETH-EUR
+revt api all-tickers
+revt api order-book --symbol BTC-EUR
+revt api candles --symbol BTC-EUR --interval 60
+revt api open-orders
+revt api orders                            # historical orders
+revt api trades --symbol BTC-EUR
+revt api order --order-id <uuid>
+
+# Database
+revt db stats
+revt db analytics --days 60
+revt db backtests --limit 20
+revt db export                             # export to CSV
+revt db report                             # full analytics report + charts
+revt db encrypt-setup
+revt db encrypt-status
 ```
 
 ## Architecture
@@ -278,3 +342,5 @@ Claude Code must handle this proactively without being asked.
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
 | `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |
+| `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
+| `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |

@@ -30,10 +30,11 @@ make check                   # all of the above + tests
 # Run pre-commit hooks on all files
 make pre-commit
 
-# Run the bot
-make run-mock                # mock API (dev env, no credentials needed)
-make run-paper               # paper trading (int env, real API, no real trades)
-make run-live                # live trading (prod env, REAL MONEY — requires confirmation)
+# Run the bot (env auto-detected: tagged commit→prod, main→int, other branch→dev)
+make run                     # env auto-detected; STRATEGY=... RISK=... PAIRS=... INTERVAL=...
+make run ENV=dev             # force dev (mock API, no credentials needed)
+make run ENV=int             # force int (paper trading, real API, no real trades)
+make run ENV=prod            # force prod (REAL MONEY — requires confirmation)
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)

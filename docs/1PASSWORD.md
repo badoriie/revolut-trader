@@ -56,12 +56,12 @@ ______________________________________________________________________
 
 ```bash
 make setup       # create vault, items, generate keys (int/prod only), install deps
-make run-mock    # start with mock API (no credentials needed)
+make run         # start with mock API on feature branches (no credentials needed)
 
 # For real API:
-make ops ENV=int # store your Revolut API credentials
-make opshow      # verify stored values (masked)
-make run-paper   # start with real API in paper mode
+make ops ENV=int  # store your Revolut API credentials
+make opshow       # verify stored values (masked)
+make run ENV=int  # start with real API in paper mode
 ```
 
 ______________________________________________________________________

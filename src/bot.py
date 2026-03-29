@@ -127,7 +127,7 @@ class TradingBot:
         if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
             raise RuntimeError(
                 "API key is read-only — cannot start in LIVE mode.\n"
-                "Switch to paper mode ('make run-paper') or create a key with "
+                "Switch to paper mode ('make run ENV=int' / 'revt run --env int') or create a key with "
                 "trading permissions in Revolut X."
             )
         if not perms["trade"]:

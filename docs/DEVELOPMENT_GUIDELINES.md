@@ -313,9 +313,10 @@ The project uses three deployment environments with full isolation:
 ### Running in each environment
 
 ```bash
-make run-mock         # mock API, no credentials needed
-make run-paper        # real API, paper mode (no real trades)
-make run-live         # real API, live trading (requires confirmation)
+make run              # env auto-detected from git branch (feature → dev, main → int)
+make run ENV=dev      # mock API, no credentials needed
+make run ENV=int      # real API, paper mode (no real trades)
+make run ENV=prod     # real API, live trading (requires confirmation)
 ```
 
 ### Branches & CI flow
@@ -349,7 +350,7 @@ ______________________________________________________________________
 1. Start in `dev` environment — validate with mock API
 1. Promote to `int` environment — paper trade with real market data
 1. Verify all safety limits work in `int` for at least 24 hours
-1. After thorough validation in int, go live with `make run-live`
+1. After thorough validation in int, go live with `make run ENV=prod` / `revt run`
 
 ______________________________________________________________________
 
