@@ -110,36 +110,36 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 ## Key Files
 
-| File                                  | Purpose                                                                                                 |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `src/bot.py`                          | Main orchestrator — start here to understand flow                                                       |
-| `src/config.py`                       | Pydantic config + 1Password loading                                                                     |
-| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                                                         |
-| `src/api/mock_client.py`              | Mock API client for dev environment                                                                     |
-| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal)                                                     |
-| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns)                                                     |
-| `src/risk_management/risk_manager.py` | Risk validation and position sizing                                                                     |
-| `src/execution/executor.py`           | Order execution and position management                                                                 |
-| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                                                                  |
-| `src/utils/onepassword.py`            | 1Password CLI wrapper                                                                                   |
-| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations                                                      |
-| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password                                                      |
-| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                   |
-| `src/utils/rate_limiter.py`           | API rate limiting                                                                                       |
-| `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — 0% maker / 0.09% taker                                    |
-| `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, taker fees |
-| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                  |
-| `tests/test_config.py`                | Configuration loading and validation tests                                                              |
-| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                             |
-| `docs/revolut-x-api-docs.md`          | Revolut X API reference — single source of truth                                                        |
-| `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                        |
-| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                      |
-| `docs/ARCHITECTURE.md`                | Component details and data flow                                                                         |
-| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                              |
-| `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                    |
-| `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                              |
-| `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts   |
-| `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command; defaults to `prod` when running as a frozen binary |
+| File                                  | Purpose                                                                                                        |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `src/bot.py`                          | Main orchestrator — start here to understand flow                                                              |
+| `src/config.py`                       | Pydantic config + 1Password loading                                                                            |
+| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                                                                |
+| `src/api/mock_client.py`              | Mock API client for dev environment                                                                            |
+| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal)                                                            |
+| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns)                                                            |
+| `src/risk_management/risk_manager.py` | Risk validation and position sizing                                                                            |
+| `src/execution/executor.py`           | Order execution and position management                                                                        |
+| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                                                                         |
+| `src/utils/onepassword.py`            | 1Password CLI wrapper                                                                                          |
+| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations                                                             |
+| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password                                                             |
+| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                          |
+| `src/utils/rate_limiter.py`           | API rate limiting                                                                                              |
+| `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — 0% maker / 0.09% taker                                           |
+| `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, taker fees        |
+| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                         |
+| `tests/test_config.py`                | Configuration loading and validation tests                                                                     |
+| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                                    |
+| `docs/revolut-x-api-docs.md`          | Revolut X API reference — single source of truth                                                               |
+| `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                               |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                             |
+| `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                |
+| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                     |
+| `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                           |
+| `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                     |
+| `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts          |
+| `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command; defaults to `prod` when running as a frozen binary      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; produces `revt-macos-arm64` and `revt-linux-arm64` |
 
 ## Commit Message Convention
