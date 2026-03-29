@@ -21,10 +21,11 @@ uv run pytest tests/unit/test_risk_manager.py -v
 # Run a single test
 uv run pytest tests/unit/test_risk_manager.py::TestClassName::test_name -v
 
-# Lint, format, type-check
+# Lint, format, type-check, security
 make lint                    # ruff check
 make format                  # ruff format + ruff check --fix
 make typecheck               # pyright src/ cli/
+make security                # bandit static security analysis
 make check                   # all of the above + tests
 
 # Run pre-commit hooks on all files
@@ -114,7 +115,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols.
 
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs and post-merge pushes to `main`), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
 
 ## Commit Message Convention
 
@@ -274,4 +275,6 @@ Claude Code must handle this proactively without being asked.
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
+| `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
+| `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
 | `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |

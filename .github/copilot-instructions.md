@@ -20,10 +20,11 @@ uv run pytest tests/unit/test_risk_manager.py -v
 # Run a single test
 uv run pytest tests/unit/test_risk_manager.py::TestClassName::test_name -v
 
-# Lint, format, type-check
+# Lint, format, type-check, security
 make lint                    # ruff check
 make format                  # ruff format + ruff check --fix
 make typecheck               # pyright src/ cli/
+make security                # bandit static security analysis
 make check                   # all of the above + tests
 
 # Run pre-commit hooks on all files
@@ -104,7 +105,7 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be ≥ 97% (enforced by CI and pre-commit)
 
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
+**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs and post-merge pushes to `main`), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
 
 ## Key Files
 
@@ -134,6 +135,8 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                      |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                         |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                              |
+| `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                    |
+| `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                              |
 | `cli/analytics_report.py`             | Analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy, suggestions, PNG charts   |
 
 ## Commit Message Convention
