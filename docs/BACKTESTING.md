@@ -336,8 +336,8 @@ After backtesting:
 
 1. **Review results**: `make db-backtests`
 1. **Export for analysis**: `make db-export-csv`
-1. **Paper trade**: Test with live data in paper mode — `make run-paper`
-1. **Live trade**: Only after consistent positive results — `make run-live`
+1. **Paper trade**: Test with live data in paper mode — `make run ENV=int` / `revt run --env int`
+1. **Live trade**: Only after consistent positive results — `make run ENV=prod` / `revt run`
 
 ______________________________________________________________________
 

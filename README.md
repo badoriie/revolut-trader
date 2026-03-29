@@ -28,20 +28,55 @@ See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, tradi
 
 ## Quick Start
 
+### Download the binary (recommended)
+
+Download `revt` for your platform from the [latest release](../../releases/latest):
+
+| Platform                                | File                      |
+| --------------------------------------- | ------------------------- |
+| macOS Apple Silicon (M1/M2/M3/M4)       | `revt-macos-arm64`        |
+| macOS Intel                             | `revt-macos-x86_64`       |
+| Linux x86_64 (servers, desktop)         | `revt-linux-x86_64`       |
+| Linux ARM64 (Raspberry Pi 4+, Graviton) | `revt-linux-arm64`        |
+| Windows x86_64                          | `revt-windows-x86_64.exe` |
+
 ```bash
-# 1. Complete setup (creates 1Password items for dev/int/prod)
-make setup
+# macOS (Apple Silicon)
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-macos-arm64 \
+  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
 
-# 2. Run with mock API (no credentials needed)
-make run-mock
+# macOS (Intel)
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-macos-x86_64 \
+  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
 
-# For real API:
-make ops ENV=int          # store your Revolut API credentials
-make opshow ENV=int       # verify stored values
-make run-paper            # run with real API in paper mode
+# Linux x86_64
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-x86_64 \
+  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
+
+# Linux ARM64 (Raspberry Pi 4+ / ARM servers)
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-arm64 \
+  -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
+
+# Windows — download revt-windows-x86_64.exe, rename to revt.exe, add to PATH
 ```
 
-See [1Password Setup](docs/1PASSWORD.md) for detailed credential configuration.
+Then:
+
+```bash
+revt ops                  # store your Revolut API key in 1Password
+revt config show          # verify your trading configuration
+revt run                  # start live trading
+```
+
+See [1Password Setup](docs/1PASSWORD.md) for credential configuration.
+
+### Run from source (developers)
+
+```bash
+uv sync --extra dev
+make run              # env auto-detected from git context (feature branch → dev/mock API)
+make run ENV=int      # paper trading with real API
+```
 
 ## Usage
 
@@ -62,11 +97,11 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 The project uses three environments with a single `main` branch:
 
-| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target      |
-| ----------- | ------------------------ | -------------------- | ------------ | -------------- | ---------------- |
-| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run-mock`  |
-| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run-paper` |
-| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run-live`  |
+| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target         |
+| ----------- | ------------------------ | -------------------- | ------------ | -------------- | ------------------- |
+| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run ENV=dev`  |
+| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run ENV=int`  |
+| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run ENV=prod` |
 
 ### Branch Flow
 
@@ -88,27 +123,28 @@ Each environment has its own 1Password items:
 - dev/int → paper (simulated trading)
 - prod → live (real money)
 
-### Mock Trading
+### Mock Trading (dev)
 
 ```bash
-make run-mock    # mock API, no credentials needed
+make run             # on a feature branch, env auto-detects to dev — mock API, no credentials needed
+make run ENV=dev     # or force dev explicitly
 ```
 
-### Paper Trading
+### Paper Trading (int)
 
 ```bash
-make run-paper   # real API, paper mode (no real trades)
+make run ENV=int     # real API, paper mode (no real trades)
 
-# Or with options
-ENVIRONMENT=int uv run python cli/run.py --env int --strategy momentum --risk moderate
+# With options
+make run ENV=int STRATEGY=momentum RISK=moderate
 ```
 
-### Live Trading
+### Live Trading (prod)
 
 **WARNING**: Uses real money. Only available in prod environment. Test thoroughly in paper mode first!
 
 ```bash
-make run-live    # with safety confirmation
+make run ENV=prod    # prompts for "I UNDERSTAND" confirmation before starting
 ```
 
 ### API Testing

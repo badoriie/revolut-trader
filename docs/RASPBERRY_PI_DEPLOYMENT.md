@@ -56,7 +56,7 @@ make opstatus
 
 ```bash
 make setup       # first-time setup (installs deps, pre-commit hooks)
-make run-paper   # paper trading
+make run ENV=int # paper trading
 ```
 
 ______________________________________________________________________

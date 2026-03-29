@@ -40,10 +40,12 @@ dev = [
     "bandit~=1.9",
     "commitizen~=4.0",
     "pylint~=3.0",
+    "pyinstaller~=6.0",
 ]
 
 [project.scripts]
 revolut-trader = "cli.run:main"
+revt = "cli.revt:main"
 
 [build-system]
 requires = ["hatchling~=1.29"]
