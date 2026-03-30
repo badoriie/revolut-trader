@@ -145,6 +145,7 @@ setup:
 					--category "Secure Note" \
 					--vault $(OP_VAULT) \
 					--title $$CREDS \
+					"TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" \
 					>/dev/null && echo "  $$CREDS: created (dev uses mock API — no API key needed)"; \
 			else \
 				op item create \
@@ -152,6 +153,7 @@ setup:
 					--vault $(OP_VAULT) \
 					--title $$CREDS \
 					"REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" \
+					"TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" \
 					>/dev/null && echo "  $$CREDS: created"; \
 			fi; \
 		fi; \
@@ -167,6 +169,10 @@ setup:
 					"BASE_CURRENCY[text]=EUR" \
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
+					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
+					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
+					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
 				echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
 			else \
@@ -179,6 +185,10 @@ setup:
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
 					"INITIAL_CAPITAL[text]=10000" \
+					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
+					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
+					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 			fi; \
 		fi; \
@@ -265,20 +275,25 @@ deep-clean:
 
 ops:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
+	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
+	@echo ""
 	@if [ "$(ENV)" = "dev" ]; then \
-		echo "Dev environment uses mock API — no API credentials needed."; \
-		echo "Run 'make run' to start with the mock API."; \
+		echo "Dev environment uses mock API — no Revolut API key needed."; \
 	else \
-		echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"; \
-		echo ""; \
-		printf "Revolut API Key: "; read api_key; \
+		printf "Revolut API Key (press Enter to skip): "; read api_key; \
 		if [ -n "$$api_key" ]; then \
 			op item edit $(OP_CREDS) --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=$$api_key" >/dev/null \
 				&& echo "  REVOLUT_API_KEY stored" || echo "  Failed to store REVOLUT_API_KEY"; \
 		fi; \
-		echo ""; \
-		echo "Done. Run 'make opshow' to verify."; \
 	fi
+	@echo ""
+	@printf "Telegram Bot Token (optional — press Enter to skip): "; read tg_token; \
+	if [ -n "$$tg_token" ]; then \
+		op item edit $(OP_CREDS) --vault $(OP_VAULT) "TELEGRAM_BOT_TOKEN[concealed]=$$tg_token" >/dev/null \
+			&& echo "  TELEGRAM_BOT_TOKEN stored" || echo "  Failed to store TELEGRAM_BOT_TOKEN"; \
+	fi
+	@echo ""
+	@echo "Done. Run 'make opshow' to verify."
 
 opshow:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
@@ -286,7 +301,7 @@ opshow:
 	@if [ "$(ENV)" = "dev" ]; then \
 		echo "  (dev uses mock API — no API credentials needed)"; \
 	else \
-		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
+		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY TELEGRAM_BOT_TOKEN; do \
 			value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
 			len=$${#value}; \
 			if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
@@ -298,7 +313,7 @@ opshow:
 	@echo ""
 	@echo "=== Configuration ($(OP_CONFIG)) ==="
 	@echo "  TRADING_MODE              = (derived: dev/int → paper, prod → live)"
-	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
+	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS TELEGRAM_CHAT_ID; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
 		printf "  %-25s = %s\n" "$$field" "$$value"; \
 	done
@@ -378,7 +393,7 @@ opconfig-set:
 opconfig-show:
 	@echo "Configuration ($(OP_VAULT)/$(OP_CONFIG)):"
 	@echo "  TRADING_MODE:            (derived: dev/int → paper, prod → live)"
-	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
+	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS TELEGRAM_CHAT_ID; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$key 2>/dev/null || echo "(not set)"); \
 		printf "  %-22s %s\n" "$$key:" "$$value"; \
 	done

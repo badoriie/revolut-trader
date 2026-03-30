@@ -487,9 +487,11 @@ The bot can send real-time notifications to a Telegram chat whenever a trade exe
 
 ### Store credentials in 1Password
 
+The bot token is stored as a concealed credential via `make ops`; the chat ID is stored as a config value:
+
 ```bash
-make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=<token>   ENV=prod
-make opconfig-set KEY=TELEGRAM_CHAT_ID   VALUE=<chat_id> ENV=prod
+make ops ENV=prod                                          # prompts for Revolut API key and Telegram bot token
+make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<chat_id> ENV=prod
 ```
 
 Both keys must be set — if either is missing, notifications are silently disabled.

@@ -245,7 +245,7 @@ class Settings(BaseSettings):
     shutdown_max_wait_seconds: int | None = Field(default=None)
 
     # Telegram notifications (optional — both must be set to enable).
-    # Store in 1Password with: make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=<token> ENV=<env>
+    # Store in 1Password with: make ops ENV=<env>                                  (bot token, concealed)
     #                          make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV=<env>
     telegram_bot_token: str | None = Field(default=None)
     telegram_chat_id: str | None = Field(default=None)
