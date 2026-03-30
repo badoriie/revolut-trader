@@ -6,6 +6,10 @@ engine in ``cli/analytics_report.py``.  No database, no matplotlib, no I/O.
 
 from __future__ import annotations
 
+from decimal import Decimal
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from cli.analytics_report import (
@@ -254,3 +258,191 @@ class TestGenerateSuggestions:
         suggestions = generate_suggestions(metrics, [], {})
         assert len(suggestions) >= 1
         assert any("no" in s.lower() or "data" in s.lower() for s in suggestions)
+
+
+# ---------------------------------------------------------------------------
+# Telegram integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestTelegramIntegration:
+    """Test telegram notification integration in generate_report."""
+
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_sends_telegram_notification_when_configured(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
+    ):
+        """When telegram is configured, generate_report sends a notification."""
+        # Setup settings with telegram config
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+
+        # Setup mock database
+        mock_db = MagicMock()
+        mock_db_cls.return_value = mock_db
+        mock_db.get_analytics.return_value = {
+            "total_trades": 100,
+            "win_rate": 60.0,
+            "total_pnl": 500.0,
+            "total_fees": 10.0,
+            "return_pct": 5.0,
+        }
+        mock_db.get_symbol_analytics.return_value = []
+        mock_db.get_strategy_live_analytics.return_value = []
+        mock_db.get_portfolio_value_series.return_value = [
+            {"total_value": 10000.0, "timestamp": "2026-01-01 00:00:00"},
+            {"total_value": 10500.0, "timestamp": "2026-01-02 00:00:00"},
+        ]
+        mock_db.get_backtest_analytics.return_value = {}
+        mock_db.load_backtest_runs.return_value = []
+        mock_db.load_trade_history.return_value = [{"pnl": 50.0}, {"pnl": -20.0}]
+
+        # Setup mock notifier
+        mock_notifier = MagicMock()
+        mock_notifier.notify_report_ready = AsyncMock()
+        mock_notifier_cls.return_value = mock_notifier
+
+        # Import after patching
+        from cli.analytics_report import generate_report
+
+        # Run report
+        generate_report(days=30, output_dir=tmp_path, quiet=True)
+
+        # Verify notifier was created with correct credentials
+        mock_notifier_cls.assert_called_once_with(
+            token="test_token",
+            chat_id="test_chat_id",
+        )
+
+        # Verify notification was sent
+        mock_notifier.notify_report_ready.assert_awaited_once()
+        call_kwargs = mock_notifier.notify_report_ready.call_args.kwargs
+        assert call_kwargs["days"] == 30
+        assert call_kwargs["total_trades"] == 100
+        assert isinstance(call_kwargs["total_pnl"], Decimal)
+        assert call_kwargs["win_rate"] == 60.0
+
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_skips_telegram_when_not_configured(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
+    ):
+        """When telegram is not configured, no notification is sent."""
+        # Setup settings without telegram config
+        mock_settings.telegram_bot_token = None
+        mock_settings.telegram_chat_id = None
+
+        # Setup mock database
+        mock_db = MagicMock()
+        mock_db_cls.return_value = mock_db
+        mock_db.get_analytics.return_value = {
+            "total_trades": 10,
+            "win_rate": 50.0,
+            "total_pnl": 100.0,
+            "total_fees": 5.0,
+            "return_pct": 1.0,
+        }
+        mock_db.get_symbol_analytics.return_value = []
+        mock_db.get_strategy_live_analytics.return_value = []
+        mock_db.get_portfolio_value_series.return_value = [
+            {"total_value": 10000.0, "timestamp": "2026-01-01 00:00:00"}
+        ]
+        mock_db.get_backtest_analytics.return_value = {}
+        mock_db.load_backtest_runs.return_value = []
+        mock_db.load_trade_history.return_value = []
+
+        # Import after patching
+        from cli.analytics_report import generate_report
+
+        # Run report
+        generate_report(days=30, output_dir=tmp_path, quiet=True)
+
+        # Verify notifier was never created
+        mock_notifier_cls.assert_not_called()
+
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_telegram_failure_does_not_crash_report(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
+    ):
+        """When telegram notification fails, report generation continues."""
+        # Setup settings with telegram config
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+
+        # Setup mock database
+        mock_db = MagicMock()
+        mock_db_cls.return_value = mock_db
+        mock_db.get_analytics.return_value = {
+            "total_trades": 10,
+            "win_rate": 50.0,
+            "total_pnl": 100.0,
+            "total_fees": 5.0,
+            "return_pct": 1.0,
+        }
+        mock_db.get_symbol_analytics.return_value = []
+        mock_db.get_strategy_live_analytics.return_value = []
+        mock_db.get_portfolio_value_series.return_value = [
+            {"total_value": 10000.0, "timestamp": "2026-01-01 00:00:00"}
+        ]
+        mock_db.get_backtest_analytics.return_value = {}
+        mock_db.load_backtest_runs.return_value = []
+        mock_db.load_trade_history.return_value = []
+
+        # Setup mock notifier that raises an error
+        mock_notifier = MagicMock()
+        mock_notifier.notify_report_ready = AsyncMock(side_effect=Exception("Network error"))
+        mock_notifier_cls.return_value = mock_notifier
+
+        # Import after patching
+        from cli.analytics_report import generate_report
+
+        # Run report - should not raise
+        result = generate_report(days=30, output_dir=tmp_path, quiet=True)
+
+        # Verify report was still generated
+        assert result["report_path"]
+        assert Path(result["report_path"]).exists()
+
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_telegram_disabled_via_parameter(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
+    ):
+        """When send_telegram=False, no notification is sent even if configured."""
+        # Setup settings with telegram config
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+
+        # Setup mock database
+        mock_db = MagicMock()
+        mock_db_cls.return_value = mock_db
+        mock_db.get_analytics.return_value = {
+            "total_trades": 10,
+            "win_rate": 50.0,
+            "total_pnl": 100.0,
+            "total_fees": 5.0,
+            "return_pct": 1.0,
+        }
+        mock_db.get_symbol_analytics.return_value = []
+        mock_db.get_strategy_live_analytics.return_value = []
+        mock_db.get_portfolio_value_series.return_value = [
+            {"total_value": 10000.0, "timestamp": "2026-01-01 00:00:00"}
+        ]
+        mock_db.get_backtest_analytics.return_value = {}
+        mock_db.load_backtest_runs.return_value = []
+        mock_db.load_trade_history.return_value = []
+
+        # Import after patching
+        from cli.analytics_report import generate_report
+
+        # Run report with send_telegram=False
+        generate_report(days=30, output_dir=tmp_path, quiet=True, send_telegram=False)
+
+        # Verify notifier was never created
+        mock_notifier_cls.assert_not_called()

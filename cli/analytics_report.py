@@ -21,14 +21,18 @@ Optional extra dependencies (``uv sync --extra analytics``):
 from __future__ import annotations
 
 import argparse
+import asyncio
 import math
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from src.config import settings
 from src.utils.db_persistence import DatabasePersistence
+from src.utils.telegram import TelegramNotifier
 
 # ---------------------------------------------------------------------------
 # Optional heavy deps — gracefully degrade without them
@@ -528,6 +532,7 @@ def generate_report(
     days: int = 30,
     output_dir: Path = Path("data/reports"),
     quiet: bool = False,
+    send_telegram: bool = True,
 ) -> dict[str, Any]:
     """Run the full analytics pipeline and write output files.
 
@@ -539,6 +544,7 @@ def generate_report(
         days: Look-back window in calendar days for live-trading metrics.
         output_dir: Directory to write charts and the markdown report into.
         quiet: Suppress terminal output (useful in tests).
+        send_telegram: Send notification via Telegram if configured (default: True).
 
     Returns:
         Dict containing all computed metrics, suggestions, and file paths.
@@ -596,6 +602,34 @@ def generate_report(
                     chart_paths.append(path)
         return chart_paths
 
+    async def send_telegram_notification(metrics, md_path):
+        """Send telegram notification if configured."""
+        if not send_telegram:
+            return
+
+        if not settings.telegram_bot_token or not settings.telegram_chat_id:
+            logger.debug("Telegram not configured — skipping report notification")
+            return
+
+        try:
+            notifier = TelegramNotifier(
+                token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+            )
+
+            await notifier.notify_report_ready(
+                days=days,
+                total_trades=metrics.get("total_trades", 0),
+                total_pnl=Decimal(str(metrics.get("total_pnl", 0.0))),
+                return_pct=metrics.get("return_pct", 0.0),
+                win_rate=metrics.get("win_rate", 0.0),
+                sharpe_ratio=metrics.get("sharpe_ratio", 0.0),
+                max_drawdown_pct=metrics.get("max_drawdown_pct", 0.0),
+                report_path=str(md_path),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send Telegram report notification: {e}")
+
     output_dir.mkdir(parents=True, exist_ok=True)
     db = DatabasePersistence()
     (
@@ -623,6 +657,10 @@ def generate_report(
     )
     md_path = output_dir / "report.md"
     md_path.write_text(md)
+
+    # Send telegram notification
+    asyncio.run(send_telegram_notification(metrics, md_path))
+
     if not quiet:
         _print_report(
             metrics, symbol_analytics, strategy_analytics, backtest_analytics, suggestions, days

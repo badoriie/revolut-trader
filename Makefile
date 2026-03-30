@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order telegram-test
 
 # ============================================================================
 # Environment — auto-detected from git context, or explicit override
@@ -157,6 +157,14 @@ setup:
 					>/dev/null && echo "  $$CREDS: created"; \
 			fi; \
 		fi; \
+		op item get $$CREDS --vault $(OP_VAULT) --fields TELEGRAM_BOT_TOKEN >/dev/null 2>&1 \
+			|| { op item edit $$CREDS --vault $(OP_VAULT) "TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" >/dev/null \
+			     && echo "  TELEGRAM_BOT_TOKEN: placeholder added"; }; \
+		if [ "$$env" != "dev" ]; then \
+			op item get $$CREDS --vault $(OP_VAULT) --fields REVOLUT_API_KEY >/dev/null 2>&1 \
+				|| { op item edit $$CREDS --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" >/dev/null \
+				     && echo "  REVOLUT_API_KEY: placeholder added"; }; \
+		fi; \
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
 		else \
@@ -192,6 +200,18 @@ setup:
 					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 			fi; \
 		fi; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields MAX_CAPITAL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAX_CAPITAL[text]=<optional-max-capital-eur>" >/dev/null \
+			     && echo "  MAX_CAPITAL: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields SHUTDOWN_TRAILING_STOP_PCT >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" >/dev/null \
+			     && echo "  SHUTDOWN_TRAILING_STOP_PCT: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields SHUTDOWN_MAX_WAIT_SECONDS >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" >/dev/null \
+			     && echo "  SHUTDOWN_MAX_WAIT_SECONDS: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields TELEGRAM_CHAT_ID >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" >/dev/null \
+			     && echo "  TELEGRAM_CHAT_ID: placeholder added"; }; \
 		if [ "$$env" = "dev" ]; then \
 			echo "  $$env: mock API — skipping Ed25519 key generation"; \
 		else \
@@ -511,6 +531,9 @@ api-ready:
 api-test:
 	$(call require_real_api,$@)
 	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py test
+
+telegram-test:
+	@ENVIRONMENT=$(ENV) uv run revt telegram test
 
 api-balance:
 	$(call require_real_api,$@)

@@ -190,6 +190,17 @@ async def run_compare(args) -> None:
     symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
     initial_capital = Decimal(str(args.capital))
 
+    from src.utils.telegram import TelegramNotifier
+
+    notifier = (
+        TelegramNotifier(
+            token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        if settings.telegram_bot_token and settings.telegram_chat_id
+        else None
+    )
+
     api_client = create_api_client(settings.environment)
     await api_client.initialize()
     db = DatabasePersistence()
@@ -259,6 +270,22 @@ async def run_compare(args) -> None:
         logger.info(
             f"All {total_runs} backtest runs saved to database. View with: make db-backtests"
         )
+
+        if notifier and comparison_rows:
+            sorted_rows = sorted(comparison_rows, key=lambda r: r["return_pct"], reverse=True)
+            best, worst = sorted_rows[0], sorted_rows[-1]
+            avg_return = sum(r["return_pct"] for r in sorted_rows) / len(sorted_rows)
+            await notifier.notify_backtest_compare_completed(
+                total_runs=total_runs,
+                days=args.days,
+                best_strategy=best["strategy"],
+                best_risk=best["risk_level"],
+                best_return_pct=best["return_pct"],
+                worst_strategy=worst["strategy"],
+                worst_risk=worst["risk_level"],
+                worst_return_pct=worst["return_pct"],
+                avg_return_pct=avg_return,
+            )
 
     finally:
         await api_client.close()

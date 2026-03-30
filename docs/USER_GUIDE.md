@@ -498,13 +498,14 @@ Both keys must be set — if either is missing, notifications are silently disab
 
 ### What you receive
 
-| Event                  | Message                                         |
-| ---------------------- | ----------------------------------------------- |
-| Bot started            | Strategy, risk level, pairs, mode               |
-| Order filled           | Side, symbol, quantity, price, fee, P&L (sells) |
-| Shutdown complete      | Session ID, total realized P&L                  |
-| Daily loss limit hit   | Current day P&L, suspended notice               |
-| Authentication failure | Error description                               |
+| Event                  | Message                                                         |
+| ---------------------- | --------------------------------------------------------------- |
+| Bot started            | Strategy, risk level, pairs, mode                               |
+| Order filled           | Side, symbol, quantity, price, fee, P&L (sells)                 |
+| Shutdown complete      | Session ID, total realized P&L                                  |
+| Analytics report ready | Days, trades, net P&L, return %, win rate, Sharpe, max DD, path |
+| Daily loss limit hit   | Current day P&L, suspended notice                               |
+| Authentication failure | Error description                                               |
 
 Telegram failures never affect trading — errors are logged and discarded.
 

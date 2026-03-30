@@ -355,7 +355,7 @@ def _ops_show(env: str) -> None:
 
     print(f"\n=== Credentials  ({_op_creds_item(env)}) ===\n")
     if env == "dev":
-        print("  (dev uses mock API — no API credentials needed)")
+        print("  (dev uses mock API — no Revolut API key needed)")
     else:
         for field in ("REVOLUT_API_KEY", "REVOLUT_PRIVATE_KEY", "REVOLUT_PUBLIC_KEY"):
             r = _op(
@@ -370,6 +370,18 @@ def _ops_show(env: str) -> None:
             )
             if r.returncode == 0:
                 print(f"  {field:<28}  {_mask_secret(r.stdout.strip())}")
+    r = _op(
+        "item",
+        "get",
+        _op_creds_item(env),
+        "--vault",
+        _OP_VAULT,
+        "--fields",
+        "TELEGRAM_BOT_TOKEN",
+        "--reveal",
+    )
+    if r.returncode == 0:
+        print(f"  {'TELEGRAM_BOT_TOKEN':<28}  {_mask_secret(r.stdout.strip())}")
 
     print(f"\n=== Configuration  ({_op_config_item(env)}) ===\n")
     print(f"  {'TRADING_MODE':<28}  (derived: dev/int → paper, prod → live)")
@@ -382,6 +394,7 @@ def _ops_show(env: str) -> None:
         "MAX_CAPITAL",
         "SHUTDOWN_TRAILING_STOP_PCT",
         "SHUTDOWN_MAX_WAIT_SECONDS",
+        "TELEGRAM_CHAT_ID",
     ):
         r = _op("item", "get", _op_config_item(env), "--vault", _OP_VAULT, "--fields", field)
         if r.returncode == 0:
@@ -461,6 +474,7 @@ def _config_show(env: str) -> None:
         "MAX_CAPITAL",
         "SHUTDOWN_TRAILING_STOP_PCT",
         "SHUTDOWN_MAX_WAIT_SECONDS",
+        "TELEGRAM_CHAT_ID",
     ):
         r = _op("item", "get", _op_config_item(env), "--vault", _OP_VAULT, "--fields", key)
         value = r.stdout.strip() if r.returncode == 0 else "(not set)"
@@ -615,6 +629,49 @@ def cmd_api(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# cmd: telegram
+# ---------------------------------------------------------------------------
+
+
+def cmd_telegram(args: argparse.Namespace) -> None:
+    """Test Telegram notification connectivity.
+
+    Loads credentials from 1Password, sends a test message to the configured
+    chat/channel, and reports whether it was delivered.
+    """
+    env = _resolve_env(args)
+
+    # Deferred import — ENVIRONMENT must be set before src.config is loaded.
+    from src.config import settings
+    from src.utils.telegram import TelegramNotifier
+
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+
+    if not token or not chat_id:
+        missing = []
+        if not token:
+            missing.append(f"TELEGRAM_BOT_TOKEN  →  make ops ENV={env}")
+        if not chat_id:
+            missing.append(
+                f"TELEGRAM_CHAT_ID    →  make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV={env}"
+            )
+        print("❌  Telegram is not configured. Set the missing fields:")
+        for m in missing:
+            print(f"     {m}")
+        sys.exit(1)
+
+    notifier = TelegramNotifier(token=token, chat_id=chat_id)
+    print(f"Sending test notification (chat {chat_id})…")
+    try:
+        asyncio.run(notifier.send_test())
+        print("✓  Test message delivered — check your Telegram chat.")
+    except Exception as e:
+        print(f"❌  Failed: {e}")
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # cmd: db
 # ---------------------------------------------------------------------------
 
@@ -722,6 +779,8 @@ examples:
   revt db backtests
   revt db export
   revt db report                              full analytics report + charts
+
+  revt telegram test                          verify Telegram notifications are working
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -943,6 +1002,13 @@ examples:
     db_sub.add_parser("encrypt-status", help="Check whether DB encryption is active")
 
     p_db.set_defaults(func=cmd_db)
+
+    # ── telegram ──────────────────────────────────────────────────────────────
+    p_tg = sub.add_parser("telegram", help="Telegram notification utilities")
+    _add_env_arg(p_tg)
+    tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar="<subcommand>")
+    tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
+    p_tg.set_defaults(func=cmd_telegram)
 
     return parser
 

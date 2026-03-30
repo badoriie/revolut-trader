@@ -35,6 +35,17 @@ async def run_backtest(args) -> None:
     symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
     initial_capital = Decimal(str(args.capital))
 
+    from src.utils.telegram import TelegramNotifier
+
+    notifier = (
+        TelegramNotifier(
+            token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        if settings.telegram_bot_token and settings.telegram_chat_id
+        else None
+    )
+
     api_client = create_api_client(settings.environment)
     await api_client.initialize()
 
@@ -43,6 +54,7 @@ async def run_backtest(args) -> None:
         strategy_type=strategy_type,
         risk_level=risk_level,
         initial_capital=initial_capital,
+        notifier=notifier,
     )
 
     try:

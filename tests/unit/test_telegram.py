@@ -266,3 +266,341 @@ async def test_notify_daily_loss_limit_mentions_suspended(notifier, mock_http):
     await notifier.notify_daily_loss_limit(Decimal("-100.00"))
     text = mock_http.post.call_args.kwargs["json"]["text"]
     assert "suspended" in text.lower()
+
+
+# ── send_test ─────────────────────────────────────────────────────────────────
+
+
+async def test_send_test_posts_to_api(notifier, mock_http):
+    """send_test must POST a message to the Telegram Bot API."""
+    await notifier.send_test()
+    mock_http.post.assert_awaited_once()
+    url = mock_http.post.call_args.args[0]
+    assert TOKEN in url
+
+
+async def test_send_test_message_indicates_working(notifier, mock_http):
+    """Test message must communicate that notifications are working."""
+    await notifier.send_test()
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "working" in text.lower() or "✅" in text
+
+
+async def test_send_test_raises_on_connection_error(notifier, failing_http):
+    """send_test must propagate errors — unlike the silent production methods."""
+    with pytest.raises(httpx.ConnectError):
+        await notifier.send_test()
+
+
+async def test_send_test_raises_on_http_error(notifier, http_error):
+    """send_test must propagate HTTP errors — unlike the silent production methods."""
+    with pytest.raises(httpx.HTTPStatusError):
+        await notifier.send_test()
+
+
+# ── notify_backtest_started ───────────────────────────────────────────────────
+
+
+async def test_notify_backtest_started_contains_strategy(notifier, mock_http):
+    await notifier.notify_backtest_started(
+        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "momentum" in text
+
+
+async def test_notify_backtest_started_contains_pairs(notifier, mock_http):
+    await notifier.notify_backtest_started(
+        "momentum", "moderate", ["BTC-EUR", "ETH-EUR"], 30, 60, Decimal("10000")
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "BTC-EUR" in text
+
+
+async def test_notify_backtest_started_contains_period(notifier, mock_http):
+    await notifier.notify_backtest_started(
+        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "30" in text
+
+
+async def test_notify_backtest_started_contains_capital(notifier, mock_http):
+    await notifier.notify_backtest_started(
+        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "10,000.00" in text
+
+
+# ── notify_backtest_completed ─────────────────────────────────────────────────
+
+
+async def test_notify_backtest_completed_positive_pnl(notifier, mock_http):
+    await notifier.notify_backtest_completed(
+        strategy="momentum",
+        risk_level="moderate",
+        days=30,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        total_trades=20,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "+€500.00" in text
+    assert "5.00%" in text
+
+
+async def test_notify_backtest_completed_negative_pnl(notifier, mock_http):
+    await notifier.notify_backtest_completed(
+        strategy="momentum",
+        risk_level="moderate",
+        days=30,
+        total_pnl=Decimal("-200.00"),
+        return_pct=-2.0,
+        total_trades=10,
+        win_rate=40.0,
+        sharpe_ratio=-0.3,
+        max_drawdown_pct=5.1,
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "-€200.00" in text
+
+
+async def test_notify_backtest_completed_contains_trades_and_win_rate(notifier, mock_http):
+    await notifier.notify_backtest_completed(
+        strategy="momentum",
+        risk_level="moderate",
+        days=30,
+        total_pnl=Decimal("100"),
+        return_pct=1.0,
+        total_trades=42,
+        win_rate=61.9,
+        sharpe_ratio=1.2,
+        max_drawdown_pct=2.0,
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "42" in text
+    assert "61.9" in text
+
+
+async def test_notify_backtest_completed_is_silent_on_error(notifier, failing_http):
+    """Backtest completion notification must not raise — same as other production methods."""
+    await notifier.notify_backtest_completed(
+        strategy="momentum",
+        risk_level="moderate",
+        days=30,
+        total_pnl=Decimal("0"),
+        return_pct=0.0,
+        total_trades=0,
+        win_rate=0.0,
+        sharpe_ratio=0.0,
+        max_drawdown_pct=0.0,
+    )  # must not raise
+
+
+# ── notify_backtest_compare_completed ─────────────────────────────────────────
+
+
+async def test_notify_backtest_compare_completed_contains_run_count(notifier, mock_http):
+    await notifier.notify_backtest_compare_completed(
+        total_runs=18,
+        days=30,
+        best_strategy="momentum",
+        best_risk="aggressive",
+        best_return_pct=12.35,
+        worst_strategy="market_making",
+        worst_risk="conservative",
+        worst_return_pct=-2.1,
+        avg_return_pct=4.23,
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "18" in text
+
+
+async def test_notify_backtest_compare_completed_contains_best_strategy(notifier, mock_http):
+    await notifier.notify_backtest_compare_completed(
+        total_runs=6,
+        days=30,
+        best_strategy="momentum",
+        best_risk="aggressive",
+        best_return_pct=12.35,
+        worst_strategy="market_making",
+        worst_risk="conservative",
+        worst_return_pct=-2.1,
+        avg_return_pct=4.23,
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "momentum" in text
+    assert "12.35" in text
+
+
+async def test_notify_backtest_compare_completed_is_silent_on_error(notifier, failing_http):
+    """Compare summary must not raise on network failure."""
+    await notifier.notify_backtest_compare_completed(
+        total_runs=6,
+        days=30,
+        best_strategy="momentum",
+        best_risk="moderate",
+        best_return_pct=5.0,
+        worst_strategy="market_making",
+        worst_risk="conservative",
+        worst_return_pct=-1.0,
+        avg_return_pct=2.0,
+    )  # must not raise
+
+
+# ── notify_report_ready ───────────────────────────────────────────────────────
+
+
+async def test_notify_report_ready_contains_days(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "30 days" in text
+
+
+async def test_notify_report_ready_contains_total_trades(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "100" in text
+
+
+async def test_notify_report_ready_positive_pnl(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "+€500.00" in text
+    assert "+5.00%" in text
+
+
+async def test_notify_report_ready_negative_pnl(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=50,
+        total_pnl=Decimal("-200.00"),
+        return_pct=-2.0,
+        win_rate=40.0,
+        sharpe_ratio=-0.3,
+        max_drawdown_pct=5.1,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "-€200.00" in text
+    assert "-2.00%" in text
+
+
+async def test_notify_report_ready_contains_sharpe(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.523,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "1.523" in text
+
+
+async def test_notify_report_ready_contains_win_rate(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=62.5,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "62.5%" in text
+
+
+async def test_notify_report_ready_contains_max_drawdown(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.27,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "3.3%" in text
+
+
+async def test_notify_report_ready_contains_report_path(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "data/reports/report.md" in text
+
+
+async def test_notify_report_ready_zero_sharpe_shows_na(notifier, mock_http):
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=0.0,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )
+    text = mock_http.post.call_args.kwargs["json"]["text"]
+    assert "N/A" in text
+
+
+async def test_notify_report_ready_is_silent_on_error(notifier, failing_http):
+    """Report notification must not raise on network failure."""
+    await notifier.notify_report_ready(
+        days=30,
+        total_trades=100,
+        total_pnl=Decimal("500.00"),
+        return_pct=5.0,
+        win_rate=60.0,
+        sharpe_ratio=1.5,
+        max_drawdown_pct=3.2,
+        report_path="data/reports/report.md",
+    )  # must not raise
