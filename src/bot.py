@@ -206,6 +206,39 @@ class TradingBot:
                 mode=self.trading_mode.value,
             )
 
+    async def _shutdown_executor(self) -> None:
+        """Cancel orders, close all positions, and process shutdown results.
+
+        Runs the executor's graceful shutdown sequence, then updates cash balance
+        for each position closed during shutdown and notifies on each filled order.
+        Any shutdown errors are logged.
+        """
+        assert self.executor is not None
+        trailing_pct = (
+            Decimal(str(settings.shutdown_trailing_stop_pct))
+            if settings.shutdown_trailing_stop_pct is not None
+            else None
+        )
+        shutdown_summary = await self.executor.graceful_shutdown(
+            trailing_stop_pct=trailing_pct,
+            max_wait_seconds=settings.shutdown_max_wait_seconds,
+        )
+        logger.info(
+            f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
+            f"{shutdown_summary.positions_closed}/{shutdown_summary.positions_evaluated} "
+            f"positions closed "
+            f"({shutdown_summary.positions_trailing_stopped} via trailing stop)"
+        )
+
+        for order in shutdown_summary.filled_close_orders:
+            self._process_filled_order(order)
+            if self.notifier:
+                await self.notifier.notify_trade(order, self.currency_symbol)
+
+        if shutdown_summary.errors:
+            for error in shutdown_summary.errors:
+                logger.error(f"Shutdown error: {error}")
+
     async def stop(self):
         """Stop the trading bot gracefully.
 
@@ -223,31 +256,7 @@ class TradingBot:
         # Graceful shutdown: cancel orders, close ALL positions.
         # Profitable positions wait for a trailing stop (if configured) before closing.
         if self.executor:
-            trailing_pct = (
-                Decimal(str(settings.shutdown_trailing_stop_pct))
-                if settings.shutdown_trailing_stop_pct is not None
-                else None
-            )
-            shutdown_summary = await self.executor.graceful_shutdown(
-                trailing_stop_pct=trailing_pct,
-                max_wait_seconds=settings.shutdown_max_wait_seconds,
-            )
-            logger.info(
-                f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
-                f"{shutdown_summary.positions_closed}/{shutdown_summary.positions_evaluated} "
-                f"positions closed "
-                f"({shutdown_summary.positions_trailing_stopped} via trailing stop)"
-            )
-
-            # Update cash balance for positions closed during shutdown
-            for order in shutdown_summary.filled_close_orders:
-                self._process_filled_order(order)
-                if self.notifier:
-                    await self.notifier.notify_trade(order, self.currency_symbol)
-
-            if shutdown_summary.errors:
-                for error in shutdown_summary.errors:
-                    logger.error(f"Shutdown error: {error}")
+            await self._shutdown_executor()
 
         # Save final state and end session
         self._save_data()
