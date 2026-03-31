@@ -49,7 +49,6 @@ from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.fees import calculate_fee
-from src.utils.telegram import TelegramNotifier
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -217,13 +216,11 @@ class BacktestEngine:
         strategy_type: StrategyType,
         risk_level: RiskLevel,
         initial_capital: Decimal = Decimal("10000"),
-        notifier: TelegramNotifier | None = None,
     ) -> None:
         self.api_client = api_client
         self.strategy_type = strategy_type
         self.risk_level = risk_level
         self.initial_capital = initial_capital
-        self.notifier = notifier
 
         self.risk_manager = RiskManager(risk_level=risk_level, strategy=strategy_type.value)
         self.strategy: BaseStrategy = self._create_strategy(strategy_type)
@@ -786,17 +783,6 @@ class BacktestEngine:
         logger.info(f"Period:          {days}d × {interval}min candles")
         logger.info("=" * 60)
 
-        if self.notifier:
-            await self.notifier.notify_backtest_started(
-                strategy=self.strategy_type.value,
-                risk_level=self.risk_level.value,
-                pairs=symbols,
-                days=days,
-                interval=interval,
-                capital=self.initial_capital,
-                currency_symbol=currency_symbol,
-            )
-
         indexed: dict[str, dict[int, CandleData]] = {}
         for symbol in symbols:
             candles = await self.fetch_historical_data(symbol, days, interval)
@@ -831,19 +817,5 @@ class BacktestEngine:
 
         logger.info("Backtest complete!")
         self.results.print_summary(currency_symbol=currency_symbol)
-
-        if self.notifier:
-            await self.notifier.notify_backtest_completed(
-                strategy=self.strategy_type.value,
-                risk_level=self.risk_level.value,
-                days=days,
-                total_pnl=self.results.total_pnl,
-                return_pct=self.results.return_pct,
-                total_trades=self.results.total_trades,
-                win_rate=self.results.win_rate,
-                sharpe_ratio=self.results.sharpe_ratio,
-                max_drawdown_pct=self.results.max_drawdown_pct,
-                currency_symbol=currency_symbol,
-            )
 
         return self.results

@@ -268,18 +268,8 @@ class TestGenerateSuggestions:
 class TestTelegramIntegration:
     """Test telegram notification integration in generate_report."""
 
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
-    def test_sends_telegram_notification_when_configured(
-        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
-    ):
-        """When telegram is configured, generate_report sends a notification."""
-        # Setup settings with telegram config
-        mock_settings.telegram_bot_token = "test_token"
-        mock_settings.telegram_chat_id = "test_chat_id"
-
-        # Setup mock database
+    def _setup_mock_db(self, mock_db_cls):
+        """Configure mock database with minimal valid return values."""
         mock_db = MagicMock()
         mock_db_cls.return_value = mock_db
         mock_db.get_analytics.return_value = {
@@ -298,31 +288,91 @@ class TestTelegramIntegration:
         mock_db.get_backtest_analytics.return_value = {}
         mock_db.load_backtest_runs.return_value = []
         mock_db.load_trade_history.return_value = [{"pnl": 50.0}, {"pnl": -20.0}]
+        return mock_db
 
-        # Setup mock notifier
+    @patch("cli.analytics_report._generate_pdf", return_value=None)
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_sends_text_fallback_when_no_pdf(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
+    ):
+        """When _generate_pdf returns None, falls back to notify_report_ready text message."""
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+        self._setup_mock_db(mock_db_cls)
+
         mock_notifier = MagicMock()
         mock_notifier.notify_report_ready = AsyncMock()
         mock_notifier_cls.return_value = mock_notifier
 
-        # Import after patching
         from cli.analytics_report import generate_report
 
-        # Run report
         generate_report(days=30, output_dir=tmp_path, quiet=True)
 
-        # Verify notifier was created with correct credentials
-        mock_notifier_cls.assert_called_once_with(
-            token="test_token",
-            chat_id="test_chat_id",
-        )
-
-        # Verify notification was sent
+        mock_notifier_cls.assert_called_once_with(token="test_token", chat_id="test_chat_id")
         mock_notifier.notify_report_ready.assert_awaited_once()
         call_kwargs = mock_notifier.notify_report_ready.call_args.kwargs
         assert call_kwargs["days"] == 30
         assert call_kwargs["total_trades"] == 100
         assert isinstance(call_kwargs["total_pnl"], Decimal)
         assert call_kwargs["win_rate"] == 60.0
+
+    @patch("cli.analytics_report._generate_pdf", return_value=b"%PDF-1.4 test")
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_sends_pdf_when_pdf_bytes_available(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
+    ):
+        """When _generate_pdf returns bytes, send_document is called with the PDF."""
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+        self._setup_mock_db(mock_db_cls)
+
+        mock_notifier = MagicMock()
+        mock_notifier.send_document = AsyncMock()
+        mock_notifier.notify_report_ready = AsyncMock()
+        mock_notifier_cls.return_value = mock_notifier
+
+        from cli.analytics_report import generate_report
+
+        generate_report(days=30, output_dir=tmp_path, quiet=True)
+
+        mock_notifier.send_document.assert_awaited_once()
+        call_args = mock_notifier.send_document.call_args
+        assert call_args.args[0] == b"%PDF-1.4 test"
+        assert call_args.args[1] == "analytics_report.pdf"
+        assert "<b>" in call_args.kwargs.get("caption", "")
+        # notify_report_ready must NOT be called when PDF is sent
+        mock_notifier.notify_report_ready.assert_not_awaited()
+
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_sends_telegram_notification_when_configured(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
+    ):
+        """When telegram is configured, generate_report sends a notification (either PDF or text)."""
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+        self._setup_mock_db(mock_db_cls)
+
+        mock_notifier = MagicMock()
+        mock_notifier.send_document = AsyncMock()
+        mock_notifier.notify_report_ready = AsyncMock()
+        mock_notifier_cls.return_value = mock_notifier
+
+        from cli.analytics_report import generate_report
+
+        generate_report(days=30, output_dir=tmp_path, quiet=True)
+
+        mock_notifier_cls.assert_called_once_with(token="test_token", chat_id="test_chat_id")
+        # One of the two methods must have been called
+        total_calls = (
+            mock_notifier.send_document.await_count + mock_notifier.notify_report_ready.await_count
+        )
+        assert total_calls == 1
 
     @patch("cli.analytics_report.DatabasePersistence")
     @patch("cli.analytics_report.TelegramNotifier")
@@ -407,6 +457,34 @@ class TestTelegramIntegration:
         # Verify report was still generated
         assert result["report_path"]
         assert Path(result["report_path"]).exists()
+
+    @patch("cli.analytics_report._generate_pdf", side_effect=RuntimeError("fpdf2 crash"))
+    @patch("cli.analytics_report.DatabasePersistence")
+    @patch("cli.analytics_report.TelegramNotifier")
+    @patch("cli.analytics_report.settings")
+    def test_falls_back_to_text_when_pdf_generation_fails(
+        self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
+    ):
+        """When _generate_pdf raises, falls back to notify_report_ready text message."""
+        mock_settings.telegram_bot_token = "test_token"
+        mock_settings.telegram_chat_id = "test_chat_id"
+        self._setup_mock_db(mock_db_cls)
+
+        mock_notifier = MagicMock()
+        mock_notifier.send_document = AsyncMock()
+        mock_notifier.notify_report_ready = AsyncMock()
+        mock_notifier_cls.return_value = mock_notifier
+
+        from cli.analytics_report import generate_report
+
+        # Must not raise — report generation must succeed even when PDF fails
+        result = generate_report(days=30, output_dir=tmp_path, quiet=True)
+        assert result["report_path"]
+
+        # PDF was NOT sent (generation failed)
+        mock_notifier.send_document.assert_not_awaited()
+        # Text fallback WAS sent instead
+        mock_notifier.notify_report_ready.assert_awaited_once()
 
     @patch("cli.analytics_report.DatabasePersistence")
     @patch("cli.analytics_report.TelegramNotifier")

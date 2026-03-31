@@ -732,6 +732,8 @@ def cmd_db(args: argparse.Namespace) -> None:
 # Argument parser
 # ---------------------------------------------------------------------------
 
+_SUBCOMMAND_METAVAR = "<subcommand>"
+
 
 def _add_env_arg(p: argparse.ArgumentParser) -> None:
     """Add the standard --env argument to a subparser."""
@@ -909,7 +911,7 @@ examples:
     # ── config ────────────────────────────────────────────────────────────────
     p_cfg = sub.add_parser("config", help="View / update trading configuration in 1Password")
     _add_env_arg(p_cfg)
-    cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar="<subcommand>")
+    cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     cfg_sub.add_parser("show", help="Show current configuration")
 
@@ -975,7 +977,7 @@ examples:
     # ── db ────────────────────────────────────────────────────────────────────
     p_db = sub.add_parser("db", help="Database management and analytics")
     _add_env_arg(p_db)
-    db_sub = p_db.add_subparsers(dest="db_cmd", metavar="<subcommand>")
+    db_sub = p_db.add_subparsers(dest="db_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     db_sub.add_parser("stats", help="Database statistics overview")
 
@@ -1006,7 +1008,7 @@ examples:
     # ── telegram ──────────────────────────────────────────────────────────────
     p_tg = sub.add_parser("telegram", help="Telegram notification utilities")
     _add_env_arg(p_tg)
-    tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar="<subcommand>")
+    tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar=_SUBCOMMAND_METAVAR)
     tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
     p_tg.set_defaults(func=cmd_telegram)
 

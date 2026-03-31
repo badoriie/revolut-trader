@@ -298,158 +298,43 @@ async def test_send_test_raises_on_http_error(notifier, http_error):
         await notifier.send_test()
 
 
-# ── notify_backtest_started ───────────────────────────────────────────────────
+# ── send_document ─────────────────────────────────────────────────────────────
 
 
-async def test_notify_backtest_started_contains_strategy(notifier, mock_http):
-    await notifier.notify_backtest_started(
-        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "momentum" in text
+async def test_send_document_posts_to_send_document_url(notifier, mock_http):
+    """send_document must call the sendDocument endpoint, not sendMessage."""
+    await notifier.send_document(b"%PDF-dummy", "report.pdf")
+    url = mock_http.post.call_args.args[0]
+    assert "sendDocument" in url
+    assert "sendMessage" not in url
 
 
-async def test_notify_backtest_started_contains_pairs(notifier, mock_http):
-    await notifier.notify_backtest_started(
-        "momentum", "moderate", ["BTC-EUR", "ETH-EUR"], 30, 60, Decimal("10000")
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "BTC-EUR" in text
+async def test_send_document_sends_file_bytes(notifier, mock_http):
+    """The PDF bytes must be included in the multipart files payload."""
+    pdf_bytes = b"%PDF-1.4 test content"
+    await notifier.send_document(pdf_bytes, "report.pdf")
+    files = mock_http.post.call_args.kwargs["files"]
+    # files["document"] is a tuple (filename, bytes, content_type)
+    assert files["document"][1] == pdf_bytes
 
 
-async def test_notify_backtest_started_contains_period(notifier, mock_http):
-    await notifier.notify_backtest_started(
-        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "30" in text
+async def test_send_document_uses_pdf_filename(notifier, mock_http):
+    """The filename in the multipart payload must match what was passed."""
+    await notifier.send_document(b"%PDF", "analytics_report.pdf")
+    files = mock_http.post.call_args.kwargs["files"]
+    assert files["document"][0] == "analytics_report.pdf"
 
 
-async def test_notify_backtest_started_contains_capital(notifier, mock_http):
-    await notifier.notify_backtest_started(
-        "momentum", "moderate", ["BTC-EUR"], 30, 60, Decimal("10000")
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "10,000.00" in text
+async def test_send_document_includes_caption(notifier, mock_http):
+    """A non-empty caption must appear in the form data payload."""
+    await notifier.send_document(b"%PDF", "report.pdf", caption="<b>Summary</b>")
+    data = mock_http.post.call_args.kwargs["data"]
+    assert data["caption"] == "<b>Summary</b>"
 
 
-# ── notify_backtest_completed ─────────────────────────────────────────────────
-
-
-async def test_notify_backtest_completed_positive_pnl(notifier, mock_http):
-    await notifier.notify_backtest_completed(
-        strategy="momentum",
-        risk_level="moderate",
-        days=30,
-        total_pnl=Decimal("500.00"),
-        return_pct=5.0,
-        total_trades=20,
-        win_rate=60.0,
-        sharpe_ratio=1.5,
-        max_drawdown_pct=3.2,
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "+€500.00" in text
-    assert "5.00%" in text
-
-
-async def test_notify_backtest_completed_negative_pnl(notifier, mock_http):
-    await notifier.notify_backtest_completed(
-        strategy="momentum",
-        risk_level="moderate",
-        days=30,
-        total_pnl=Decimal("-200.00"),
-        return_pct=-2.0,
-        total_trades=10,
-        win_rate=40.0,
-        sharpe_ratio=-0.3,
-        max_drawdown_pct=5.1,
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "-€200.00" in text
-
-
-async def test_notify_backtest_completed_contains_trades_and_win_rate(notifier, mock_http):
-    await notifier.notify_backtest_completed(
-        strategy="momentum",
-        risk_level="moderate",
-        days=30,
-        total_pnl=Decimal("100"),
-        return_pct=1.0,
-        total_trades=42,
-        win_rate=61.9,
-        sharpe_ratio=1.2,
-        max_drawdown_pct=2.0,
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "42" in text
-    assert "61.9" in text
-
-
-async def test_notify_backtest_completed_is_silent_on_error(notifier, failing_http):
-    """Backtest completion notification must not raise — same as other production methods."""
-    await notifier.notify_backtest_completed(
-        strategy="momentum",
-        risk_level="moderate",
-        days=30,
-        total_pnl=Decimal("0"),
-        return_pct=0.0,
-        total_trades=0,
-        win_rate=0.0,
-        sharpe_ratio=0.0,
-        max_drawdown_pct=0.0,
-    )  # must not raise
-
-
-# ── notify_backtest_compare_completed ─────────────────────────────────────────
-
-
-async def test_notify_backtest_compare_completed_contains_run_count(notifier, mock_http):
-    await notifier.notify_backtest_compare_completed(
-        total_runs=18,
-        days=30,
-        best_strategy="momentum",
-        best_risk="aggressive",
-        best_return_pct=12.35,
-        worst_strategy="market_making",
-        worst_risk="conservative",
-        worst_return_pct=-2.1,
-        avg_return_pct=4.23,
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "18" in text
-
-
-async def test_notify_backtest_compare_completed_contains_best_strategy(notifier, mock_http):
-    await notifier.notify_backtest_compare_completed(
-        total_runs=6,
-        days=30,
-        best_strategy="momentum",
-        best_risk="aggressive",
-        best_return_pct=12.35,
-        worst_strategy="market_making",
-        worst_risk="conservative",
-        worst_return_pct=-2.1,
-        avg_return_pct=4.23,
-    )
-    text = mock_http.post.call_args.kwargs["json"]["text"]
-    assert "momentum" in text
-    assert "12.35" in text
-
-
-async def test_notify_backtest_compare_completed_is_silent_on_error(notifier, failing_http):
-    """Compare summary must not raise on network failure."""
-    await notifier.notify_backtest_compare_completed(
-        total_runs=6,
-        days=30,
-        best_strategy="momentum",
-        best_risk="moderate",
-        best_return_pct=5.0,
-        worst_strategy="market_making",
-        worst_risk="conservative",
-        worst_return_pct=-1.0,
-        avg_return_pct=2.0,
-    )  # must not raise
+async def test_send_document_is_silent_on_error(notifier, failing_http):
+    """send_document must not raise on network failure — same contract as other notify_* methods."""
+    await notifier.send_document(b"%PDF", "report.pdf")  # must not raise
 
 
 # ── notify_report_ready ───────────────────────────────────────────────────────

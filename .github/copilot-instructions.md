@@ -145,7 +145,7 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
-| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram notification                                              |
+| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |
 
@@ -182,6 +182,27 @@ feat!: replace REST polling with WebSocket feed
 **Interactive commit helper:** `uv run cz commit` — prompts for type, scope, and description.
 
 ## Mandatory Rules
+
+### Environment Parity — Non-Negotiable
+
+All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
+
+| Environment | Data source                               | Trading |
+| ----------- | ----------------------------------------- | ------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper   |
+| `int`       | Real Revolut X API (live market data)     | Paper   |
+| `prod`      | Real Revolut X API (live market data)     | Live    |
+
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa.
+
+**Concrete implications:**
+
+- Never add `if environment == "dev"` or `if trading_mode == "paper"` branches that skip logic (e.g. fee calculation, position tracking, commission accounting).
+- `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated (`filled_quantity`, `commission`, `realized_pnl`).
+- SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
+- When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
+
+**Why this matters:** bugs that only appear in `prod` involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
 
 ### Revolut X API Docs — The Single Source of Truth
 

@@ -177,7 +177,7 @@ revt db encrypt-status
 
 **CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions).
 
-**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols. Optionally sends a summary notification via Telegram when configured (includes days, trades, net P&L, return %, win rate, Sharpe, max DD, and report path).
+**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols. When Telegram is configured, sends the report as a PDF file (via `sendDocument`) if `fpdf2` is installed (`--extra analytics`); falls back to a compact text summary (`notify_report_ready`) when fpdf2 is absent.
 
 **CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs and post-merge pushes to `main`), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
 
@@ -216,6 +216,27 @@ feat!: replace REST polling with WebSocket feed
 ## Mandatory Rules
 
 These are enforced by pre-commit hooks and must be followed:
+
+### Environment Parity — Non-Negotiable
+
+All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
+
+| Environment | Data source                               | Trading |
+| ----------- | ----------------------------------------- | ------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper   |
+| `int`       | Real Revolut X API (live market data)     | Paper   |
+| `prod`      | Real Revolut X API (live market data)     | Live    |
+
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Any code path that is only exercised in one environment is a hidden bug waiting to surface in production with real money.
+
+**Concrete implications:**
+
+- Never add `if environment == "dev"` or `if trading_mode == "paper"` branches that skip logic (e.g. fee calculation, position tracking, commission accounting). Paper mode simulates fills locally, but all accounting — `filled_quantity`, `commission`, `realized_pnl` — must be computed by the same formulas as live mode.
+- `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated. If one sets `commission`, both must set `commission`. If one sets `filled_quantity`, both must set `filled_quantity`.
+- SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
+- When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
+
+**Why this matters:** bugs that only appear in `prod` are dangerous because they involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
 
 ### Revolut X API Docs — The Single Source of Truth
 
@@ -341,6 +362,6 @@ Claude Code must handle this proactively without being asked.
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
-| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |
+| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |

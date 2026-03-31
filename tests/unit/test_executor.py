@@ -501,6 +501,75 @@ class TestLiveOrderResponseMapping:
         order = await live_executor.execute_signal(make_signal(strength=0.5), Decimal("10000"))
         assert order.status == OrderStatus.PENDING
 
+    @pytest.mark.asyncio
+    async def test_live_order_filled_state_sets_filled_quantity(self, live_executor, mock_api):
+        """When the API returns 'filled', filled_quantity must equal order.quantity.
+
+        MARKET orders often fill immediately.  Without this, _update_positions
+        receives filled_quantity=0 and silently skips position tracking.
+        """
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v4", "client_order_id": "c4", "state": "filled"}
+        )
+        signal = make_signal(strength=0.8, price=Decimal("50000"))
+        order = await live_executor.execute_signal(signal, Decimal("10000"))
+        assert order.status == OrderStatus.FILLED
+        assert order.filled_quantity > Decimal("0")
+        assert order.filled_quantity == order.quantity
+
+    @pytest.mark.asyncio
+    async def test_live_order_filled_state_calculates_commission(self, live_executor, mock_api):
+        """When the API returns 'filled', commission must be calculated.
+
+        Paper mode always calculates commission.  Live mode must too, so that
+        P&L accounting is identical across all environments.
+        """
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v5", "client_order_id": "c5", "state": "filled"}
+        )
+        # market_making uses LIMIT → 0% fee
+        signal = make_signal(strength=0.8, price=Decimal("50000"))
+        order = await live_executor.execute_signal(signal, Decimal("10000"))
+        assert order.status == OrderStatus.FILLED
+        # commission must be a non-negative Decimal (LIMIT = 0%, MARKET = 0.09%)
+        assert order.commission >= Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_live_order_filled_state_opens_position(self, live_executor, mock_api):
+        """When the API returns 'filled', the position must be tracked immediately.
+
+        In paper mode a BUY always opens a position.  In live mode the same must
+        happen when the exchange confirms the fill — if filled_quantity is left at 0
+        the position is never created.
+        """
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v6", "client_order_id": "c6", "state": "filled"}
+        )
+        signal = make_signal(signal_type="BUY", strength=0.8, price=Decimal("50000"))
+        await live_executor.execute_signal(signal, Decimal("10000"))
+        assert "BTC-EUR" in live_executor.positions
+        assert live_executor.positions["BTC-EUR"].quantity > Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_live_order_filled_not_added_to_open_orders(self, live_executor, mock_api):
+        """Immediately-filled live orders must not be queued for cancellation on shutdown."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v7", "client_order_id": "c7", "state": "filled"}
+        )
+        signal = make_signal(strength=0.8)
+        await live_executor.execute_signal(signal, Decimal("10000"))
+        assert "v7" not in live_executor.open_orders
+
+    @pytest.mark.asyncio
+    async def test_live_order_pending_added_to_open_orders(self, live_executor, mock_api):
+        """Non-filled live orders (LIMIT still working) must be tracked for cancellation."""
+        mock_api.create_order = AsyncMock(
+            return_value={"venue_order_id": "v8", "client_order_id": "c8", "state": "new"}
+        )
+        signal = make_signal(strength=0.5)
+        await live_executor.execute_signal(signal, Decimal("10000"))
+        assert "v8" in live_executor.open_orders
+
 
 def _make_signal_for_strategy(
     strategy: str,

@@ -18,10 +18,11 @@ ______________________________________________________________________
 1. [Backtesting](#8-backtesting)
 1. [Monitoring Performance](#9-monitoring-performance)
 1. [Graceful Shutdown](#10-graceful-shutdown)
-1. [Deploying Unattended (Raspberry Pi / Server)](#11-deploying-unattended-raspberry-pi--server)
-1. [Troubleshooting](#12-troubleshooting)
-1. [FAQ](#13-faq)
-1. [Trading Terminology](#14-trading-terminology)
+1. [Telegram Notifications (Optional)](#11-telegram-notifications-optional)
+1. [Deploying Unattended (Raspberry Pi / Server)](#12-deploying-unattended-raspberry-pi--server)
+1. [Troubleshooting](#13-troubleshooting)
+1. [FAQ](#14-faq)
+1. [Trading Terminology](#15-trading-terminology)
 
 ______________________________________________________________________
 
@@ -436,7 +437,7 @@ The report includes:
   - `symbol_performance.png` — P&L bar chart by trading pair
   - `backtest_comparison.png` — best backtest return by strategy
 
-A `report.md` markdown file is also written to the output directory, making it easy to paste into GitHub Actions job summaries or share with collaborators.
+A `report.md` markdown file is also written to the output directory, making it easy to paste into GitHub Actions job summaries or share with collaborators. If Telegram is configured and `fpdf2` is installed (included in `--extra analytics`), a PDF version of the report is sent directly to your Telegram chat; otherwise a compact text summary is sent.
 
 ### Verifying encryption
 
@@ -471,7 +472,7 @@ ______________________________________________________________________
 
 ## 11. Telegram Notifications (Optional)
 
-The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, or a critical error occurs (authentication failure, daily loss limit hit).
+The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, a critical error occurs, or the daily loss limit is hit. When `make db-report` runs, a PDF analytics report is sent to Telegram (requires `--extra analytics` for `fpdf2`); if fpdf2 is not installed, a text summary is sent instead.
 
 ### Set up a bot
 
@@ -498,20 +499,20 @@ Both keys must be set — if either is missing, notifications are silently disab
 
 ### What you receive
 
-| Event                  | Message                                                         |
-| ---------------------- | --------------------------------------------------------------- |
-| Bot started            | Strategy, risk level, pairs, mode                               |
-| Order filled           | Side, symbol, quantity, price, fee, P&L (sells)                 |
-| Shutdown complete      | Session ID, total realized P&L                                  |
-| Analytics report ready | Days, trades, net P&L, return %, win rate, Sharpe, max DD, path |
-| Daily loss limit hit   | Current day P&L, suspended notice                               |
-| Authentication failure | Error description                                               |
+| Event                  | Message                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| Bot started            | Strategy, risk level, pairs, mode                                    |
+| Order filled           | Side, symbol, quantity, price, fee, P&L (sells)                      |
+| Shutdown complete      | Session ID, total realized P&L                                       |
+| Analytics report ready | PDF file with key metrics (fpdf2 installed) or text summary fallback |
+| Daily loss limit hit   | Current day P&L, suspended notice                                    |
+| Critical error         | Error description                                                    |
 
 Telegram failures never affect trading — errors are logged and discarded.
 
 ______________________________________________________________________
 
-## 13. Deploying Unattended (Raspberry Pi / Server)
+## 12. Deploying Unattended (Raspberry Pi / Server)
 
 See [Raspberry Pi Deployment](RASPBERRY_PI_DEPLOYMENT.md) for the complete guide.
 
@@ -555,7 +556,7 @@ sudo systemctl status revolut-trader
 
 ______________________________________________________________________
 
-## 14. Troubleshooting
+## 13. Troubleshooting
 
 ### API connection issues
 
@@ -622,7 +623,7 @@ Use only supported intervals (in minutes): `1`, `5`, `15`, `30`, `60`, `240`, `1
 
 ______________________________________________________________________
 
-## 15. FAQ
+## 14. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
 No. `make run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
@@ -672,7 +673,7 @@ Only `prod` (`make run ENV=prod` / `revt run`). Both `dev` and `int` are paper-t
 
 ______________________________________________________________________
 
-## 16. Trading Terminology
+## 15. Trading Terminology
 
 Plain-language definitions for every term that appears in this app's configuration, output, or reports. No prior trading knowledge needed.
 

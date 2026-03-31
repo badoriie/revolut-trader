@@ -233,12 +233,21 @@ class OrderExecutor:
             order.status = _API_STATE_MAP.get(
                 response.get("state", "").lower(), OrderStatus.PENDING
             )
-            # filledQty is not returned by create_order; assume 0 until polled.
-            order.filled_quantity = Decimal("0")
 
-            if order.order_id:
-                async with self._order_lock:
-                    self.open_orders[order.order_id] = order
+            if order.status == OrderStatus.FILLED:
+                # MARKET orders often fill immediately.  Set filled_quantity and
+                # calculate commission so accounting matches the paper path exactly.
+                order.filled_quantity = order.quantity
+                if order.price is not None:
+                    order_value = order.price * order.filled_quantity
+                    order.commission = calculate_fee(order_value, order.order_type)
+            else:
+                # Order is pending/working — fill details not yet available.
+                order.filled_quantity = Decimal("0")
+                # Only track non-terminal orders for shutdown cancellation.
+                if order.order_id:
+                    async with self._order_lock:
+                        self.open_orders[order.order_id] = order
 
             logger.info(f"[LIVE] Order placed: {order.order_id}, status: {order.status}")
             return order

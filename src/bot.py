@@ -498,6 +498,8 @@ class TradingBot:
             close_order = await self.executor.update_market_prices(symbol, market_data.last)
             if close_order and close_order.status == OrderStatus.FILLED:
                 self._process_filled_order(close_order)
+                if self.notifier:
+                    await self.notifier.notify_trade(close_order, self.currency_symbol)
 
             portfolio_value = await self.executor.get_portfolio_value(self.cash_balance)
 
