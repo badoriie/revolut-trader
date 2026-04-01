@@ -40,7 +40,7 @@ dev = [
     "pre-commit~=4.5",
     "bandit~=1.9",
     "commitizen~=4.0",
-    "pylint~=3.0",
+    "pylint~=4.0",
     "pyinstaller~=6.0",
 ]
 
