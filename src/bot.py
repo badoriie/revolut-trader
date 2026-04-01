@@ -43,7 +43,7 @@ def _setup_database_logging(persistence: DatabasePersistence, session_id: int | 
         """Loguru sink that persists WARNING+ logs to the database."""
         record = message.record  # type: ignore[attr-defined]
         # Only save WARNING, ERROR, and CRITICAL to avoid filling the database
-        if record["level"].no >= 30:  # WARNING=30, ERROR=40, CRITICAL=50
+        if record["level"].no >= 30:
             persistence.save_log_entry(
                 level=record["level"].name,
                 message=record["message"],
