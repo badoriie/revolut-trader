@@ -150,6 +150,13 @@ setup:
 				|| { op item edit $$CREDS --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" >/dev/null \
 				     && echo "  REVOLUT_API_KEY: placeholder added"; }; \
 		fi; \
+		if op item get $$CREDS --vault $(OP_VAULT) --fields DATABASE_ENCRYPTION_KEY >/dev/null 2>&1; then \
+			echo "  DATABASE_ENCRYPTION_KEY: exists (preserving to protect encrypted data)"; \
+		else \
+			ENCRYPTION_KEY=$$(uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"); \
+			op item edit $$CREDS --vault $(OP_VAULT) "DATABASE_ENCRYPTION_KEY[concealed]=$$ENCRYPTION_KEY" >/dev/null \
+				&& echo "  DATABASE_ENCRYPTION_KEY: generated and stored"; \
+		fi; \
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
 		else \
