@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 from collections import deque
 from datetime import UTC, datetime
@@ -79,6 +80,9 @@ class TradingBot:
         self.is_running = False
         self._daily_loss_notified = False  # prevents repeated Telegram alerts per session
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
+        self._started_at: datetime | None = None
+        self._telegram_stop_event: asyncio.Event | None = None
+        self._telegram_polling_task: asyncio.Task[None] | None = None
         # Use deque with maxlen to prevent unbounded memory growth
         # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
         self.portfolio_snapshots: deque[PortfolioSnapshot] = deque(maxlen=1000)
@@ -106,8 +110,15 @@ class TradingBot:
             )
             # Will fail when trying to initialize API client
 
-    async def start(self):
-        """Initialize and start the trading bot."""
+    async def start(self, start_command_listener: bool = True) -> None:
+        """Initialize and start the trading bot.
+
+        Args:
+            start_command_listener: When True (default), starts the background
+                Telegram command polling task.  Pass False when an external
+                control plane (e.g. TelegramControlPlane) already owns the
+                single Telegram polling loop so there are no duplicate handlers.
+        """
         logger.info("Starting trading bot...")
 
         # Validate 1Password configuration for production
@@ -196,6 +207,7 @@ class TradingBot:
                 self.cash_balance = max_cap
 
         self.is_running = True
+        self._started_at = datetime.now(UTC)
         logger.info("Trading bot started successfully!")
 
         if self.notifier:
@@ -205,6 +217,14 @@ class TradingBot:
                 pairs=self.trading_pairs,
                 mode=self.trading_mode.value,
             )
+            if start_command_listener:
+                self._telegram_stop_event = asyncio.Event()
+                self._telegram_polling_task = asyncio.create_task(
+                    self.notifier.start_polling(
+                        self._handle_telegram_command, self._telegram_stop_event
+                    )
+                )
+                logger.info("Telegram command listener started")
 
     async def _shutdown_executor(self) -> None:
         """Cancel orders, close all positions, and process shutdown results.
@@ -252,6 +272,15 @@ class TradingBot:
         logger.info("Stopping trading bot...")
         logger.info("Please wait — cancelling orders and closing all positions before exit...")
         self.is_running = False
+
+        # Stop Telegram command listener before shutdown notifications
+        if self._telegram_stop_event:
+            self._telegram_stop_event.set()
+        if self._telegram_polling_task:
+            self._telegram_polling_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._telegram_polling_task
+            self._telegram_polling_task = None
 
         # Graceful shutdown: cancel orders, close ALL positions.
         # Profitable positions wait for a trailing stop (if configured) before closing.
@@ -660,6 +689,120 @@ class TradingBot:
         except Exception as e:
             logger.warning(f"Could not load historical data: {e}")
             logger.info("Starting with fresh state")
+
+    async def _handle_telegram_command(self, command: str, args: list[str]) -> None:
+        """Dispatch an incoming Telegram bot command to the appropriate handler.
+
+        Args:
+            command: Command name without the leading slash (e.g. ``"status"``).
+            args:    Space-separated arguments following the command.
+        """
+        assert self.notifier is not None
+        if command == "status":
+            await self._cmd_status()
+        elif command == "balance":
+            await self._cmd_balance()
+        elif command == "report":
+            days = int(args[0]) if args and args[0].isdigit() else 30
+            await self._cmd_report(days)
+        elif command in ("help", "start"):
+            await self._cmd_help()
+        else:
+            await self.notifier.reply(
+                f"Unknown command: /{command}\nUse /help to see available commands."
+            )
+
+    async def _cmd_status(self) -> None:
+        """Reply with current bot state: strategy, mode, uptime, positions, P&amp;L."""
+        assert self.notifier is not None
+        uptime = ""
+        if self._started_at:
+            delta = datetime.now(UTC) - self._started_at
+            hours, remainder = divmod(int(delta.total_seconds()), 3600)
+            minutes, _ = divmod(remainder, 60)
+            uptime = f"{hours}h {minutes}m"
+        positions = self.executor.get_positions() if self.executor else []
+        snapshot = self.portfolio_snapshots[-1] if self.portfolio_snapshots else None
+        pnl = snapshot.total_pnl if snapshot else Decimal("0")
+        pnl_sign = "+" if pnl >= 0 else ""
+        mode_label = "🔴 LIVE" if self.trading_mode == TradingMode.LIVE else "🟡 Paper"
+        lines = [
+            "🤖 <b>Bot Status</b>",
+            f"Strategy: {self.strategy_type.value}",
+            f"Risk: {self.risk_level.value}",
+            f"Mode: {mode_label}",
+            f"Pairs: {', '.join(self.trading_pairs)}",
+            f"Uptime: {uptime}" if uptime else "Uptime: N/A",
+            f"Open Positions: {len(positions)}",
+            f"Session P&amp;L: {pnl_sign}{self.currency_symbol}{abs(pnl):,.2f}",
+        ]
+        await self.notifier.reply("\n".join(lines))
+
+    async def _cmd_balance(self) -> None:
+        """Reply with portfolio breakdown: cash, open positions, and total value."""
+        assert self.notifier is not None
+        positions = self.executor.get_positions() if self.executor else []
+        positions_value = sum((p.quantity * p.current_price for p in positions), Decimal("0"))
+        total_value = self.cash_balance + positions_value
+        lines = [
+            "💰 <b>Portfolio Balance</b>",
+            f"Cash: {self.currency_symbol}{self.cash_balance:,.2f}",
+            f"Positions: {self.currency_symbol}{positions_value:,.2f}",
+            f"Total: {self.currency_symbol}{total_value:,.2f}",
+        ]
+        if positions:
+            lines.append("")
+            lines.append("<b>Open Positions:</b>")
+            for pos in positions:
+                pnl_sign = "+" if pos.unrealized_pnl >= 0 else ""
+                lines.append(
+                    f"• {pos.symbol}: {pos.quantity} @ "
+                    f"{self.currency_symbol}{pos.current_price:,.2f} "
+                    f"({pnl_sign}{self.currency_symbol}{pos.unrealized_pnl:,.2f})"
+                )
+        await self.notifier.reply("\n".join(lines))
+
+    async def _cmd_report(self, days: int) -> None:
+        """Reply with an analytics summary for the last *days* calendar days.
+
+        Queries the database directly and calls :meth:`notify_report_ready` so
+        the message format matches the scheduled report notification.
+
+        Args:
+            days: Look-back window in calendar days.
+        """
+        assert self.notifier is not None
+        try:
+            analytics = self.persistence.get_analytics(days=days)
+            if not analytics or analytics.get("total_trades", 0) == 0:
+                await self.notifier.reply(f"📊 No trading data for the last {days} days.")
+                return
+            total_pnl = Decimal(str(analytics.get("total_pnl", 0)))
+            await self.notifier.notify_report_ready(
+                days=days,
+                total_trades=int(analytics.get("total_trades", 0)),
+                total_pnl=total_pnl,
+                return_pct=float(analytics.get("return_pct", 0.0)),
+                win_rate=float(analytics.get("win_rate", 0.0)),
+                sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
+                max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
+                report_path="(run `revt db report` for full PDF)",
+                currency_symbol=self.currency_symbol,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to generate /report response: {exc}")
+            await self.notifier.reply("⚠️ Failed to generate report. Try `revt db report`.")
+
+    async def _cmd_help(self) -> None:
+        """Reply with the list of available bot commands."""
+        assert self.notifier is not None
+        await self.notifier.reply(
+            "📋 <b>Available Commands</b>\n"
+            "/status — current bot state and session P&amp;L\n"
+            "/balance — portfolio breakdown with open positions\n"
+            "/report [days] — analytics summary (default: 30 days)\n"
+            "/help — show this message"
+        )
 
     def _save_data(self) -> None:
         """Save current portfolio snapshots to database."""

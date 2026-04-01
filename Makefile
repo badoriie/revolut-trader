@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order telegram-test
+.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run telegram backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order telegram-test
 
 # ============================================================================
 # Environment — auto-detected from git context, or explicit override
@@ -445,6 +445,11 @@ run:
 	[ -n "$${PAIRS:-}" ] && CMD="$$CMD --pairs $$PAIRS"; \
 	[ -n "$${INTERVAL:-}" ] && CMD="$$CMD --interval $$INTERVAL"; \
 	eval $$CMD
+
+telegram:
+	@echo "Starting Telegram Control Plane (env: $(ENV))…"
+	@echo "Control the bot via Telegram: /run /stop /status /balance /report /help"
+	ENVIRONMENT=$(ENV) uv run python cli/telegram_control.py --env $(ENV)
 
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \

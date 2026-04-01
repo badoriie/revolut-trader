@@ -13,7 +13,10 @@ Configuration (optional — stored in 1Password):
     TELEGRAM_CHAT_ID    Target chat or channel ID (use a negative ID for channels)
 """
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -35,6 +38,7 @@ class TelegramNotifier:
 
     _API_URL = "https://api.telegram.org/bot{token}/sendMessage"
     _DOC_URL = "https://api.telegram.org/bot{token}/sendDocument"
+    _UPDATES_URL = "https://api.telegram.org/bot{token}/getUpdates"
     # Short timeout: a slow Telegram API must not stall the trading loop.
     _TIMEOUT = 30.0  # file uploads need a longer timeout than text messages
 
@@ -48,6 +52,7 @@ class TelegramNotifier:
         """
         self._url = self._API_URL.format(token=token)
         self._doc_url = self._DOC_URL.format(token=token)
+        self._updates_url = self._UPDATES_URL.format(token=token)
         self._chat_id = chat_id
 
     async def _send(self, text: str) -> None:
@@ -268,3 +273,79 @@ class TelegramNotifier:
         ]
 
         await self._send("\n".join(lines))
+
+    async def reply(self, text: str) -> None:
+        """Send a plain HTML text reply (e.g. in response to a bot command).
+
+        Behaves identically to all other ``notify_*`` methods: fire-and-forget,
+        silent on any error.
+
+        Args:
+            text: HTML-formatted message to send.
+        """
+        await self._send(text)
+
+    async def get_updates(self, offset: int = 0, timeout: int = 30) -> list[dict[str, Any]]:
+        """Fetch pending updates from Telegram via long polling (getUpdates).
+
+        Returns an empty list on any error so the polling loop continues safely.
+
+        Args:
+            offset:  First update ID to return; pass previous ``update_id + 1``
+                     to acknowledge processed updates.
+            timeout: Long-poll timeout in seconds.
+
+        Returns:
+            List of raw update dicts, or ``[]`` on failure.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=float(timeout + 5)) as client:
+                response = await client.get(
+                    self._updates_url,
+                    params={
+                        "offset": offset,
+                        "timeout": timeout,
+                        "allowed_updates": ["message"],
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("result", []) if data.get("ok") else []
+        except Exception as exc:
+            logger.warning(f"Telegram getUpdates failed: {exc}")
+            return []
+
+    async def start_polling(
+        self,
+        command_handler: Callable[[str, list[str]], Awaitable[None]],
+        stop_event: asyncio.Event,
+    ) -> None:
+        """Poll for incoming Telegram commands until *stop_event* is set.
+
+        Long-polls ``getUpdates``, dispatches ``/command [args]`` messages from
+        the configured chat, and advances the offset to acknowledge each update.
+        Messages from other chats are silently ignored for security.
+
+        Args:
+            command_handler: Async callable invoked as
+                             ``handler(command, args)`` for each ``/command``.
+            stop_event:      Setting this exits the loop after the current
+                             ``getUpdates`` call completes.
+        """
+        offset = 0
+        while not stop_event.is_set():
+            updates = await self.get_updates(offset=offset, timeout=25)
+            for update in updates:
+                offset = update["update_id"] + 1
+                message = update.get("message", {})
+                chat_id = str(message.get("chat", {}).get("id", ""))
+                if chat_id != self._chat_id:
+                    continue  # security: ignore messages from other chats
+                text = message.get("text", "")
+                if not text.startswith("/"):
+                    continue
+                parts = text.split()
+                # Strip optional @BotName suffix (e.g. /status@MyBot → status)
+                command = parts[0].lstrip("/").split("@")[0].lower()
+                args = parts[1:]
+                await command_handler(command, args)

@@ -489,3 +489,255 @@ async def test_notify_report_ready_is_silent_on_error(notifier, failing_http):
         max_drawdown_pct=3.2,
         report_path="data/reports/report.md",
     )  # must not raise
+
+
+# ── reply ─────────────────────────────────────────────────────────────────────
+
+
+class TestReply:
+    """Tests for TelegramNotifier.reply() — public fire-and-forget text sender."""
+
+    async def test_reply_sends_html_message(self, mock_http):
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        await notifier.reply("Hello from bot")
+        mock_http.post.assert_called_once()
+        payload = mock_http.post.call_args.kwargs["json"]
+        assert payload["text"] == "Hello from bot"
+        assert payload["chat_id"] == CHAT_ID
+        assert payload["parse_mode"] == "HTML"
+
+    async def test_reply_is_silent_on_error(self, failing_http):
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        await notifier.reply("test")  # must not raise
+
+
+# ── get_updates ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def mock_get_http():
+    """Mock httpx.AsyncClient — captures GET calls and returns 200."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"ok": True, "result": []}
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    with patch("src.utils.telegram.httpx.AsyncClient") as mock_cls:
+        mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+        yield mock_client, mock_response
+
+
+class TestGetUpdates:
+    """Tests for TelegramNotifier.get_updates()."""
+
+    async def test_returns_list_of_updates(self, mock_get_http):
+        _mock_client, mock_response = mock_get_http
+        updates = [{"update_id": 1, "message": {"text": "/status"}}]
+        mock_response.json.return_value = {"ok": True, "result": updates}
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        result = await notifier.get_updates()
+        assert result == updates
+
+    async def test_includes_offset_in_request(self, mock_get_http):
+        mock_client, _ = mock_get_http
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        await notifier.get_updates(offset=42)
+        params = mock_client.get.call_args.kwargs["params"]
+        assert params["offset"] == 42
+
+    async def test_returns_empty_list_on_http_error(self):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(
+            side_effect=httpx.HTTPStatusError("err", request=MagicMock(), response=MagicMock())
+        )
+        with patch("src.utils.telegram.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+            result = await notifier.get_updates()
+        assert result == []
+
+    async def test_returns_empty_list_on_network_error(self):
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("unreachable"))
+        with patch("src.utils.telegram.httpx.AsyncClient") as mock_cls:
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+            result = await notifier.get_updates()
+        assert result == []
+
+    async def test_returns_empty_list_when_not_ok(self, mock_get_http):
+        _, mock_response = mock_get_http
+        mock_response.json.return_value = {"ok": False, "description": "Forbidden"}
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        result = await notifier.get_updates()
+        assert result == []
+
+    async def test_updates_url_contains_token(self):
+        notifier = TelegramNotifier(token="mytoken:XYZ", chat_id="42")
+        assert "mytoken:XYZ" in notifier._updates_url
+
+
+# ── start_polling ─────────────────────────────────────────────────────────────
+
+
+class TestStartPolling:
+    """Tests for TelegramNotifier.start_polling()."""
+
+    async def test_dispatches_command_to_handler(self):
+        import asyncio
+
+        updates = [{"update_id": 1, "message": {"text": "/status", "chat": {"id": CHAT_ID}}}]
+        dispatched: list[tuple[str, list[str]]] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            dispatched.append((cmd, args))
+
+        stop = asyncio.Event()
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            stop.set()
+            return updates if offset == 0 else []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert dispatched == [("status", [])]
+
+    async def test_ignores_messages_from_wrong_chat(self):
+        import asyncio
+
+        updates = [{"update_id": 2, "message": {"text": "/status", "chat": {"id": "other_chat"}}}]
+        dispatched: list[str] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            dispatched.append(cmd)
+
+        stop = asyncio.Event()
+        call_count = [0]
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return updates
+            stop.set()
+            return []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert dispatched == []
+
+    async def test_ignores_non_command_messages(self):
+        import asyncio
+
+        updates = [{"update_id": 3, "message": {"text": "hello world", "chat": {"id": CHAT_ID}}}]
+        dispatched: list[str] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            dispatched.append(cmd)
+
+        stop = asyncio.Event()
+        call_count = [0]
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return updates
+            stop.set()
+            return []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert dispatched == []
+
+    async def test_increments_offset_after_each_update(self):
+        import asyncio
+
+        updates = [{"update_id": 10, "message": {"text": "/balance", "chat": {"id": CHAT_ID}}}]
+        offsets_seen: list[int] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            pass
+
+        stop = asyncio.Event()
+        call_count = [0]
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            offsets_seen.append(offset)
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return updates
+            stop.set()
+            return []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert 11 in offsets_seen  # offset advances to update_id + 1
+
+    async def test_strips_bot_name_suffix_from_command(self):
+        import asyncio
+
+        updates = [
+            {"update_id": 5, "message": {"text": "/status@MyBotName", "chat": {"id": CHAT_ID}}}
+        ]
+        dispatched: list[str] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            dispatched.append(cmd)
+
+        stop = asyncio.Event()
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            stop.set()
+            return updates if offset == 0 else []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert dispatched == ["status"]
+
+    async def test_passes_args_to_handler(self):
+        import asyncio
+
+        updates = [{"update_id": 6, "message": {"text": "/report 7", "chat": {"id": CHAT_ID}}}]
+        dispatched: list[tuple[str, list[str]]] = []
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            dispatched.append((cmd, args))
+
+        stop = asyncio.Event()
+
+        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+            stop.set()
+            return updates if offset == 0 else []
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+            await notifier.start_polling(handler, stop)
+
+        assert dispatched == [("report", ["7"])]
+
+    async def test_stops_immediately_when_stop_event_already_set(self):
+        import asyncio
+
+        async def handler(cmd: str, args: list[str]) -> None:
+            pass
+
+        stop = asyncio.Event()
+        stop.set()  # already set before polling starts
+
+        notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
+        with patch.object(notifier, "get_updates", new_callable=AsyncMock) as mock_get:
+            await notifier.start_polling(handler, stop)
+
+        mock_get.assert_not_called()

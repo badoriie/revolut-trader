@@ -634,13 +634,27 @@ def cmd_api(args: argparse.Namespace) -> None:
 
 
 def cmd_telegram(args: argparse.Namespace) -> None:
-    """Test Telegram notification connectivity.
+    """Telegram bot utilities and always-on control plane.
 
-    Loads credentials from 1Password, sends a test message to the configured
-    chat/channel, and reports whether it was delivered.
+    Subcommands:
+      test   — send a test message to verify Telegram is configured correctly
+      start  — start the always-on Telegram Control Plane process
     """
     env = _resolve_env(args)
+    sub_cmd = getattr(args, "telegram_cmd", None) or "test"
 
+    if sub_cmd == "start":
+        # Deferred import — ENVIRONMENT must be set before src.config is loaded.
+        from cli.telegram_control import run_control_plane
+
+        print(f"\n  Environment : {_env_badge(env)}")
+        print("  Starting Telegram Control Plane…")
+        print("  Control the bot via Telegram: /run /stop /status /balance /report /help")
+        print()
+        run_control_plane()
+        return
+
+    # Default: test
     # Deferred import — ENVIRONMENT must be set before src.config is loaded.
     from src.config import settings
     from src.utils.telegram import TelegramNotifier
@@ -783,6 +797,7 @@ examples:
   revt db report                              full analytics report + charts
 
   revt telegram test                          verify Telegram notifications are working
+  revt telegram start                         start always-on Telegram Control Plane
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -1006,10 +1021,17 @@ examples:
     p_db.set_defaults(func=cmd_db)
 
     # ── telegram ──────────────────────────────────────────────────────────────
-    p_tg = sub.add_parser("telegram", help="Telegram notification utilities")
+    p_tg = sub.add_parser("telegram", help="Telegram bot utilities and always-on control plane")
     _add_env_arg(p_tg)
     tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar=_SUBCOMMAND_METAVAR)
     tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
+    tg_sub.add_parser(
+        "start",
+        help=(
+            "Start the always-on Telegram Control Plane — "
+            "control the bot via /run, /stop, /status, /balance, /report"
+        ),
+    )
     p_tg.set_defaults(func=cmd_telegram)
 
     return parser

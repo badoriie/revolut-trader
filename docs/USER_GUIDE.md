@@ -474,6 +474,8 @@ ______________________________________________________________________
 
 The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, a critical error occurs, or the daily loss limit is hit. When `make db-report` runs, a PDF analytics report is sent to Telegram (requires `--extra analytics` for `fpdf2`); if fpdf2 is not installed, a text summary is sent instead.
 
+While the bot is running it also **listens for commands** you send directly in the chat, giving you on-demand access to live status and analytics without touching the server.
+
 ### Set up a bot
 
 1. Open Telegram and message [@BotFather](https://t.me/BotFather)
@@ -508,7 +510,50 @@ Both keys must be set — if either is missing, notifications are silently disab
 | Daily loss limit hit   | Current day P&L, suspended notice                                    |
 | Critical error         | Error description                                                    |
 
+### Bot commands (while the bot is running)
+
+Send these commands to your bot in Telegram at any time while the bot is running:
+
+| Command          | Response                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| `/status`        | Strategy, risk level, mode, pairs, uptime, open positions, session P&L                          |
+| `/balance`       | Cash balance, open positions with entry price and unrealised P&L, total portfolio value         |
+| `/report [days]` | Analytics summary for the last N days (default 30): trades, win rate, net P&L, Sharpe, drawdown |
+| `/help`          | List of available commands                                                                      |
+
+The bot ignores commands from any chat other than the configured `TELEGRAM_CHAT_ID`.
+
 Telegram failures never affect trading — errors are logged and discarded.
+
+### Telegram Control Plane — start, stop, and monitor from Telegram
+
+The **Telegram Control Plane** is an always-on background process that lets you control the trading bot entirely through Telegram commands — even when the bot is not running. Start it once and leave it running; all bot lifecycle management happens from your phone.
+
+```bash
+make telegram                  # start the control plane (env auto-detected)
+make telegram ENV=prod         # force production environment
+
+revt telegram start            # same via the revt binary
+revt telegram start --env int  # paper trading
+```
+
+Additional commands available only through the control plane:
+
+| Command                  | Response                                                                  |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `/run`                   | Start the trading bot with default strategy and risk                      |
+| `/run momentum moderate` | Start with a specific strategy and risk level                             |
+| `/run BTC-EUR,ETH-EUR`   | Start trading specific pairs                                              |
+| `/stop`                  | Gracefully stop the bot (cancels orders, closes positions, saves state)   |
+| `/status`                | Bot status (delegates to running bot, or "not running" when idle)         |
+| `/balance`               | Cash and positions (delegates to running bot, or "not running" when idle) |
+| `/report [days]`         | Analytics (delegates to running bot, or queries database when idle)       |
+| `/help`                  | List all available commands                                               |
+
+The control plane and `make run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
+
+- `make run` — start the bot directly (command listener active while running), **or**
+- `make telegram` — start the control plane and use `/run` to start/stop the bot
 
 ______________________________________________________________________
 
