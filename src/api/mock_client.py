@@ -55,10 +55,16 @@ def _price_for(symbol: str) -> dict[str, Decimal]:
 
 
 def _dynamic_price_for(symbol: str) -> dict[str, Decimal]:
-    """Return bid/ask with gentle time-based oscillation for live trading simulation.
+    """Return bid/ask with time-based oscillation for live trading simulation.
 
-    Prices oscillate ±0.3% so strategies receive changing market data each
-    polling cycle without drifting far from the base price.
+    Two sine components are combined:
+    - Slow trend (~5 min period, ±2 %): creates sustained directional moves
+      large enough for EMA crossovers and RSI extremes, enabling both BUY and
+      SELL signals in the dev mock environment.
+    - Fast noise (~45 s period, ±0.3 %): adds realistic tick-level variation.
+
+    Both components are deterministic — same wall-clock second → same price —
+    so mock prices are reproducible for a fixed ``time.time()`` value.
 
     Args:
         symbol: Trading pair (e.g. "BTC-EUR").
@@ -69,7 +75,10 @@ def _dynamic_price_for(symbol: str) -> dict[str, Decimal]:
     base = _price_for(symbol)
     mid = (base["bid"] + base["ask"]) / 2
     half_spread = (base["ask"] - base["bid"]) / 2
-    variation_pct = Decimal(str(math.sin(time.time() / 47.0) * 0.003))
+    t = time.time()
+    trend = math.sin(t / 47.0) * 0.02  # slow trend ±2 % (~5 min period)
+    noise = math.sin(t / 7.3) * 0.003  # fast noise ±0.3 % (~45 s period)
+    variation_pct = Decimal(str(trend + noise))
     new_mid = mid * (1 + variation_pct)
     return {
         "bid": new_mid - half_spread,

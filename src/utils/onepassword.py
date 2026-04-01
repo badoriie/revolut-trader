@@ -83,7 +83,7 @@ def _fetch_item_fields(item_name: str) -> dict[str, str]:
         return {
             field["label"]: field["value"]
             for field in item_data.get("fields", [])
-            if field.get("label") and field.get("value")
+            if field.get("label") and field.get("value") and not str(field["value"]).startswith("<")
         }
     except (json.JSONDecodeError, KeyError) as e:
         logger.warning(f"Failed to parse 1Password item '{item_name}': {e}")

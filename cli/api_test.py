@@ -1,126 +1,16 @@
 #!/usr/bin/env python3
 """
 API Testing CLI for Revolut Trader
-Quick commands to test API connectivity and fetch common data
+Essential commands to test API connectivity and permissions
 """
 
 import argparse
 import asyncio
 import sys
-from datetime import UTC, datetime
-from typing import Any
 
 from loguru import logger
 
 from src.api.client import RevolutAPIClient
-
-
-async def get_balance(api_client: RevolutAPIClient) -> None:
-    """Get and display account balance."""
-    print("\n💰 Account Balances")
-    print("=" * 50)
-
-    try:
-        balance_data = await api_client.get_balance()
-
-        if balance_data and balance_data.get("balances"):
-            balances = balance_data["balances"]
-            base_currency = balance_data.get("base_currency", "EUR")
-            total_key = f"total_{base_currency.lower()}"
-            total_base = balance_data.get(total_key, 0.0)
-
-            # Currency symbol mapping
-            currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-            symbol = currency_symbols.get(base_currency, base_currency)
-
-            print(f"\n{'Currency':<10} {'Available':>15} {'Reserved':>15} {'Total':>15}")
-            print("-" * 60)
-
-            for currency, balance in balances.items():
-                print(
-                    f"{currency:<10} "
-                    f"{balance['available']:>15.8f} "
-                    f"{balance['reserved']:>15.8f} "
-                    f"{balance['total']:>15.8f}"
-                )
-
-            if total_base > 0:
-                print("-" * 60)
-                print(f"\nTotal {base_currency} Value: {symbol}{total_base:,.2f}")
-
-            print(f"\nCurrencies: {', '.join(balance_data['currencies'])}")
-        else:
-            print("\n❌ No balances found")
-    except Exception as e:
-        print("\n❌ Failed to fetch balances")
-        print(f"Error: {e}")
-        print("\nTip: Make sure your API key has the required permissions.")
-
-
-async def get_ticker(api_client: RevolutAPIClient, symbol: str) -> None:
-    """Get and display ticker/price for a symbol."""
-    print(f"\n📊 Ticker: {symbol}")
-    print("=" * 50)
-
-    ticker = await api_client.get_ticker(symbol)
-
-    if ticker:
-        # Determine currency symbol from trading pair (e.g., BTC-EUR -> €)
-        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-        quote_currency = symbol.split("-")[-1] if "-" in symbol else "EUR"
-        symbol_char = currency_symbols.get(quote_currency, quote_currency)
-
-        print(f"\nBid:   {symbol_char}{ticker['bid']:.2f}")
-        print(f"Ask:   {symbol_char}{ticker['ask']:.2f}")
-        print(f"Last:  {symbol_char}{ticker['last']:.2f}")
-        spread = ticker["ask"] - ticker["bid"]
-        spread_pct = (spread / ticker["last"]) * 100 if ticker["last"] > 0 else 0
-        print(f"Spread: {symbol_char}{spread:.2f} ({spread_pct:.3f}%)")
-    else:
-        print(f"\n❌ Failed to fetch ticker for {symbol}")
-
-
-async def get_candles(
-    api_client: RevolutAPIClient, symbol: str, interval: int = 60, limit: int = 10
-) -> None:
-    """Get and display recent candles."""
-    print(f"\n📈 Recent Candles: {symbol} ({interval}min)")
-    print("=" * 50)
-
-    candles = await api_client.get_candles(symbol, interval, limit=limit)
-
-    if candles:
-        print(f"\nShowing last {len(candles)} candles:\n")
-        print(
-            f"{'Timestamp':<20} {'Open':>10} {'High':>10} {'Low':>10} {'Close':>10} {'Volume':>12}"
-        )
-        print("-" * 80)
-
-        # Show most recent candles first (limit to requested amount)
-        display_candles = candles[-limit:] if len(candles) > limit else candles
-        for candle in reversed(display_candles):
-            # Convert Unix timestamp (milliseconds) to datetime
-            timestamp = datetime.fromtimestamp(int(candle["start"]) / 1000, tz=UTC).strftime(
-                "%Y-%m-%d %H:%M"
-            )
-            # Convert string values to float
-            open_price = float(candle["open"])
-            high_price = float(candle["high"])
-            low_price = float(candle["low"])
-            close_price = float(candle["close"])
-            volume = float(candle["volume"])
-
-            print(
-                f"{timestamp:<20} "
-                f"{open_price:>10.2f} "
-                f"{high_price:>10.2f} "
-                f"{low_price:>10.2f} "
-                f"{close_price:>10.2f} "
-                f"{volume:>12.4f}"
-            )
-    else:
-        print(f"\n❌ Failed to fetch candles for {symbol}")
-
 
 _VIEW_ERROR_HINTS: dict[str, str] = {
     "deactivated": (
@@ -183,394 +73,38 @@ async def test_connection(api_client: RevolutAPIClient) -> None:
     The public order-book endpoint ignores auth headers and will succeed even
     with a deactivated key, so it cannot be used as a connection test.
     """
-    print("\nTesting API Connection")
+    print("\n🔑 Testing API Connection")
     print("=" * 50)
 
     try:
-        balance = await api_client.get_balance()
-        if "currencies" in balance:
-            print("\nPASS — Authentication successful")
-            print(f"     — Account has {len(balance['currencies'])} currencies")
+        # Test balance endpoint as a simple connectivity check
+        balance_data = await api_client.get_balance()
+
+        if balance_data:
+            print("\n✅ Authentication successful")
+            print("✅ API connection working")
+
+            # Show basic account info
+            if balance_data.get("balances"):
+                base_currency = balance_data.get("base_currency", "EUR")
+                balances = balance_data["balances"]
+                total_key = f"total_{base_currency.lower()}"
+                total_base = balance_data.get(total_key, 0.0)
+
+                currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
+                symbol = currency_symbols.get(base_currency, base_currency)
+
+                print("\n📊 Account Summary:")
+                print(f"   Base Currency: {base_currency}")
+                print(f"   Currencies: {', '.join(balances.keys())}")
+                if total_base > 0:
+                    print(f"   Total Value: {symbol}{total_base:,.2f}")
         else:
-            print("\nFAIL — Unexpected balance response")
-            sys.exit(1)
+            print("⚠️  Connected but received empty response")
+
     except Exception as e:
-        print("\nFAIL — Authentication failed")
-        print(f"       {e}")
-        print("\nRun 'make ops' to update credentials.")
-        sys.exit(1)
-
-
-async def get_multiple_tickers(api_client: RevolutAPIClient, symbols: list[str]) -> None:
-    """Get tickers for multiple symbols."""
-    print("\n📊 Multiple Tickers")
-    print("=" * 50)
-
-    currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-
-    print(f"\n{'Symbol':<12} {'Bid':>10} {'Ask':>10} {'Last':>10} {'Spread %':>10}")
-    print("-" * 60)
-
-    for symbol in symbols:
-        ticker = await api_client.get_ticker(symbol)
-        if ticker:
-            # Get currency symbol from pair
-            quote_currency = symbol.split("-")[-1] if "-" in symbol else "EUR"
-            curr_symbol = currency_symbols.get(quote_currency, quote_currency + " ")
-
-            spread = ticker["ask"] - ticker["bid"]
-            spread_pct = (spread / ticker["last"]) * 100 if ticker["last"] > 0 else 0
-            print(
-                f"{symbol:<12} "
-                f"{curr_symbol}{ticker['bid']:>8.2f} "
-                f"{curr_symbol}{ticker['ask']:>8.2f} "
-                f"{curr_symbol}{ticker['last']:>8.2f} "
-                f"{spread_pct:>9.3f}%"
-            )
-        else:
-            print(f"{symbol:<12} {'ERROR':>10}")
-
-
-def _parse_timestamp(ts: str | int | None) -> str:
-    """Parse a timestamp that may be Unix ms (int) or ISO 8601 (str)."""
-    if ts is None:
-        return ""
-    try:
-        if isinstance(ts, int | float):
-            return datetime.fromtimestamp(int(ts) / 1000, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-        # ISO 8601 string e.g. "2026-03-18T12:46:50.592188Z"
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M:%S UTC")
-    except Exception:
-        return str(ts)
-
-
-async def get_order_book(api_client: RevolutAPIClient, symbol: str, depth: int = 20) -> None:
-    """Display raw order book snapshot (bids and asks)."""
-    print(f"\n📖 Order Book: {symbol}  (depth={depth})")
-    print("=" * 60)
-
-    try:
-        book = await api_client.get_order_book(symbol, depth=depth)
-        asks = book.get("data", {}).get("asks", [])
-        bids = book.get("data", {}).get("bids", [])
-        ts = book.get("metadata", {}).get("timestamp")
-        if ts:
-            print(f"Snapshot: {_parse_timestamp(ts)}\n")
-
-        col = f"{'Price':>14}  {'Qty':>14}"
-        print(f"  {'ASKS':^31}")
-        print(f"  {col}")
-        print("  " + "-" * 31)
-        for a in asks[:depth]:
-            print(f"  {float(a['p']):>14.4f}  {float(a['q']):>14.8f}")
-
-        print(f"\n  {'BIDS':^31}")
-        print(f"  {col}")
-        print("  " + "-" * 31)
-        for b in bids[:depth]:
-            print(f"  {float(b['p']):>14.4f}  {float(b['q']):>14.8f}")
-
-        if asks and bids:
-            spread = float(asks[0]["p"]) - float(bids[0]["p"])
-            mid = (float(asks[0]["p"]) + float(bids[0]["p"])) / 2
-            print(f"\n  Best ask: {float(asks[0]['p']):,.4f}  Best bid: {float(bids[0]['p']):,.4f}")
-            print(f"  Spread:   {spread:.4f}  ({spread / mid * 100:.3f}%)")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_all_tickers(api_client: RevolutAPIClient) -> None:
-    """Display all tickers from GET /tickers."""
-    print("\n📊 All Tickers  (GET /tickers)")
-    print("=" * 60)
-
-    try:
-        tickers = await api_client.get_tickers()
-        if not tickers:
-            print("No tickers returned.")
-            return
-
-        currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
-        print(f"\n{'Symbol':<14} {'Bid':>12} {'Ask':>12} {'Mid':>12} {'Last':>12}")
-        print("-" * 65)
-        for t in sorted(tickers, key=lambda x: x.get("symbol", "")):
-            sym = t.get("symbol", "?")
-            # API uses slash notation "BTC/USD"; extract quote currency after "/"
-            if "/" in sym:
-                quote = sym.split("/")[-1]
-            elif "-" in sym:
-                quote = sym.split("-")[-1]
-            else:
-                quote = ""
-            c = currency_symbols.get(quote, "")
-            bid_f = float(t.get("bid") or 0)
-            ask_f = float(t.get("ask") or 0)
-            mid_f = float(t.get("mid") or 0)
-            last_f = float(t.get("last_price") or 0)
-            print(
-                f"{sym:<14} {c}{bid_f:>11.2f} {c}{ask_f:>11.2f} {c}{mid_f:>11.2f} {c}{last_f:>11.2f}"
-            )
-        print(f"\nTotal pairs: {len(tickers)}")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_currencies(api_client: RevolutAPIClient) -> None:
-    """Display all supported currencies (GET /configuration/currencies)."""
-    print("\n🪙 Supported Currencies")
-    print("=" * 60)
-
-    try:
-        currencies = await api_client.get_currencies()
-        print(f"\n{'Symbol':<8} {'Name':<20} {'Type':<8} {'Scale':>6} {'Status'}")
-        print("-" * 55)
-        for sym, info in sorted(currencies.items()):
-            print(
-                f"{sym:<8} {info.get('name', '?'):<20} "
-                f"{info.get('asset_type', '?'):<8} {info.get('scale', '?'):>6} "
-                f"{info.get('status', '?')}"
-            )
-        print(f"\nTotal: {len(currencies)}")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_currency_pairs(api_client: RevolutAPIClient) -> None:
-    """Display all traded currency pairs (GET /configuration/pairs)."""
-    print("\n💱 Currency Pairs")
-    print("=" * 60)
-
-    try:
-        pairs = await api_client.get_currency_pairs()
-        print(f"\n{'Pair':<12} {'Min Size':>12} {'Max Size':>12} {'Status'}")
-        print("-" * 50)
-        for pair, info in sorted(pairs.items()):
-            print(
-                f"{pair:<12} {info.get('min_order_size', '?'):>12} "
-                f"{info.get('max_order_size', '?'):>12} {info.get('status', '?')}"
-            )
-        print(f"\nTotal: {len(pairs)}")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_last_public_trades(api_client: RevolutAPIClient) -> None:
-    """Display last 100 public trades (GET /public/last-trades)."""
-    print("\n📋 Last Public Trades  (GET /public/last-trades)")
-    print("=" * 60)
-
-    try:
-        result = await api_client.get_last_public_trades()
-        trades = result.get("data", [])
-        if not trades:
-            print("No trades found.")
-            return
-
-        print(f"\n{'Time':<24} {'Asset':<6} {'Price':>12} {'Qty':>14} {'Trade ID'}")
-        print("-" * 80)
-        for t in trades[:20]:  # cap display at 20
-            ts_str = _parse_timestamp(t.get("tdt", ""))
-            print(
-                f"{ts_str:<24} {t.get('aid', '?'):<6} "
-                f"{float(t.get('p', 0)):>12.4f} "
-                f"{float(t.get('q', 0)):>14.8f} "
-                f"{t.get('tid', '?')}"
-            )
-        print(f"\nShowing 20 of {len(trades)} trades.")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_open_orders(api_client: RevolutAPIClient, symbol: str | None = None) -> None:
-    """Display active (open) orders."""
-    label = f"  [{symbol}]" if symbol else ""
-    print(f"\n📋 Open Orders{label}")
-    print("=" * 60)
-
-    try:
-        symbols = [symbol] if symbol else None
-        result = await api_client.get_open_orders(symbols=symbols)
-        orders = result.get("data", [])
-
-        if not orders:
-            print("No open orders.")
-            return
-
-        print(
-            f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}"
-        )
-        print("-" * 100)
-        for o in orders:
-            ts = o.get("created_date") or o.get("created_at", "")
-            ts_str = _parse_timestamp(ts) if ts else ""
-            print(
-                f"{o.get('id', '?'):<38} "
-                f"{o.get('symbol', '?'):<10} "
-                f"{o.get('side', '?'):<6} "
-                f"{o.get('type', '?'):<8} "
-                f"{float(o.get('quantity', 0)):>10.8f} "
-                f"{float(o.get('price') or 0):>12.2f} "
-                f"{o.get('status', '?')}  {ts_str}"
-            )
-
-        next_cursor = result.get("metadata", {}).get("next_cursor")
-        if next_cursor:
-            print(f"\n(more results — next_cursor: {next_cursor})")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_historical_orders(
-    api_client: RevolutAPIClient, symbol: str | None = None, limit: int = 20
-) -> None:
-    """Display completed/cancelled orders."""
-    label = f"  [{symbol}]" if symbol else ""
-    print(f"\n📜 Historical Orders{label}  (limit={limit})")
-    print("=" * 60)
-
-    try:
-        symbols = [symbol] if symbol else None
-        result = await api_client.get_historical_orders(symbols=symbols, limit=limit)
-        orders = result.get("data", [])
-
-        if not orders:
-            print("No historical orders found.")
-            return
-
-        print(
-            f"\n{'ID':<38} {'Symbol':<10} {'Side':<6} {'Type':<8} {'Qty':>10} {'Price':>12} {'Status'}"
-        )
-        print("-" * 100)
-        for o in orders:
-            print(
-                f"{o.get('id', '?'):<38} "
-                f"{o.get('symbol', '?'):<10} "
-                f"{o.get('side', '?'):<6} "
-                f"{o.get('type', '?'):<8} "
-                f"{float(o.get('quantity', 0)):>10.8f} "
-                f"{float(o.get('price') or 0):>12.2f} "
-                f"{o.get('status', '?')}"
-            )
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_trades(api_client: RevolutAPIClient, symbol: str, limit: int = 20) -> None:
-    """Display private trade history for a symbol."""
-    print(f"\n💱 Trade History: {symbol}  (limit={limit})")
-    print("=" * 60)
-
-    try:
-        result = await api_client.get_trades(symbol, limit=limit)
-        trades = result.get("data", [])
-
-        if not trades:
-            print("No trades found.")
-            return
-
-        print(f"\n{'Time':<20} {'Side':<6} {'Price':>12} {'Qty':>14} {'Trade ID'}")
-        print("-" * 80)
-        for t in trades:
-            ts = t.get("tdt", "")
-            ts_str = _parse_timestamp(ts) if ts else ""
-            print(
-                f"{ts_str:<20} "
-                f"{t.get('s', '?'):<6} "
-                f"{float(t.get('p', 0)):>12.4f} "
-                f"{float(t.get('q', 0)):>14.8f} "
-                f"{t.get('tid', '?')}"
-            )
-
-        next_cursor = result.get("metadata", {}).get("next_cursor")
-        if next_cursor:
-            print(f"\n(more results — next_cursor: {next_cursor})")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_public_trades(api_client: RevolutAPIClient, symbol: str) -> None:
-    """Display public trade history for a symbol."""
-    print(f"\n📊 Public Trades: {symbol}")
-    print("=" * 60)
-
-    try:
-        result = await api_client.get_public_trades(symbol)
-        trades = result.get("data", [])
-
-        if not trades:
-            print("No public trades found.")
-            return
-
-        print(f"\n{'Time':<24} {'Price':>12} {'Qty':>14} {'Trade ID'}")
-        print("-" * 80)
-        for t in trades:
-            ts = t.get("tdt", "")
-            ts_str = _parse_timestamp(ts) if ts else ""
-            print(
-                f"{ts_str:<24} "
-                f"{float(t.get('p', 0)):>12.4f} "
-                f"{float(t.get('q', 0)):>14.8f} "
-                f"{t.get('tid', '?')}"
-            )
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-async def get_order(api_client: RevolutAPIClient, order_id: str) -> None:
-    """Display details for a specific order."""
-    print(f"\n🔍 Order: {order_id}")
-    print("=" * 60)
-
-    try:
-        o = await api_client.get_order(order_id)
-        created = o.get("created_date") or o.get("created_at", "")
-        updated = o.get("updated_date") or o.get("updated_at", "")
-        fmt = lambda ts: _parse_timestamp(ts) if ts else "?"  # noqa: E731
-
-        print(f"\n  Venue ID:       {o.get('id', '?')}")
-        print(f"  Client ID:      {o.get('client_order_id', '?')}")
-        print(f"  Symbol:         {o.get('symbol', '?')}")
-        print(f"  Side:           {o.get('side', '?')}")
-        print(f"  Type:           {o.get('type', '?')}")
-        print(f"  Status:         {o.get('status', '?')}")
-        print(f"  Quantity:       {o.get('quantity', '?')}")
-        print(f"  Filled qty:     {o.get('filled_quantity', '?')}")
-        print(f"  Price:          {o.get('price', '?')}")
-        print(f"  Avg fill price: {o.get('average_fill_price', '?')}")
-        print(f"  Created:        {fmt(created)}")
-        print(f"  Updated:        {fmt(updated)}")
-    except Exception as e:
-        print(f"\n❌ Failed: {e}")
-
-
-def _require_symbol(args) -> str:
-    """Validate and return the --symbol argument, exiting if missing.
-
-    Args:
-        args: Parsed CLI arguments.
-
-    Returns:
-        The symbol string.
-    """
-    if not args.symbol:
-        print(f"❌ Error: --symbol required for {args.command} command")
-        sys.exit(1)
-    return args.symbol
-
-
-def _require_order_id(args) -> str:
-    """Validate and return the --order-id argument, exiting if missing.
-
-    Args:
-        args: Parsed CLI arguments.
-
-    Returns:
-        The order ID string.
-    """
-    if not args.order_id:
-        print(f"❌ Error: --order-id required for {args.command} command")
-        sys.exit(1)
-    return args.order_id
+        print(f"\n❌ Connection failed: {e}")
+        raise
 
 
 async def run_command(args) -> None:
@@ -579,53 +113,15 @@ async def run_command(args) -> None:
     await api_client.initialize()
 
     try:
-        await _dispatch_command(api_client, args)
+        if args.command == "trade-ready":
+            await check_trade_ready(api_client)
+        elif args.command == "test":
+            await test_connection(api_client)
+        else:
+            print(f"Unknown command: {args.command}")
+            sys.exit(1)
     finally:
         await api_client.close()
-
-
-async def _dispatch_command(api_client: RevolutAPIClient, args) -> None:
-    """Dispatch the CLI command to the appropriate handler.
-
-    Args:
-        api_client: Initialised Revolut API client.
-        args:       Parsed CLI arguments.
-    """
-    simple_commands: dict[str, Any] = {
-        "trade-ready": lambda: check_trade_ready(api_client),
-        "balance": lambda: get_balance(api_client),
-        "test": lambda: test_connection(api_client),
-        "all-tickers": lambda: get_all_tickers(api_client),
-        "currencies": lambda: get_currencies(api_client),
-        "currency-pairs": lambda: get_currency_pairs(api_client),
-        "last-public-trades": lambda: get_last_public_trades(api_client),
-        "open-orders": lambda: get_open_orders(api_client, symbol=args.symbol),
-        "historical-orders": lambda: get_historical_orders(
-            api_client, symbol=args.symbol, limit=args.limit
-        ),
-    }
-
-    if args.command in simple_commands:
-        await simple_commands[args.command]()
-        return
-
-    symbol_commands: dict[str, Any] = {
-        "ticker": lambda s: get_ticker(api_client, s),
-        "candles": lambda s: get_candles(api_client, s, args.interval, args.limit),
-        "order-book": lambda s: get_order_book(api_client, s, depth=args.depth),
-        "trades": lambda s: get_trades(api_client, s, limit=args.limit),
-        "public-trades": lambda s: get_public_trades(api_client, s),
-    }
-
-    if args.command in symbol_commands:
-        await symbol_commands[args.command](_require_symbol(args))
-        return
-
-    if args.command == "tickers":
-        symbols = args.symbols.split(",") if args.symbols else ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
-        await get_multiple_tickers(api_client, symbols)
-    elif args.command == "order":
-        await get_order(api_client, _require_order_id(args))
 
 
 def main():
@@ -635,88 +131,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python cli/api_test.py trade-ready                          # check permissions
-  python cli/api_test.py test                                 # auth check
-  python cli/api_test.py balance                              # account balances
-  python cli/api_test.py ticker --symbol BTC-EUR              # single ticker
-  python cli/api_test.py tickers --symbols BTC-EUR,ETH-EUR    # multiple tickers (order-book)
-  python cli/api_test.py all-tickers                          # all pairs (GET /tickers)
-  python cli/api_test.py order-book --symbol BTC-EUR          # raw order book
-  python cli/api_test.py order-book --symbol BTC-EUR --depth 5
-  python cli/api_test.py candles --symbol BTC-EUR --interval 60 --limit 10
-  python cli/api_test.py open-orders                          # all active orders
-  python cli/api_test.py open-orders --symbol BTC-EUR         # filtered by pair
-  python cli/api_test.py historical-orders --limit 20         # completed orders
-  python cli/api_test.py trades --symbol BTC-EUR              # private trade history
-  python cli/api_test.py public-trades --symbol BTC-EUR       # public trade history
-  python cli/api_test.py order --order-id <uuid>              # single order details
+  python cli/api_test.py test          # Test authenticated connection
+  python cli/api_test.py trade-ready   # Check API permissions (view + trade)
         """,
     )
 
     parser.add_argument(
         "command",
-        choices=[
-            "trade-ready",
-            "test",
-            "balance",
-            "ticker",
-            "tickers",
-            "all-tickers",
-            "currencies",
-            "currency-pairs",
-            "last-public-trades",
-            "order-book",
-            "candles",
-            "open-orders",
-            "historical-orders",
-            "trades",
-            "public-trades",
-            "order",
-        ],
+        choices=["trade-ready", "test"],
         help="Command to execute",
-    )
-
-    parser.add_argument(
-        "--symbol",
-        "-s",
-        type=str,
-        help="Trading symbol (e.g., BTC-EUR, ETH-EUR)",
-    )
-
-    parser.add_argument(
-        "--symbols",
-        type=str,
-        help="Comma-separated trading symbols (e.g., BTC-EUR,ETH-EUR,SOL-EUR)",
-    )
-
-    parser.add_argument(
-        "--order-id",
-        type=str,
-        help="Venue order ID (UUID) for order/order-fills commands",
-    )
-
-    parser.add_argument(
-        "--depth",
-        type=int,
-        default=20,
-        help="Order book depth (1-20, default: 20)",
-    )
-
-    parser.add_argument(
-        "--interval",
-        "-i",
-        type=int,
-        default=60,
-        choices=[1, 5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60)",
-    )
-
-    parser.add_argument(
-        "--limit",
-        "-l",
-        type=int,
-        default=20,
-        help="Number of results to fetch (default: 20)",
     )
 
     args = parser.parse_args()

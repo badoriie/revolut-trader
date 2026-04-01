@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order
+.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run telegram backtest backtest-hf backtest-compare backtest-matrix logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test telegram-test
 
 # ============================================================================
 # Environment — auto-detected from git context, or explicit override
@@ -63,22 +63,8 @@ help:
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
 	@echo "API Testing (defaults to int — use ENV=prod for production):"
-	@echo "  make api-test                             - Test authenticated connection"
-	@echo "  make api-ready                            - Check API permissions (view + trade)"
-	@echo "  make api-balance                          - Account balances"
-	@echo "  make api-ticker SYMBOL=BTC-EUR            - Single ticker (via order book)"
-	@echo "  make api-tickers SYMBOLS=BTC-EUR          - Multiple tickers"
-	@echo "  make api-all-tickers                      - All pairs (GET /tickers)"
-	@echo "  make api-currencies                       - All currencies"
-	@echo "  make api-currency-pairs                   - All pairs config"
-	@echo "  make api-last-public-trades               - Last 100 public trades"
-	@echo "  make api-order-book SYMBOL=BTC-EUR        - Order book snapshot"
-	@echo "  make api-candles SYMBOL=BTC-EUR           - Candles (60min, last 10)"
-	@echo "  make api-open-orders                      - All active orders"
-	@echo "  make api-historical-orders                - Completed/cancelled orders"
-	@echo "  make api-trades SYMBOL=BTC-EUR            - Private trade history"
-	@echo "  make api-public-trades SYMBOL=BTC-EUR     - Public trade history"
-	@echo "  make api-order ORDER_ID=<uuid>            - Single order details"
+	@echo "  make api-test          - Test authenticated connection"
+	@echo "  make api-ready         - Check API permissions (view + trade)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -90,9 +76,8 @@ help:
 	@echo "  make pre-commit        - Run pre-commit hooks on all files"
 	@echo "  make pre-commit-install - Install pre-commit + commit-msg hooks"
 	@echo ""
-	@echo "Logs & Backup:"
-	@echo "  make logs              - Redirect: logs are in the encrypted database"
-	@echo "  make logs-follow       - Redirect: logs are in the encrypted database"
+	@echo "Logs (uses ENV for DB file selection):"
+	@echo "  make logs              - View recent logs from database (LIMIT=50 LEVEL=...)"
 	@echo "  make backup            - Create a timestamped backup of data/ to backups/"
 	@echo "  make restore           - Interactively restore data/ from a backup"
 	@echo ""
@@ -145,6 +130,7 @@ setup:
 					--category "Secure Note" \
 					--vault $(OP_VAULT) \
 					--title $$CREDS \
+					"TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" \
 					>/dev/null && echo "  $$CREDS: created (dev uses mock API — no API key needed)"; \
 			else \
 				op item create \
@@ -152,8 +138,17 @@ setup:
 					--vault $(OP_VAULT) \
 					--title $$CREDS \
 					"REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" \
+					"TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" \
 					>/dev/null && echo "  $$CREDS: created"; \
 			fi; \
+		fi; \
+		op item get $$CREDS --vault $(OP_VAULT) --fields TELEGRAM_BOT_TOKEN >/dev/null 2>&1 \
+			|| { op item edit $$CREDS --vault $(OP_VAULT) "TELEGRAM_BOT_TOKEN[concealed]=<add-telegram-bot-token>" >/dev/null \
+			     && echo "  TELEGRAM_BOT_TOKEN: placeholder added"; }; \
+		if [ "$$env" != "dev" ]; then \
+			op item get $$CREDS --vault $(OP_VAULT) --fields REVOLUT_API_KEY >/dev/null 2>&1 \
+				|| { op item edit $$CREDS --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" >/dev/null \
+				     && echo "  REVOLUT_API_KEY: placeholder added"; }; \
 		fi; \
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
@@ -167,6 +162,10 @@ setup:
 					"BASE_CURRENCY[text]=EUR" \
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
+					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
+					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
+					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
 				echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
 			else \
@@ -179,9 +178,25 @@ setup:
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
 					"INITIAL_CAPITAL[text]=10000" \
+					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
+					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
+					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 			fi; \
 		fi; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields MAX_CAPITAL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAX_CAPITAL[text]=<optional-max-capital-eur>" >/dev/null \
+			     && echo "  MAX_CAPITAL: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields SHUTDOWN_TRAILING_STOP_PCT >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" >/dev/null \
+			     && echo "  SHUTDOWN_TRAILING_STOP_PCT: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields SHUTDOWN_MAX_WAIT_SECONDS >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" >/dev/null \
+			     && echo "  SHUTDOWN_MAX_WAIT_SECONDS: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields TELEGRAM_CHAT_ID >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" >/dev/null \
+			     && echo "  TELEGRAM_CHAT_ID: placeholder added"; }; \
 		if [ "$$env" = "dev" ]; then \
 			echo "  $$env: mock API — skipping Ed25519 key generation"; \
 		else \
@@ -265,20 +280,25 @@ deep-clean:
 
 ops:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
+	@echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"
+	@echo ""
 	@if [ "$(ENV)" = "dev" ]; then \
-		echo "Dev environment uses mock API — no API credentials needed."; \
-		echo "Run 'make run' to start with the mock API."; \
+		echo "Dev environment uses mock API — no Revolut API key needed."; \
 	else \
-		echo "Updating credentials in 1Password ($(OP_VAULT)/$(OP_CREDS))"; \
-		echo ""; \
-		printf "Revolut API Key: "; read api_key; \
+		printf "Revolut API Key (press Enter to skip): "; read api_key; \
 		if [ -n "$$api_key" ]; then \
 			op item edit $(OP_CREDS) --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=$$api_key" >/dev/null \
 				&& echo "  REVOLUT_API_KEY stored" || echo "  Failed to store REVOLUT_API_KEY"; \
 		fi; \
-		echo ""; \
-		echo "Done. Run 'make opshow' to verify."; \
 	fi
+	@echo ""
+	@printf "Telegram Bot Token (optional — press Enter to skip): "; read tg_token; \
+	if [ -n "$$tg_token" ]; then \
+		op item edit $(OP_CREDS) --vault $(OP_VAULT) "TELEGRAM_BOT_TOKEN[concealed]=$$tg_token" >/dev/null \
+			&& echo "  TELEGRAM_BOT_TOKEN stored" || echo "  Failed to store TELEGRAM_BOT_TOKEN"; \
+	fi
+	@echo ""
+	@echo "Done. Run 'make opshow' to verify."
 
 opshow:
 	@op whoami >/dev/null 2>&1 || { echo "Error: 1Password not authenticated. Set OP_SERVICE_ACCOUNT_TOKEN."; exit 1; }
@@ -286,7 +306,7 @@ opshow:
 	@if [ "$(ENV)" = "dev" ]; then \
 		echo "  (dev uses mock API — no API credentials needed)"; \
 	else \
-		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY; do \
+		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY TELEGRAM_BOT_TOKEN; do \
 			value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
 			len=$${#value}; \
 			if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
@@ -298,7 +318,7 @@ opshow:
 	@echo ""
 	@echo "=== Configuration ($(OP_CONFIG)) ==="
 	@echo "  TRADING_MODE              = (derived: dev/int → paper, prod → live)"
-	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
+	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS TELEGRAM_CHAT_ID; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
 		printf "  %-25s = %s\n" "$$field" "$$value"; \
 	done
@@ -378,7 +398,7 @@ opconfig-set:
 opconfig-show:
 	@echo "Configuration ($(OP_VAULT)/$(OP_CONFIG)):"
 	@echo "  TRADING_MODE:            (derived: dev/int → paper, prod → live)"
-	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL; do \
+	@for key in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS TELEGRAM_CHAT_ID; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$key 2>/dev/null || echo "(not set)"); \
 		printf "  %-22s %s\n" "$$key:" "$$value"; \
 	done
@@ -410,6 +430,11 @@ run:
 	[ -n "$${PAIRS:-}" ] && CMD="$$CMD --pairs $$PAIRS"; \
 	[ -n "$${INTERVAL:-}" ] && CMD="$$CMD --interval $$INTERVAL"; \
 	eval $$CMD
+
+telegram:
+	@echo "Starting Telegram Control Plane (env: $(ENV))…"
+	@echo "Control the bot via Telegram: /run /stop /status /balance /report /help"
+	ENVIRONMENT=$(ENV) uv run python cli/telegram_control.py --env $(ENV)
 
 backtest:
 	@STRATEGY=$${STRATEGY:-market_making}; \
@@ -497,77 +522,8 @@ api-test:
 	$(call require_real_api,$@)
 	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py test
 
-api-balance:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py balance
-
-api-ticker:
-	$(call require_real_api,$@)
-	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
-
-api-tickers:
-	$(call require_real_api,$@)
-	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
-
-api-candles:
-	$(call require_real_api,$@)
-	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	INTERVAL=$${INTERVAL:-60}; \
-	LIMIT=$${LIMIT:-10}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
-
-api-all-tickers:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py all-tickers
-
-api-currencies:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currencies
-
-api-currency-pairs:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currency-pairs
-
-api-last-public-trades:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py last-public-trades
-
-api-order-book:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
-	@DEPTH=$${DEPTH:-20}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
-
-api-open-orders:
-	$(call require_real_api,$@)
-	@ARGS=""; \
-	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py open-orders $$ARGS
-
-api-historical-orders:
-	$(call require_real_api,$@)
-	@LIMIT=$${LIMIT:-20}; \
-	ARGS="--limit $$LIMIT"; \
-	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py historical-orders $$ARGS
-
-api-trades:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
-	@LIMIT=$${LIMIT:-20}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
-
-api-public-trades:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
-
-api-order:
-	$(call require_real_api,$@)
-	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
+telegram-test:
+	@ENVIRONMENT=$(ENV) uv run revt telegram test
 
 # ============================================================================
 # Code Quality
@@ -607,10 +563,7 @@ check: lint format typecheck security test
 # ============================================================================
 
 logs:
-	@echo "Logs are stored in the encrypted database. Use: make db-stats"
-
-logs-follow:
-	@echo "Logs are stored in the encrypted database. Use: make db-stats"
+	@ENVIRONMENT=$(ENV) uv run python cli/view_logs.py --limit $${LIMIT:-50} $${LEVEL:+--level $$LEVEL} $${SESSION:+--session $$SESSION}
 
 # ============================================================================
 # Backup & Restore

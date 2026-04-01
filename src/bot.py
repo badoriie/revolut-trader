@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 from collections import deque
 from datetime import UTC, datetime
@@ -22,6 +23,37 @@ from src.strategies.momentum import MomentumStrategy
 from src.strategies.multi_strategy import MultiStrategy
 from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.db_persistence import DatabasePersistence
+from src.utils.telegram import TelegramNotifier
+
+
+def _setup_database_logging(persistence: DatabasePersistence, session_id: int | None = None) -> int:
+    """Configure loguru to save WARNING+ logs to the encrypted database.
+
+    Returns the sink_id so it can be removed later.
+
+    Args:
+        persistence: Database persistence instance.
+        session_id: Optional trading session ID to associate with logs.
+
+    Returns:
+        The loguru sink ID (use logger.remove(sink_id) to stop).
+    """
+
+    def database_sink(message: object) -> None:
+        """Loguru sink that persists WARNING+ logs to the database."""
+        record = message.record  # type: ignore[attr-defined]
+        # Only save WARNING, ERROR, and CRITICAL to avoid filling the database
+        if record["level"].no >= 30:
+            persistence.save_log_entry(
+                level=record["level"].name,
+                message=record["message"],
+                module=record["name"],
+                session_id=session_id,
+            )
+
+    # Add database sink for WARNING+ logs
+    return logger.add(database_sink, level="WARNING", format="{message}")
+
 
 # Recommended polling interval per strategy — balances signal freshness against API cost.
 # Market-making and breakout react to order-book changes in seconds; mean-reversion and
@@ -60,13 +92,28 @@ class TradingBot:
         self.persistence = DatabasePersistence()
         self.current_session_id: int | None = None
 
+        # Telegram notifier — active only when both token and chat_id are configured.
+        self.notifier: TelegramNotifier | None = (
+            TelegramNotifier(
+                token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
+            )
+            if settings.telegram_bot_token and settings.telegram_chat_id
+            else None
+        )
+
         # Currency display
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
         self.currency_symbol = currency_symbols.get(settings.base_currency, settings.base_currency)
 
         # State
         self.is_running = False
+        self._daily_loss_notified = False  # prevents repeated Telegram alerts per session
         self.cash_balance = Decimal(str(settings.paper_initial_capital))
+        self._started_at: datetime | None = None
+        self._telegram_stop_event: asyncio.Event | None = None
+        self._telegram_polling_task: asyncio.Task[None] | None = None
+        self._db_log_sink_id: int | None = None  # loguru sink ID for database logging
         # Use deque with maxlen to prevent unbounded memory growth
         # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
         self.portfolio_snapshots: deque[PortfolioSnapshot] = deque(maxlen=1000)
@@ -94,8 +141,48 @@ class TradingBot:
             )
             # Will fail when trying to initialize API client
 
-    async def start(self):
-        """Initialize and start the trading bot."""
+    async def _initialize_balance(self) -> None:
+        """Fetch live balance and apply MAX_CAPITAL cap if configured."""
+        # Get initial balance (live mode fetches real balance from the API)
+        if self.trading_mode == TradingMode.LIVE:
+            self.cash_balance = await self._fetch_live_balance()
+
+        # Apply MAX_CAPITAL cap — limits how much money the bot can trade with.
+        if settings.max_capital is not None:
+            max_cap = Decimal(str(settings.max_capital))
+            if self.cash_balance > max_cap:
+                logger.info(
+                    f"MAX_CAPITAL cap applied: {self.currency_symbol}{self.cash_balance:,.2f} "
+                    f"→ {self.currency_symbol}{max_cap:,.2f}"
+                )
+                self.cash_balance = max_cap
+
+    async def _start_telegram_command_listener(self) -> None:
+        """Start background Telegram command listener task."""
+        if self.notifier:
+            await self.notifier.notify_started(
+                strategy=self.strategy_type.value,
+                risk_level=self.risk_level.value,
+                pairs=self.trading_pairs,
+                mode=self.trading_mode.value,
+            )
+            self._telegram_stop_event = asyncio.Event()
+            self._telegram_polling_task = asyncio.create_task(
+                self.notifier.start_polling(
+                    self._handle_telegram_command, self._telegram_stop_event
+                )
+            )
+            logger.info("Telegram command listener started")
+
+    async def start(self, start_command_listener: bool = True) -> None:
+        """Initialize and start the trading bot.
+
+        Args:
+            start_command_listener: When True (default), starts the background
+                Telegram command polling task.  Pass False when an external
+                control plane (e.g. TelegramControlPlane) already owns the
+                single Telegram polling loop so there are no duplicate handlers.
+        """
         logger.info("Starting trading bot...")
 
         # Validate 1Password configuration for production
@@ -114,26 +201,18 @@ class TradingBot:
         )
         logger.info(f"Trading session started: {self.current_session_id}")
 
+        # Enable database logging for WARNING+ messages
+        self._db_log_sink_id = _setup_database_logging(
+            self.persistence, session_id=self.current_session_id
+        )
+        logger.info("Database logging enabled for WARNING+ messages")
+
         # Initialize API client (mock for dev, real for int/prod)
         self.api_client = create_api_client(settings.environment)
         await self.api_client.initialize()
 
         # Check key permissions before going further
-        perms = await self.api_client.check_permissions()
-        if not perms["view"]:
-            raise RuntimeError(
-                "API key cannot read market data. Check credentials with 'make api-ready'."
-            )
-        if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
-            raise RuntimeError(
-                "API key is read-only — cannot start in LIVE mode.\n"
-                "Switch to paper mode ('make run ENV=int' / 'revt run --env int') or create a key with "
-                "trading permissions in Revolut X."
-            )
-        if not perms["trade"]:
-            logger.info(
-                "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
-            )
+        await self._validate_permissions()
 
         # Initialize risk manager with strategy so per-strategy overrides apply.
         self.risk_manager = RiskManager(
@@ -150,41 +229,103 @@ class TradingBot:
         # Initialize strategy
         self.strategy = self._create_strategy(self.strategy_type)
 
-        # Get initial balance
-        if self.trading_mode == TradingMode.LIVE:
-            try:
-                balance_data = await self.api_client.get_balance()
-                # Extract base currency available balance from the balances dict.
-                # get_balance() returns {"balances": {currency: {available, ...}}, ...}
-                base = settings.base_currency
-                base_balances = balance_data.get("balances", {}).get(base, {})
-                available = base_balances.get("available")
-                if available is None:
-                    raise RuntimeError(f"No {base} balance found. Ensure the account holds {base}.")
-                self.cash_balance = Decimal(str(available))
-                logger.info(f"Live account balance: {self.currency_symbol}{self.cash_balance:,.2f}")
-            except RuntimeError:
-                raise
-            except Exception as e:
-                logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
-                logger.critical("Cannot start live trading without accurate balance information!")
-                raise RuntimeError(
-                    "Cannot start live trading without account balance. "
-                    "Please check API connection and credentials."
-                ) from e
-
-        # Apply MAX_CAPITAL cap — limits how much money the bot can trade with.
-        if settings.max_capital is not None:
-            max_cap = Decimal(str(settings.max_capital))
-            if self.cash_balance > max_cap:
-                logger.info(
-                    f"MAX_CAPITAL cap applied: {self.currency_symbol}{self.cash_balance:,.2f} "
-                    f"→ {self.currency_symbol}{max_cap:,.2f}"
-                )
-                self.cash_balance = max_cap
+        # Fetch balance and apply capital cap
+        await self._initialize_balance()
 
         self.is_running = True
+        self._started_at = datetime.now(UTC)
         logger.info("Trading bot started successfully!")
+
+        # Start Telegram command listener if requested
+        if start_command_listener and self.notifier:
+            await self._start_telegram_command_listener()
+
+    async def _validate_permissions(self) -> None:
+        """Check API key permissions and raise RuntimeError if they are insufficient.
+
+        Requires ``self.api_client`` to be initialised.  Raises if the key cannot
+        read market data, or if the key is read-only in LIVE mode.  In paper mode
+        a read-only key is allowed — orders will not be sent to the exchange.
+        """
+        assert self.api_client is not None
+        perms = await self.api_client.check_permissions()
+        if not perms["view"]:
+            raise RuntimeError(
+                "API key cannot read market data. Check credentials with 'make api-ready'."
+            )
+        if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
+            raise RuntimeError(
+                "API key is read-only — cannot start in LIVE mode.\n"
+                "Switch to paper mode ('make run ENV=int' / 'revt run --env int') or create a key with "
+                "trading permissions in Revolut X."
+            )
+        if not perms["trade"]:
+            logger.info(
+                "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
+            )
+
+    async def _fetch_live_balance(self) -> Decimal:
+        """Fetch and return the available base-currency balance from the live API.
+
+        Only called in LIVE mode.  Raises RuntimeError if the balance cannot be
+        retrieved — trading must not start without accurate balance information.
+
+        Returns:
+            Available base-currency balance as a Decimal.
+        """
+        assert self.api_client is not None
+        try:
+            balance_data = await self.api_client.get_balance()
+            # get_balance() returns {"balances": {currency: {available, ...}}, ...}
+            base = settings.base_currency
+            available = balance_data.get("balances", {}).get(base, {}).get("available")
+            if available is None:
+                raise RuntimeError(f"No {base} balance found. Ensure the account holds {base}.")
+            balance = Decimal(str(available))
+            logger.info(f"Live account balance: {self.currency_symbol}{balance:,.2f}")
+            return balance
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
+            logger.critical("Cannot start live trading without accurate balance information!")
+            raise RuntimeError(
+                "Cannot start live trading without account balance. "
+                "Please check API connection and credentials."
+            ) from e
+
+    async def _shutdown_executor(self) -> None:
+        """Cancel orders, close all positions, and process shutdown results.
+
+        Runs the executor's graceful shutdown sequence, then updates cash balance
+        for each position closed during shutdown and notifies on each filled order.
+        Any shutdown errors are logged.
+        """
+        assert self.executor is not None
+        trailing_pct = (
+            Decimal(str(settings.shutdown_trailing_stop_pct))
+            if settings.shutdown_trailing_stop_pct is not None
+            else None
+        )
+        shutdown_summary = await self.executor.graceful_shutdown(
+            trailing_stop_pct=trailing_pct,
+            max_wait_seconds=settings.shutdown_max_wait_seconds,
+        )
+        logger.info(
+            f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
+            f"{shutdown_summary.positions_closed}/{shutdown_summary.positions_evaluated} "
+            f"positions closed "
+            f"({shutdown_summary.positions_trailing_stopped} via trailing stop)"
+        )
+
+        for order in shutdown_summary.filled_close_orders:
+            self._process_filled_order(order)
+            if self.notifier:
+                await self.notifier.notify_trade(order, self.currency_symbol)
+
+        if shutdown_summary.errors:
+            for error in shutdown_summary.errors:
+                logger.error(f"Shutdown error: {error}")
 
     async def stop(self):
         """Stop the trading bot gracefully.
@@ -200,32 +341,28 @@ class TradingBot:
         logger.info("Please wait — cancelling orders and closing all positions before exit...")
         self.is_running = False
 
+        # Notify via Telegram before shutting down the polling loop
+        if self.notifier:
+            await self.notifier.reply("🔴 Trading bot is shutting down...")
+
+        # Stop Telegram command listener before shutdown notifications
+        if self._telegram_stop_event:
+            self._telegram_stop_event.set()
+        if self._telegram_polling_task:
+            self._telegram_polling_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._telegram_polling_task
+            self._telegram_polling_task = None
+
+        # Remove database logging sink
+        if self._db_log_sink_id is not None:
+            logger.remove(self._db_log_sink_id)
+            self._db_log_sink_id = None
+
         # Graceful shutdown: cancel orders, close ALL positions.
         # Profitable positions wait for a trailing stop (if configured) before closing.
         if self.executor:
-            trailing_pct = (
-                Decimal(str(settings.shutdown_trailing_stop_pct))
-                if settings.shutdown_trailing_stop_pct is not None
-                else None
-            )
-            shutdown_summary = await self.executor.graceful_shutdown(
-                trailing_stop_pct=trailing_pct,
-                max_wait_seconds=settings.shutdown_max_wait_seconds,
-            )
-            logger.info(
-                f"Shutdown: {shutdown_summary.orders_cancelled} orders cancelled, "
-                f"{shutdown_summary.positions_closed}/{shutdown_summary.positions_evaluated} "
-                f"positions closed "
-                f"({shutdown_summary.positions_trailing_stopped} via trailing stop)"
-            )
-
-            # Update cash balance for positions closed during shutdown
-            for order in shutdown_summary.filled_close_orders:
-                self._process_filled_order(order)
-
-            if shutdown_summary.errors:
-                for error in shutdown_summary.errors:
-                    logger.error(f"Shutdown error: {error}")
+            await self._shutdown_executor()
 
         # Save final state and end session
         self._save_data()
@@ -241,6 +378,18 @@ class TradingBot:
                 total_trades=total_trades,
             )
             logger.info(f"Trading session ended: {self.current_session_id}")
+
+        if self.notifier:
+            realized_pnl = (
+                self.portfolio_snapshots[-1].realized_pnl
+                if self.portfolio_snapshots
+                else Decimal("0")
+            )
+            await self.notifier.notify_stopped(
+                session_id=self.current_session_id,
+                realized_pnl=realized_pnl,
+                currency_symbol=self.currency_symbol,
+            )
 
         if self.api_client:
             await self.api_client.close()
@@ -317,6 +466,19 @@ class TradingBot:
 
         self._check_risk_limits()
 
+        if (
+            self.notifier
+            and self.risk_manager is not None
+            and self.risk_manager.daily_loss_limit_hit
+            and not self._daily_loss_notified
+            and self.portfolio_snapshots
+        ):
+            self._daily_loss_notified = True
+            await self.notifier.notify_daily_loss_limit(
+                self.portfolio_snapshots[-1].daily_pnl,
+                self.currency_symbol,
+            )
+
     def _handle_loop_exception(self, error: Exception, interval: int) -> tuple[bool, int]:
         """Classify a trading-loop exception into a retry decision.
 
@@ -390,6 +552,14 @@ class TradingBot:
             except Exception as e:
                 should_continue, sleep_time = self._handle_loop_exception(e, effective_interval)
                 if not should_continue:
+                    if (
+                        self.notifier
+                        and isinstance(e, httpx.HTTPStatusError)
+                        and e.response.status_code == 401
+                    ):
+                        await self.notifier.notify_error(
+                            "Authentication failed! Check API credentials."
+                        )
                     break
                 await asyncio.sleep(sleep_time)
 
@@ -434,6 +604,8 @@ class TradingBot:
             close_order = await self.executor.update_market_prices(symbol, market_data.last)
             if close_order and close_order.status == OrderStatus.FILLED:
                 self._process_filled_order(close_order)
+                if self.notifier:
+                    await self.notifier.notify_trade(close_order, self.currency_symbol)
 
             portfolio_value = await self.executor.get_portfolio_value(self.cash_balance)
 
@@ -449,6 +621,8 @@ class TradingBot:
                 order = await self.executor.execute_signal(signal, portfolio_value)
                 if order and order.status == OrderStatus.FILLED:
                     self._process_filled_order(order)
+                    if self.notifier:
+                        await self.notifier.notify_trade(order, self.currency_symbol)
 
         except Exception as e:
             logger.error(f"Error processing {symbol}: {e!s}", exc_info=True)
@@ -592,6 +766,120 @@ class TradingBot:
         except Exception as e:
             logger.warning(f"Could not load historical data: {e}")
             logger.info("Starting with fresh state")
+
+    async def _handle_telegram_command(self, command: str, args: list[str]) -> None:
+        """Dispatch an incoming Telegram bot command to the appropriate handler.
+
+        Args:
+            command: Command name without the leading slash (e.g. ``"status"``).
+            args:    Space-separated arguments following the command.
+        """
+        assert self.notifier is not None
+        if command == "status":
+            await self._cmd_status()
+        elif command == "balance":
+            await self._cmd_balance()
+        elif command == "report":
+            days = int(args[0]) if args and args[0].isdigit() else 30
+            await self._cmd_report(days)
+        elif command in ("help", "start"):
+            await self._cmd_help()
+        else:
+            await self.notifier.reply(
+                f"Unknown command: /{command}\nUse /help to see available commands."
+            )
+
+    async def _cmd_status(self) -> None:
+        """Reply with current bot state: strategy, mode, uptime, positions, P&amp;L."""
+        assert self.notifier is not None
+        uptime = ""
+        if self._started_at:
+            delta = datetime.now(UTC) - self._started_at
+            hours, remainder = divmod(int(delta.total_seconds()), 3600)
+            minutes, _ = divmod(remainder, 60)
+            uptime = f"{hours}h {minutes}m"
+        positions = self.executor.get_positions() if self.executor else []
+        snapshot = self.portfolio_snapshots[-1] if self.portfolio_snapshots else None
+        pnl = snapshot.total_pnl if snapshot else Decimal("0")
+        pnl_sign = "+" if pnl >= 0 else ""
+        mode_label = "🔴 LIVE" if self.trading_mode == TradingMode.LIVE else "🟡 Paper"
+        lines = [
+            "🤖 <b>Bot Status</b>",
+            f"Strategy: {self.strategy_type.value}",
+            f"Risk: {self.risk_level.value}",
+            f"Mode: {mode_label}",
+            f"Pairs: {', '.join(self.trading_pairs)}",
+            f"Uptime: {uptime}" if uptime else "Uptime: N/A",
+            f"Open Positions: {len(positions)}",
+            f"Session P&amp;L: {pnl_sign}{self.currency_symbol}{abs(pnl):,.2f}",
+        ]
+        await self.notifier.reply("\n".join(lines))
+
+    async def _cmd_balance(self) -> None:
+        """Reply with portfolio breakdown: cash, open positions, and total value."""
+        assert self.notifier is not None
+        positions = self.executor.get_positions() if self.executor else []
+        positions_value = sum((p.quantity * p.current_price for p in positions), Decimal("0"))
+        total_value = self.cash_balance + positions_value
+        lines = [
+            "💰 <b>Portfolio Balance</b>",
+            f"Cash: {self.currency_symbol}{self.cash_balance:,.2f}",
+            f"Positions: {self.currency_symbol}{positions_value:,.2f}",
+            f"Total: {self.currency_symbol}{total_value:,.2f}",
+        ]
+        if positions:
+            lines.append("")
+            lines.append("<b>Open Positions:</b>")
+            for pos in positions:
+                pnl_sign = "+" if pos.unrealized_pnl >= 0 else ""
+                lines.append(
+                    f"• {pos.symbol}: {pos.quantity} @ "
+                    f"{self.currency_symbol}{pos.current_price:,.2f} "
+                    f"({pnl_sign}{self.currency_symbol}{pos.unrealized_pnl:,.2f})"
+                )
+        await self.notifier.reply("\n".join(lines))
+
+    async def _cmd_report(self, days: int) -> None:
+        """Reply with an analytics summary for the last *days* calendar days.
+
+        Queries the database directly and calls :meth:`notify_report_ready` so
+        the message format matches the scheduled report notification.
+
+        Args:
+            days: Look-back window in calendar days.
+        """
+        assert self.notifier is not None
+        try:
+            analytics = self.persistence.get_analytics(days=days)
+            if not analytics or analytics.get("total_trades", 0) == 0:
+                await self.notifier.reply(f"📊 No trading data for the last {days} days.")
+                return
+            total_pnl = Decimal(str(analytics.get("total_pnl", 0)))
+            await self.notifier.notify_report_ready(
+                days=days,
+                total_trades=int(analytics.get("total_trades", 0)),
+                total_pnl=total_pnl,
+                return_pct=float(analytics.get("return_pct", 0.0)),
+                win_rate=float(analytics.get("win_rate", 0.0)),
+                sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
+                max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
+                report_path="(run `revt db report` for full PDF)",
+                currency_symbol=self.currency_symbol,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to generate /report response: {exc}")
+            await self.notifier.reply("⚠️ Failed to generate report. Try `revt db report`.")
+
+    async def _cmd_help(self) -> None:
+        """Reply with the list of available bot commands."""
+        assert self.notifier is not None
+        await self.notifier.reply(
+            "📋 <b>Available Commands</b>\n"
+            "/status — current bot state and session P&amp;L\n"
+            "/balance — portfolio breakdown with open positions\n"
+            "/report [days] — analytics summary (default: 30 days)\n"
+            "/help — show this message"
+        )
 
     def _save_data(self) -> None:
         """Save current portfolio snapshots to database."""

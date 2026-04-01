@@ -37,6 +37,10 @@ make run ENV=dev             # force dev (mock API, no credentials needed)
 make run ENV=int             # force int (paper trading, real API, no real trades)
 make run ENV=prod            # force prod (REAL MONEY — requires confirmation)
 
+# Telegram Control Plane — always-on process; control bot via Telegram commands
+make telegram                # start control plane (env auto-detected)
+make telegram ENV=int        # force int
+
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
 make backtest-hf             # high-frequency: 1-min candles (closest to live 5s polling)
@@ -44,6 +48,9 @@ make backtest-compare        # compare all strategies side-by-side (DAYS=... RIS
 make backtest-matrix         # all strategies × all risk levels matrix
 make db-backtests            # view stored results (uses ENV)
 make db-export-csv           # export results to CSV
+
+# Logs (decrypted from database)
+make logs                    # view recent WARNING+ logs (LIMIT=50 LEVEL=... SESSION=...)
 
 # Database (per environment: data/dev.db, data/int.db, data/prod.db)
 make db                      # show database overview (ENV=dev)
@@ -55,8 +62,7 @@ make db-report               # comprehensive analytics report with charts (DAYS=
 
 # API utilities (use ENV to select API keys)
 make api-test ENV=int
-make api-balance ENV=int
-make api-ticker SYMBOL=BTC-EUR ENV=int
+make api-ready ENV=int       # check API permissions (view + trade)
 
 # 1Password / credential management (per environment)
 make setup                   # first-time setup: creates items for dev/int/prod
@@ -84,6 +90,11 @@ After `uv sync`, a `revt` command is available. Environment is auto-detected fro
 revt run                                   # mock (dev branch) or paper (main)
 revt run --env prod                        # live trading — prompts for confirmation
 revt run --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR
+
+# Telegram Control Plane
+revt telegram start                        # start always-on Telegram control plane
+revt telegram start --env int              # paper trading control plane
+revt telegram test                         # verify Telegram is configured
 
 # Backtesting
 revt backtest                              # 30-day backtest, market_making, conservative
@@ -149,7 +160,7 @@ revt db encrypt-status
 
 **Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never trades with more than this amount (e.g., account holds 50,000 EUR but MAX_CAPITAL=5,000 → bot uses 5,000). `SHUTDOWN_TRAILING_STOP_PCT` is optional — when set (e.g., `0.5` for 0.5%), profitable positions on shutdown wait for a trailing stop before closing; when absent, profitable positions are closed immediately. `SHUTDOWN_MAX_WAIT_SECONDS` is optional — hard timeout (default 120s) before force-closing a profitable position whose trailing stop has not triggered. Config fails fast with actionable error messages if 1Password fields are missing.
 
-**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv ENV=prod` for on-demand exports.
+**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. WARNING+ logs are automatically persisted to the database via a loguru sink (`_setup_database_logging` in `src/bot.py`); view with `make logs`. Use `make db-export-csv ENV=prod` for on-demand exports.
 
 **Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
@@ -175,9 +186,13 @@ revt db encrypt-status
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
 
-**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions).
+**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions), `telegram_control.py` (always-on Telegram Control Plane), `view_logs.py` (view decrypted WARNING+ logs from the database).
 
-**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols.
+**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols. When Telegram is configured, sends the report as a PDF file (via `sendDocument`) if `fpdf2` is installed (`--extra analytics`); falls back to a compact text summary (`notify_report_ready`) when fpdf2 is absent.
+
+**Telegram command listener** (`src/utils/telegram.py`, `src/bot.py`): While the bot is running, a background `asyncio.Task` polls `getUpdates` (long-poll, 25 s timeout) and dispatches incoming `/command` messages from the configured chat. Commands: `/status` (strategy, mode, uptime, P&L), `/balance` (cash + open positions), `/report [days]` (analytics summary via `notify_report_ready`), `/help`. Messages from any other chat are silently ignored. The task is created in `TradingBot.start()` and cancelled in `TradingBot.stop()` before the shutdown sequence. `TelegramNotifier` exposes `get_updates()`, `start_polling()`, and `reply()` for this purpose. `TradingBot.start()` accepts `start_command_listener: bool = True`; pass `False` when the Telegram Control Plane owns the polling loop.
+
+**Telegram Control Plane** (`cli/telegram_control.py`): Always-on process (`make telegram` / `revt telegram start`) that owns the single Telegram polling loop and can start/stop the trading bot on demand. Commands: `/run [strategy] [risk] [pairs,...]` (start bot), `/stop` (graceful shutdown), `/status`, `/balance`, `/report [days]`, `/help`. When the bot is not running, `/status` and `/balance` send a "not running" notice; `/report` queries the database directly. Uses `TradingBot.start(start_command_listener=False)` so there is exactly one polling consumer. Validates Telegram credentials at startup and exits cleanly on SIGTERM/SIGINT.
 
 **CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs and post-merge pushes to `main`), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
 
@@ -216,6 +231,27 @@ feat!: replace REST polling with WebSocket feed
 ## Mandatory Rules
 
 These are enforced by pre-commit hooks and must be followed:
+
+### Environment Parity — Non-Negotiable
+
+All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
+
+| Environment | Data source                               | Trading |
+| ----------- | ----------------------------------------- | ------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper   |
+| `int`       | Real Revolut X API (live market data)     | Paper   |
+| `prod`      | Real Revolut X API (live market data)     | Live    |
+
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Any code path that is only exercised in one environment is a hidden bug waiting to surface in production with real money.
+
+**Concrete implications:**
+
+- Never add `if environment == "dev"` or `if trading_mode == "paper"` branches that skip logic (e.g. fee calculation, position tracking, commission accounting). Paper mode simulates fills locally, but all accounting — `filled_quantity`, `commission`, `realized_pnl` — must be computed by the same formulas as live mode.
+- `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated. If one sets `commission`, both must set `commission`. If one sets `filled_quantity`, both must set `filled_quantity`.
+- SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
+- When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
+
+**Why this matters:** bugs that only appear in `prod` are dangerous because they involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
 
 ### Revolut X API Docs — The Single Source of Truth
 
@@ -341,6 +377,8 @@ Claude Code must handle this proactively without being asked.
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
-| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |
+| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
+| `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
+| `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |

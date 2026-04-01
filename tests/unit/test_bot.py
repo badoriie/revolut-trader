@@ -357,6 +357,25 @@ class TestStop:
         await bot.stop()
         mock_persistence.end_session.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_stop_sends_telegram_shutdown_notification(self, bot, mock_persistence):
+        """Bot should send a Telegram notification before stopping the polling loop."""
+        from unittest.mock import AsyncMock
+
+        bot.is_running = True
+        bot.api_client = None
+        bot.notifier = AsyncMock()
+        bot._telegram_stop_event = None
+        bot._telegram_polling_task = None
+
+        await bot.stop()
+
+        # Verify shutdown notification was sent
+        bot.notifier.reply.assert_called_once()
+        call_args = bot.notifier.reply.call_args[0][0]
+        assert "shutting down" in call_args.lower()
+        assert "🔴" in call_args
+
 
 class TestRunTradingLoop:
     @pytest.mark.asyncio
@@ -1163,3 +1182,176 @@ class TestPeriodicSave:
                     await bot.run_trading_loop(interval=0)
 
         mock_persistence.save_portfolio_snapshots_bulk.assert_not_called()
+
+
+class TestTelegramCommandListener:
+    """Tests for Telegram command listener lifecycle and command handlers."""
+
+    @pytest.mark.asyncio
+    async def test_status_command_replies_with_bot_state(self, bot):
+        """_cmd_status sends current strategy, mode, and session P&L."""
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._cmd_status()
+        bot.notifier.reply.assert_awaited_once()
+        text = bot.notifier.reply.call_args.args[0]
+        assert "Status" in text
+        assert bot.strategy_type.value in text
+
+    @pytest.mark.asyncio
+    async def test_balance_command_replies_with_portfolio(self, bot):
+        """_cmd_balance sends cash balance and total value."""
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        bot.executor = MagicMock()
+        bot.executor.get_positions.return_value = []
+        await bot._cmd_balance()
+        bot.notifier.reply.assert_awaited_once()
+        text = bot.notifier.reply.call_args.args[0]
+        assert "Balance" in text
+
+    @pytest.mark.asyncio
+    async def test_balance_command_lists_open_positions(self, bot):
+        """_cmd_balance includes each open position symbol and P&L."""
+        from src.models.domain import OrderSide, Position
+
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        pos = Position(
+            symbol="BTC-EUR",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.5"),
+            entry_price=Decimal("50000"),
+            current_price=Decimal("52000"),
+        )
+        bot.executor = MagicMock()
+        bot.executor.get_positions.return_value = [pos]
+        await bot._cmd_balance()
+        text = bot.notifier.reply.call_args.args[0]
+        assert "BTC-EUR" in text
+
+    @pytest.mark.asyncio
+    async def test_report_command_calls_notify_report_ready(self, bot, mock_persistence):
+        """_cmd_report fetches analytics and calls notify_report_ready."""
+        mock_persistence.get_analytics.return_value = {
+            "total_trades": 50,
+            "win_rate": 60.0,
+            "total_pnl": 500.0,
+            "return_pct": 5.0,
+            "sharpe_ratio": 1.2,
+            "max_drawdown_pct": 3.5,
+        }
+        bot.notifier = MagicMock()
+        bot.notifier.notify_report_ready = AsyncMock()
+        await bot._cmd_report(30)
+        bot.notifier.notify_report_ready.assert_awaited_once()
+        kwargs = bot.notifier.notify_report_ready.call_args.kwargs
+        assert kwargs["days"] == 30
+        assert kwargs["total_trades"] == 50
+
+    @pytest.mark.asyncio
+    async def test_report_command_replies_when_no_data(self, bot, mock_persistence):
+        """_cmd_report sends a no-data message when the DB has no trades."""
+        mock_persistence.get_analytics.return_value = {"total_trades": 0}
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._cmd_report(30)
+        bot.notifier.reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_report_command_uses_days_arg(self, bot, mock_persistence):
+        """_cmd_report passes the days argument when provided."""
+        mock_persistence.get_analytics.return_value = {
+            "total_trades": 10,
+            "win_rate": 50.0,
+            "total_pnl": 100.0,
+            "return_pct": 1.0,
+            "sharpe_ratio": 0.8,
+            "max_drawdown_pct": 2.0,
+        }
+        bot.notifier = MagicMock()
+        bot.notifier.notify_report_ready = AsyncMock()
+        await bot._handle_telegram_command("report", ["7"])
+        kwargs = bot.notifier.notify_report_ready.call_args.kwargs
+        assert kwargs["days"] == 7
+
+    @pytest.mark.asyncio
+    async def test_help_command_lists_all_commands(self, bot):
+        """_cmd_help includes all supported commands in the reply."""
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._cmd_help()
+        text = bot.notifier.reply.call_args.args[0]
+        assert "/status" in text
+        assert "/balance" in text
+        assert "/report" in text
+
+    @pytest.mark.asyncio
+    async def test_unknown_command_sends_help_hint(self, bot):
+        """Unrecognised commands get a reply containing /help."""
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._handle_telegram_command("foobar", [])
+        bot.notifier.reply.assert_awaited_once()
+        text = bot.notifier.reply.call_args.args[0]
+        assert "foobar" in text or "/help" in text
+
+    @pytest.mark.asyncio
+    async def test_handle_command_dispatches_status(self, bot):
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._handle_telegram_command("status", [])
+        bot.notifier.reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_command_dispatches_balance(self, bot):
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        bot.executor = MagicMock()
+        bot.executor.get_positions.return_value = []
+        await bot._handle_telegram_command("balance", [])
+        bot.notifier.reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_command_dispatches_help(self, bot):
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._handle_telegram_command("help", [])
+        bot.notifier.reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_command_listener_task_created_on_start(self, bot, mock_persistence):
+        """start() creates a Telegram polling task when notifier is configured."""
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+        bot.notifier = MagicMock()
+        bot.notifier.notify_started = AsyncMock()
+        bot.notifier.start_polling = AsyncMock()
+        with patch("src.bot.create_api_client", return_value=mock_api):
+            await bot.start()
+        assert bot._telegram_polling_task is not None
+
+    @pytest.mark.asyncio
+    async def test_command_listener_not_created_without_notifier(self, bot, mock_persistence):
+        """start() does NOT create a polling task when Telegram is not configured."""
+        bot.notifier = None
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.check_permissions = AsyncMock(return_value={"view": True, "trade": True})
+        with patch("src.bot.create_api_client", return_value=mock_api):
+            await bot.start()
+        assert bot._telegram_polling_task is None
+
+    @pytest.mark.asyncio
+    async def test_command_listener_stopped_on_bot_stop(self, bot, mock_persistence):
+        """stop() sets the stop event and clears the polling task."""
+        import asyncio as _asyncio
+
+        stop_event = _asyncio.Event()
+        bot._telegram_stop_event = stop_event
+        bot._telegram_polling_task = _asyncio.create_task(_asyncio.sleep(9999))
+        bot.api_client = None
+        await bot.stop()
+        assert stop_event.is_set()
+        assert bot._telegram_polling_task is None

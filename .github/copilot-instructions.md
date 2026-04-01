@@ -44,6 +44,9 @@ make backtest-matrix         # all strategies × all risk levels matrix
 make db-backtests            # view stored results (uses ENV)
 make db-export-csv           # export results to CSV
 
+# Logs (decrypted from database)
+make logs                    # view recent WARNING+ logs (LIMIT=50 LEVEL=... SESSION=...)
+
 # Database (per environment: data/dev.db, data/int.db, data/prod.db)
 make db                      # show database overview (ENV=dev)
 make db-stats                # show database statistics
@@ -54,8 +57,7 @@ make db-report               # comprehensive analytics report with charts (DAYS=
 
 # API utilities (use ENV to select API keys)
 make api-test ENV=int
-make api-balance ENV=int
-make api-ticker SYMBOL=BTC-EUR ENV=int
+make api-ready ENV=int       # check API permissions (view + trade)
 
 # 1Password / credential management (per environment)
 make setup                   # first-time setup: creates items for dev/int/prod
@@ -91,7 +93,7 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 
 **Configuration** (`src/config.py`): Pydantic-based. All trading config comes from 1Password — no code-level defaults. Config fails fast with actionable errors if fields are missing. Optional config: `MAX_CAPITAL` caps the cash balance at startup; `SHUTDOWN_TRAILING_STOP_PCT` sets a trailing stop percentage for profitable positions on shutdown; `SHUTDOWN_MAX_WAIT_SECONDS` sets a hard timeout before force-closing.
 
-**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Per-environment DB files (`data/dev.db`, `data/int.db`, `data/prod.db`). All sensitive fields encrypted with Fernet before storage.
+**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Per-environment DB files (`data/dev.db`, `data/int.db`, `data/prod.db`). All sensitive fields encrypted with Fernet before storage. WARNING+ logs are automatically persisted to the database via a loguru sink; view with `make logs`.
 
 **Mock API** (`src/api/mock_client.py`): Used in `dev` — in-process mock of all 17 API endpoints. No network calls, no credentials needed. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. The API client uses `RateLimiter` (`src/utils/rate_limiter.py`) to respect API rate limits.
 
@@ -145,7 +147,10 @@ Adding a strategy only requires a new file implementing `BaseStrategy`.
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
 | `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
-| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional)                                                                              |
+| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
+| `src/utils/telegram.py`               | Telegram notifier: push notifications + `get_updates`/`start_polling`/`reply` for two-way bot command listener (`/status`, `/balance`, `/report`, `/help`)                                                                               |
+| `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
+| `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |
 
@@ -182,6 +187,27 @@ feat!: replace REST polling with WebSocket feed
 **Interactive commit helper:** `uv run cz commit` — prompts for type, scope, and description.
 
 ## Mandatory Rules
+
+### Environment Parity — Non-Negotiable
+
+All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
+
+| Environment | Data source                               | Trading |
+| ----------- | ----------------------------------------- | ------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper   |
+| `int`       | Real Revolut X API (live market data)     | Paper   |
+| `prod`      | Real Revolut X API (live market data)     | Live    |
+
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa.
+
+**Concrete implications:**
+
+- Never add `if environment == "dev"` or `if trading_mode == "paper"` branches that skip logic (e.g. fee calculation, position tracking, commission accounting).
+- `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated (`filled_quantity`, `commission`, `realized_pnl`).
+- SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
+- When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
+
+**Why this matters:** bugs that only appear in `prod` involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
 
 ### Revolut X API Docs — The Single Source of Truth
 

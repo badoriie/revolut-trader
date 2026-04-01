@@ -16,25 +16,32 @@ Usage
 Optional extra dependencies (``uv sync --extra analytics``):
     matplotlib~=3.10   — chart generation
     numpy~=2.2         — faster statistical calculations
+    fpdf2~=2.8         — PDF generation for Telegram notifications
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import math
 import sys
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from src.config import settings
 from src.utils.db_persistence import DatabasePersistence
+from src.utils.telegram import TelegramNotifier
 
 # ---------------------------------------------------------------------------
 # Optional heavy deps — gracefully degrade without them
 # ---------------------------------------------------------------------------
 
 # Pre-declare so pyright sees these as always bound (chart functions are # pragma: no cover)
+mdates: Any = None
 plt: Any = None
 mticker: Any = None
 
@@ -42,6 +49,7 @@ try:
     import matplotlib  # type: ignore[import-untyped]
 
     matplotlib.use("Agg")  # non-interactive backend for CI/headless environments
+    import matplotlib.dates as mdates  # type: ignore[import-untyped]
     import matplotlib.pyplot as plt  # type: ignore[import-untyped]
     import matplotlib.ticker as mticker  # type: ignore[import-untyped]
 
@@ -49,6 +57,20 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_MATPLOTLIB = False
 
+try:
+    import fpdf as _fpdf_module  # type: ignore[import-untyped]  # noqa: F401
+
+    _HAS_FPDF2 = True
+except ImportError:  # pragma: no cover
+    _HAS_FPDF2 = False
+
+
+# ---------------------------------------------------------------------------
+# Shared display constants
+# ---------------------------------------------------------------------------
+
+_PNL_LABEL_EUR = "P&L (EUR)"
+_TOTAL_PNL_LABEL_EUR = "Total P&L (EUR)"
 
 # ---------------------------------------------------------------------------
 # Pure financial math helpers
@@ -369,8 +391,13 @@ def _chart_equity_curve(
     """Save equity curve PNG to *output_dir*."""
     if not _HAS_MATPLOTLIB or not series:
         return None
-    timestamps = [s["timestamp"] for s in series]
     values = [s["total_value"] for s in series]
+    try:
+        timestamps = [datetime.fromisoformat(str(s["timestamp"])) for s in series]
+        use_dates = True
+    except (ValueError, TypeError):
+        timestamps = [s["timestamp"] for s in series]
+        use_dates = False
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(timestamps, values, linewidth=1.5, color="#2196F3")
@@ -379,6 +406,9 @@ def _chart_equity_curve(
     ax.set_xlabel("Time")
     ax.set_ylabel("Portfolio Value (EUR)")
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("€%.0f"))
+    if use_dates:
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
     ax.grid(True, alpha=0.3)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
@@ -395,7 +425,12 @@ def _chart_drawdown(
     if not _HAS_MATPLOTLIB or not series:
         return None
     values = [s["total_value"] for s in series]
-    timestamps = [s["timestamp"] for s in series]
+    try:
+        timestamps = [datetime.fromisoformat(str(s["timestamp"])) for s in series]
+        use_dates = True
+    except (ValueError, TypeError):
+        timestamps = [s["timestamp"] for s in series]
+        use_dates = False
     dd_series = _drawdown_series(values)
 
     fig, ax = plt.subplots(figsize=(12, 4))
@@ -406,6 +441,9 @@ def _chart_drawdown(
     ax.set_ylabel("Drawdown (%)")
     ax.invert_yaxis()
     ax.grid(True, alpha=0.3)
+    if use_dates:
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     path = output_dir / "drawdown.png"
@@ -434,7 +472,7 @@ def _chart_pnl_distribution(
         ax.hist(losses, bins=bins, color="#F44336", alpha=0.7, label=f"Losses ({len(losses)})")
     ax.axvline(0, color="black", linewidth=1.0, linestyle="--")
     ax.set_title("Trade P&L Distribution", fontsize=14, fontweight="bold")
-    ax.set_xlabel("P&L (EUR)")
+    ax.set_xlabel(_PNL_LABEL_EUR)
     ax.set_ylabel("Trade Count")
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -460,7 +498,7 @@ def _chart_symbol_performance(
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_title("P&L by Symbol", fontsize=14, fontweight="bold")
     ax.set_xlabel("Symbol")
-    ax.set_ylabel("Total P&L (EUR)")
+    ax.set_ylabel(_TOTAL_PNL_LABEL_EUR)
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("€%.0f"))
     ax.grid(True, alpha=0.3, axis="y")
     plt.xticks(rotation=20, ha="right")
@@ -524,10 +562,424 @@ def _fmt_pct(value: float, decimals: int = 2) -> str:
     return f"{sign}{value:.{decimals}f}%"
 
 
+def _fetch_report_data(
+    db: DatabasePersistence, days: int
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Fetch all data needed for the analytics report from the database."""
+    analytics = db.get_analytics(days=days)
+    symbol_analytics = db.get_symbol_analytics(days=days)
+    strategy_analytics = db.get_strategy_live_analytics(days=days)
+    portfolio_series = db.get_portfolio_value_series(days=days)
+    backtest_analytics = db.get_backtest_analytics()
+    backtest_runs = db.load_backtest_runs(limit=50)
+    trade_history = db.load_trade_history(limit=10_000)
+    return (
+        analytics,
+        symbol_analytics,
+        strategy_analytics,
+        portfolio_series,
+        backtest_analytics,
+        backtest_runs,
+        trade_history,
+    )
+
+
+def _compute_report_metrics(
+    analytics: dict[str, Any],
+    portfolio_series: list[dict[str, Any]],
+    trade_history: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute derived metrics (Sharpe, Sortino, drawdown, profit factor) from raw data."""
+    values = [s["total_value"] for s in portfolio_series]
+    daily_returns = compute_daily_returns(values)
+    sharpe = compute_sharpe_ratio(daily_returns)
+    sortino = compute_sortino_ratio(daily_returns)
+    max_dd = compute_max_drawdown(values)
+    pnl_values = [float(t["pnl"]) for t in trade_history if t.get("pnl") is not None]
+    profit_factor = compute_profit_factor(pnl_values)
+    return {
+        **analytics,
+        "sharpe_ratio": sharpe,
+        "sortino_ratio": sortino,
+        "max_drawdown_pct": max_dd,
+        "profit_factor": profit_factor,
+    }
+
+
+def _generate_report_charts(
+    output_dir: Path,
+    portfolio_series: list[dict[str, Any]],
+    trade_history: list[dict[str, Any]],
+    symbol_analytics: list[dict[str, Any]],
+    backtest_runs: list[dict[str, Any]],
+) -> list[Path]:
+    """Generate PNG charts and return their paths (no-op when matplotlib is absent)."""
+    chart_paths: list[Path] = []
+    if _HAS_MATPLOTLIB:  # pragma: no cover
+        for fn, arg in [
+            (_chart_equity_curve, portfolio_series),
+            (_chart_drawdown, portfolio_series),
+            (_chart_pnl_distribution, trade_history),
+            (_chart_symbol_performance, symbol_analytics),
+            (_chart_backtest_comparison, backtest_runs),
+        ]:
+            path = fn(arg, output_dir)
+            if path:
+                chart_paths.append(path)
+    return chart_paths
+
+
+async def _send_telegram_report(
+    send_telegram: bool,
+    days: int,
+    metrics: dict[str, Any],
+    md_path: Path,
+    symbol_analytics: list[dict[str, Any]] | None = None,
+    strategy_analytics: list[dict[str, Any]] | None = None,
+    backtest_analytics: dict[str, Any] | None = None,
+    suggestions: list[str] | None = None,
+    chart_paths: list[Path] | None = None,
+) -> None:
+    """Send a Telegram notification summarising the analytics report if configured."""
+    if not send_telegram:
+        return
+    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+        logger.debug("Telegram not configured — skipping report notification")
+        return
+    try:
+        notifier = TelegramNotifier(
+            token=settings.telegram_bot_token,
+            chat_id=settings.telegram_chat_id,
+        )
+        # Try PDF first; any failure falls back to the text summary so the user
+        # always receives *some* notification even when fpdf2 or chart loading fails.
+        pdf_bytes: bytes | None = None
+        try:
+            pdf_bytes = _generate_pdf(
+                md_path,
+                metrics,
+                days,
+                symbol_analytics=symbol_analytics,
+                strategy_analytics=strategy_analytics,
+                backtest_analytics=backtest_analytics,
+                suggestions=suggestions,
+                chart_paths=chart_paths,
+            )
+        except Exception as pdf_err:
+            logger.warning(f"PDF generation failed, falling back to text notification: {pdf_err!r}")
+
+        if pdf_bytes is not None:
+            total_pnl = metrics.get("total_pnl", 0.0)
+            return_pct = metrics.get("return_pct", 0.0)
+            win_rate = metrics.get("win_rate", 0.0)
+            sharpe = metrics.get("sharpe_ratio", 0.0)
+            max_dd = metrics.get("max_drawdown_pct", 0.0)
+            total_trades = metrics.get("total_trades", 0)
+            emoji = "📊" if total_pnl >= 0 else "📉"
+            pnl_sign = "+" if total_pnl >= 0 else "-"
+            ret_sign = "+" if return_pct >= 0 else ""
+            sharpe_str = f"{sharpe:.3f}" if sharpe else "N/A"
+            caption = (
+                f"{emoji} <b>Analytics Report — {days} days</b>\n"
+                f"Trades: {total_trades} | Win Rate: {win_rate:.1f}%\n"
+                f"P&amp;L: {pnl_sign}€{abs(total_pnl):.2f} | Return: {ret_sign}{return_pct:.2f}%\n"
+                f"Sharpe: {sharpe_str} | Max DD: {max_dd:.1f}%"
+            )
+            await notifier.send_document(pdf_bytes, "analytics_report.pdf", caption=caption)
+        else:
+            await notifier.notify_report_ready(
+                days=days,
+                total_trades=metrics.get("total_trades", 0),
+                total_pnl=Decimal(str(metrics.get("total_pnl", 0.0))),
+                return_pct=metrics.get("return_pct", 0.0),
+                win_rate=metrics.get("win_rate", 0.0),
+                sharpe_ratio=metrics.get("sharpe_ratio", 0.0),
+                max_drawdown_pct=metrics.get("max_drawdown_pct", 0.0),
+                report_path=str(md_path),
+            )
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram report notification: {e}")
+
+
+# Characters outside Helvetica's Latin-1 charset mapped to safe ASCII equivalents.
+_PDF_CHAR_MAP = str.maketrans(
+    {
+        "\u20ac": "EUR",  # € euro sign
+        "\u2014": "-",  # — em dash
+        "\u2013": "-",  # – en dash
+        "\u2018": "'",  # ' left single quote
+        "\u2019": "'",  # ' right single quote
+        "\u201c": '"',  # " left double quote
+        "\u201d": '"',  # " right double quote
+        "\u2026": "...",  # … ellipsis
+        "\u00a0": " ",  # non-breaking space
+    }
+)
+
+
+def _pdf_safe_text(text: str) -> str:  # pragma: no cover
+    """Replace characters outside Helvetica's Latin-1 range with ASCII equivalents."""
+    return text.translate(_PDF_CHAR_MAP)
+
+
+def _pdf_section_header(pdf: Any, title: str) -> None:  # pragma: no cover
+    """Print a bold section header line in the PDF."""
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _pdf_safe_text(title), new_x="LMARGIN", new_y="NEXT")
+
+
+def _pdf_two_col_table(pdf: Any, rows: list[tuple[str, str]]) -> None:  # pragma: no cover
+    """Print a label/value two-column table in the PDF."""
+    for label, value in rows:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(70, 6, _pdf_safe_text(label))
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 6, _pdf_safe_text(value), new_x="LMARGIN", new_y="NEXT")
+
+
+def _pdf_table(
+    pdf: Any,
+    headers: list[str],
+    rows: list[list[str]],
+    col_widths: list[int],
+) -> None:  # pragma: no cover
+    """Print a bordered multi-column table with a header row in the PDF."""
+    pdf.set_font("Helvetica", "B", 9)
+    for header, w in zip(headers, col_widths, strict=False):
+        pdf.cell(w, 6, _pdf_safe_text(header), border=1)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 9)
+    for row in rows:
+        for value, w in zip(row, col_widths, strict=False):
+            pdf.cell(w, 6, _pdf_safe_text(value), border=1)
+        pdf.ln()
+
+
+def _format_metric_value(value: float, format_spec: str, fallback: str = "N/A") -> str:
+    """Format a metric value with fallback for missing/zero values."""
+    return f"{value:{format_spec}}" if value else fallback
+
+
+def _pdf_core_metrics_section(pdf: Any, metrics: dict[str, Any]) -> None:  # pragma: no cover
+    """Render the core metrics two-column table into *pdf*."""
+    total_trades = metrics.get("total_trades", 0)
+    win_rate = metrics.get("win_rate", 0.0)
+    total_pnl = metrics.get("total_pnl", 0.0)
+    total_fees = metrics.get("total_fees", 0.0)
+    ret_pct = metrics.get("return_pct", 0.0)
+    max_dd = metrics.get("max_drawdown_pct", 0.0)
+    sharpe = metrics.get("sharpe_ratio", 0.0)
+    sortino = metrics.get("sortino_ratio", 0.0)
+    profit_factor = metrics.get("profit_factor", 0.0)
+    initial = metrics.get("initial_value", 0.0)
+    final = metrics.get("final_value", 0.0)
+
+    pnl_pfx = "+" if total_pnl >= 0 else "-"
+    ret_pfx = "+" if ret_pct >= 0 else ""
+
+    _pdf_section_header(pdf, "Core Metrics")
+    _pdf_two_col_table(
+        pdf,
+        [
+            ("Total Trades", str(total_trades)),
+            ("Win Rate", f"{win_rate:.1f}%"),
+            ("Total P&L", f"{pnl_pfx}EUR{abs(total_pnl):,.2f}"),
+            ("Total Fees", f"EUR{total_fees:,.2f}"),
+            ("Return", f"{ret_pfx}{ret_pct:.2f}%"),
+            ("Initial Portfolio Value", f"EUR{initial:,.2f}" if initial else "N/A"),
+            ("Final Portfolio Value", f"EUR{final:,.2f}" if final else "N/A"),
+            ("Max Drawdown", f"{max_dd:.2f}%"),
+            ("Sharpe Ratio", _format_metric_value(sharpe, ".3f")),
+            ("Sortino Ratio", _format_metric_value(sortino, ".3f")),
+            ("Profit Factor", _format_metric_value(profit_factor, ".2f")),
+        ],
+    )
+
+
+def _pdf_symbol_section(
+    pdf: Any, symbol_analytics: list[dict[str, Any]]
+) -> None:  # pragma: no cover
+    """Render the per-symbol breakdown table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Per-Symbol Breakdown")
+    _pdf_table(
+        pdf,
+        headers=["Symbol", "Trades", "Win%", _PNL_LABEL_EUR, "Fees (EUR)"],
+        rows=[
+            [
+                s["symbol"],
+                str(s["total_trades"]),
+                f"{s['win_rate']:.1f}%",
+                f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
+                f"{s['total_fees']:,.2f}",
+            ]
+            for s in symbol_analytics
+        ],
+        col_widths=[40, 22, 22, 52, 44],
+    )
+
+
+def _pdf_strategy_section(
+    pdf: Any, strategy_analytics: list[dict[str, Any]]
+) -> None:  # pragma: no cover
+    """Render the per-strategy breakdown table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Per-Strategy Breakdown (Live Trades)")
+    _pdf_table(
+        pdf,
+        headers=["Strategy", "Trades", "Win%", _PNL_LABEL_EUR],
+        rows=[
+            [
+                s["strategy"],
+                str(s["total_trades"]),
+                f"{s['win_rate']:.1f}%",
+                f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
+            ]
+            for s in strategy_analytics
+        ],
+        col_widths=[65, 25, 25, 65],
+    )
+
+
+def _pdf_backtest_section(pdf: Any, backtest_analytics: dict[str, Any]) -> None:  # pragma: no cover
+    """Render the backtest summary two-column table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Backtest Summary")
+    best = backtest_analytics.get("best_run", {})
+    bt_rows: list[tuple[str, str]] = [
+        ("Total runs", str(backtest_analytics["total_runs"])),
+        (
+            "Profitable runs",
+            f"{backtest_analytics['profitable_runs']} "
+            f"({backtest_analytics.get('success_rate', 0):.1f}%)",
+        ),
+        ("Avg return", f"{backtest_analytics.get('avg_return_pct', 0):.2f}%"),
+    ]
+    if best:
+        bt_rows.append(
+            ("Best strategy", f"{best['strategy']} ({best.get('return_pct', 0):.1f}% return)")
+        )
+    _pdf_two_col_table(pdf, bt_rows)
+
+
+def _pdf_suggestions_section(pdf: Any, suggestions: list[str]) -> None:  # pragma: no cover
+    """Render the improvement suggestions list into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Improvement Suggestions")
+    for i, suggestion in enumerate(suggestions, 1):
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(8, 5, f"{i}.")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5, _pdf_safe_text(suggestion))
+        pdf.ln(1)
+
+
+def _pdf_charts_section(pdf: Any, chart_paths: list[Path]) -> None:  # pragma: no cover
+    """Embed PNG chart images into *pdf* on a new page."""
+    pdf.add_page()
+    _pdf_section_header(pdf, "Charts")
+    for chart_path in chart_paths:
+        if not chart_path.exists():
+            continue
+        try:
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "I", 9)
+            chart_caption = _pdf_safe_text(chart_path.stem.replace("_", " ").title())
+            pdf.cell(0, 5, chart_caption, new_x="LMARGIN", new_y="NEXT")
+            pdf.image(str(chart_path), w=180)
+            pdf.ln(4)
+        except Exception:
+            logger.debug(f"Could not embed chart {chart_path.name} in PDF — skipping")
+
+
+def _generate_pdf(
+    md_path: Path,
+    metrics: dict[str, Any],
+    days: int,
+    symbol_analytics: list[dict[str, Any]] | None = None,
+    strategy_analytics: list[dict[str, Any]] | None = None,
+    backtest_analytics: dict[str, Any] | None = None,
+    suggestions: list[str] | None = None,
+    chart_paths: list[Path] | None = None,
+) -> bytes | None:  # pragma: no cover
+    """Generate a comprehensive PDF analytics report using fpdf2.
+
+    Mirrors the full content of ``report.md``: core metrics, per-symbol and
+    per-strategy breakdowns, backtest summary, improvement suggestions, and
+    all PNG charts embedded as images.  Uses the built-in Helvetica font
+    (Latin-1 only) so no external font files are required.
+
+    Returns the raw PDF bytes, or ``None`` when fpdf2 is not installed.
+
+    Args:
+        md_path:            Path to the generated ``report.md`` file (footer).
+        metrics:            Computed metrics from :func:`_compute_report_metrics`.
+        days:               Look-back window in calendar days.
+        symbol_analytics:   Per-symbol rows from the database.
+        strategy_analytics: Per-strategy rows from the database.
+        backtest_analytics: Aggregate backtest dict from the database.
+        suggestions:        Rule-based improvement suggestion strings.
+        chart_paths:        Paths to PNG chart files to embed.
+
+    Returns:
+        Raw PDF bytes, or ``None`` when fpdf2 is unavailable.
+    """
+    if not _HAS_FPDF2:
+        return None
+
+    from fpdf import FPDF  # type: ignore[import-untyped]
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(
+        0,
+        10,
+        _pdf_safe_text(f"Trading Analytics Report - Last {days} Days"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.ln(3)
+
+    _pdf_core_metrics_section(pdf, metrics)
+
+    if symbol_analytics:
+        _pdf_symbol_section(pdf, symbol_analytics)
+
+    if strategy_analytics:
+        _pdf_strategy_section(pdf, strategy_analytics)
+
+    if backtest_analytics and backtest_analytics.get("total_runs", 0) > 0:
+        _pdf_backtest_section(pdf, backtest_analytics)
+
+    if suggestions:
+        _pdf_suggestions_section(pdf, suggestions)
+
+    if chart_paths:
+        _pdf_charts_section(pdf, chart_paths)
+
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.cell(0, 5, _pdf_safe_text(f"Full report: {md_path}"), new_x="LMARGIN", new_y="NEXT")
+
+    return bytes(pdf.output())
+
+
 def generate_report(
     days: int = 30,
     output_dir: Path = Path("data/reports"),
     quiet: bool = False,
+    send_telegram: bool = True,
 ) -> dict[str, Any]:
     """Run the full analytics pipeline and write output files.
 
@@ -539,63 +991,11 @@ def generate_report(
         days: Look-back window in calendar days for live-trading metrics.
         output_dir: Directory to write charts and the markdown report into.
         quiet: Suppress terminal output (useful in tests).
+        send_telegram: Send notification via Telegram if configured (default: True).
 
     Returns:
         Dict containing all computed metrics, suggestions, and file paths.
     """
-
-    def fetch_data(db, days):
-        analytics = db.get_analytics(days=days)
-        symbol_analytics = db.get_symbol_analytics(days=days)
-        strategy_analytics = db.get_strategy_live_analytics(days=days)
-        portfolio_series = db.get_portfolio_value_series(days=days)
-        backtest_analytics = db.get_backtest_analytics()
-        backtest_runs = db.load_backtest_runs(limit=50)
-        trade_history = db.load_trade_history(limit=10_000)
-        return (
-            analytics,
-            symbol_analytics,
-            strategy_analytics,
-            portfolio_series,
-            backtest_analytics,
-            backtest_runs,
-            trade_history,
-        )
-
-    def compute_metrics(analytics, portfolio_series, trade_history):
-        values = [s["total_value"] for s in portfolio_series]
-        daily_returns = compute_daily_returns(values)
-        sharpe = compute_sharpe_ratio(daily_returns)
-        sortino = compute_sortino_ratio(daily_returns)
-        max_dd = compute_max_drawdown(values)
-        pnl_values = [float(t["pnl"]) for t in trade_history if t.get("pnl") is not None]
-        profit_factor = compute_profit_factor(pnl_values)
-        metrics: dict[str, Any] = {
-            **analytics,
-            "sharpe_ratio": sharpe,
-            "sortino_ratio": sortino,
-            "max_drawdown_pct": max_dd,
-            "profit_factor": profit_factor,
-        }
-        return metrics
-
-    def generate_charts(
-        output_dir, portfolio_series, trade_history, symbol_analytics, backtest_runs
-    ):
-        chart_paths: list[Path] = []
-        if _HAS_MATPLOTLIB:  # pragma: no cover
-            for fn, arg in [
-                (_chart_equity_curve, portfolio_series),
-                (_chart_drawdown, portfolio_series),
-                (_chart_pnl_distribution, trade_history),
-                (_chart_symbol_performance, symbol_analytics),
-                (_chart_backtest_comparison, backtest_runs),
-            ]:
-                path = fn(arg, output_dir)
-                if path:
-                    chart_paths.append(path)
-        return chart_paths
-
     output_dir.mkdir(parents=True, exist_ok=True)
     db = DatabasePersistence()
     (
@@ -606,10 +1006,10 @@ def generate_report(
         backtest_analytics,
         backtest_runs,
         trade_history,
-    ) = fetch_data(db, days)
-    metrics = compute_metrics(analytics, portfolio_series, trade_history)
+    ) = _fetch_report_data(db, days)
+    metrics = _compute_report_metrics(analytics, portfolio_series, trade_history)
     suggestions = generate_suggestions(metrics, symbol_analytics, backtest_analytics)
-    chart_paths = generate_charts(
+    chart_paths = _generate_report_charts(
         output_dir, portfolio_series, trade_history, symbol_analytics, backtest_runs
     )
     md = _build_markdown(
@@ -623,6 +1023,19 @@ def generate_report(
     )
     md_path = output_dir / "report.md"
     md_path.write_text(md)
+    asyncio.run(
+        _send_telegram_report(
+            send_telegram,
+            days,
+            metrics,
+            md_path,
+            symbol_analytics=symbol_analytics,
+            strategy_analytics=strategy_analytics,
+            backtest_analytics=backtest_analytics,
+            suggestions=suggestions,
+            chart_paths=chart_paths,
+        )
+    )
     if not quiet:
         _print_report(
             metrics, symbol_analytics, strategy_analytics, backtest_analytics, suggestions, days

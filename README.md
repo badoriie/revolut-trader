@@ -24,7 +24,7 @@ See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, tradi
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
 - **Graceful Shutdown**: Cancels pending orders, closes losing positions immediately, and closes profitable positions via trailing stop (or immediately); guarantee: all bot-opened positions are closed before exit
-- **Monitoring**: Database analytics, CSV export
+- **Monitoring**: Database analytics, CSV export, optional Telegram notifications (analytics report)
 
 ## Quick Start
 

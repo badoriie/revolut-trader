@@ -355,7 +355,7 @@ def _ops_show(env: str) -> None:
 
     print(f"\n=== Credentials  ({_op_creds_item(env)}) ===\n")
     if env == "dev":
-        print("  (dev uses mock API — no API credentials needed)")
+        print("  (dev uses mock API — no Revolut API key needed)")
     else:
         for field in ("REVOLUT_API_KEY", "REVOLUT_PRIVATE_KEY", "REVOLUT_PUBLIC_KEY"):
             r = _op(
@@ -370,6 +370,18 @@ def _ops_show(env: str) -> None:
             )
             if r.returncode == 0:
                 print(f"  {field:<28}  {_mask_secret(r.stdout.strip())}")
+    r = _op(
+        "item",
+        "get",
+        _op_creds_item(env),
+        "--vault",
+        _OP_VAULT,
+        "--fields",
+        "TELEGRAM_BOT_TOKEN",
+        "--reveal",
+    )
+    if r.returncode == 0:
+        print(f"  {'TELEGRAM_BOT_TOKEN':<28}  {_mask_secret(r.stdout.strip())}")
 
     print(f"\n=== Configuration  ({_op_config_item(env)}) ===\n")
     print(f"  {'TRADING_MODE':<28}  (derived: dev/int → paper, prod → live)")
@@ -382,6 +394,7 @@ def _ops_show(env: str) -> None:
         "MAX_CAPITAL",
         "SHUTDOWN_TRAILING_STOP_PCT",
         "SHUTDOWN_MAX_WAIT_SECONDS",
+        "TELEGRAM_CHAT_ID",
     ):
         r = _op("item", "get", _op_config_item(env), "--vault", _OP_VAULT, "--fields", field)
         if r.returncode == 0:
@@ -461,6 +474,7 @@ def _config_show(env: str) -> None:
         "MAX_CAPITAL",
         "SHUTDOWN_TRAILING_STOP_PCT",
         "SHUTDOWN_MAX_WAIT_SECONDS",
+        "TELEGRAM_CHAT_ID",
     ):
         r = _op("item", "get", _op_config_item(env), "--vault", _OP_VAULT, "--fields", key)
         value = r.stdout.strip() if r.returncode == 0 else "(not set)"
@@ -615,6 +629,63 @@ def cmd_api(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# cmd: telegram
+# ---------------------------------------------------------------------------
+
+
+def cmd_telegram(args: argparse.Namespace) -> None:
+    """Telegram bot utilities and always-on control plane.
+
+    Subcommands:
+      test   — send a test message to verify Telegram is configured correctly
+      start  — start the always-on Telegram Control Plane process
+    """
+    env = _resolve_env(args)
+    sub_cmd = getattr(args, "telegram_cmd", None) or "test"
+
+    if sub_cmd == "start":
+        # Deferred import — ENVIRONMENT must be set before src.config is loaded.
+        from cli.telegram_control import run_control_plane
+
+        print(f"\n  Environment : {_env_badge(env)}")
+        print("  Starting Telegram Control Plane…")
+        print("  Control the bot via Telegram: /run /stop /status /balance /report /help")
+        print()
+        run_control_plane()
+        return
+
+    # Default: test
+    # Deferred import — ENVIRONMENT must be set before src.config is loaded.
+    from src.config import settings
+    from src.utils.telegram import TelegramNotifier
+
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+
+    if not token or not chat_id:
+        missing = []
+        if not token:
+            missing.append(f"TELEGRAM_BOT_TOKEN  →  make ops ENV={env}")
+        if not chat_id:
+            missing.append(
+                f"TELEGRAM_CHAT_ID    →  make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV={env}"
+            )
+        print("❌  Telegram is not configured. Set the missing fields:")
+        for m in missing:
+            print(f"     {m}")
+        sys.exit(1)
+
+    notifier = TelegramNotifier(token=token, chat_id=chat_id)
+    print(f"Sending test notification (chat {chat_id})…")
+    try:
+        asyncio.run(notifier.send_test())
+        print("✓  Test message delivered — check your Telegram chat.")
+    except Exception as e:
+        print(f"❌  Failed: {e}")
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # cmd: db
 # ---------------------------------------------------------------------------
 
@@ -675,6 +746,8 @@ def cmd_db(args: argparse.Namespace) -> None:
 # Argument parser
 # ---------------------------------------------------------------------------
 
+_SUBCOMMAND_METAVAR = "<subcommand>"
+
 
 def _add_env_arg(p: argparse.ArgumentParser) -> None:
     """Add the standard --env argument to a subparser."""
@@ -722,6 +795,9 @@ examples:
   revt db backtests
   revt db export
   revt db report                              full analytics report + charts
+
+  revt telegram test                          verify Telegram notifications are working
+  revt telegram start                         start always-on Telegram Control Plane
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -850,7 +926,7 @@ examples:
     # ── config ────────────────────────────────────────────────────────────────
     p_cfg = sub.add_parser("config", help="View / update trading configuration in 1Password")
     _add_env_arg(p_cfg)
-    cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar="<subcommand>")
+    cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     cfg_sub.add_parser("show", help="Show current configuration")
 
@@ -916,7 +992,7 @@ examples:
     # ── db ────────────────────────────────────────────────────────────────────
     p_db = sub.add_parser("db", help="Database management and analytics")
     _add_env_arg(p_db)
-    db_sub = p_db.add_subparsers(dest="db_cmd", metavar="<subcommand>")
+    db_sub = p_db.add_subparsers(dest="db_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     db_sub.add_parser("stats", help="Database statistics overview")
 
@@ -943,6 +1019,20 @@ examples:
     db_sub.add_parser("encrypt-status", help="Check whether DB encryption is active")
 
     p_db.set_defaults(func=cmd_db)
+
+    # ── telegram ──────────────────────────────────────────────────────────────
+    p_tg = sub.add_parser("telegram", help="Telegram bot utilities and always-on control plane")
+    _add_env_arg(p_tg)
+    tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar=_SUBCOMMAND_METAVAR)
+    tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
+    tg_sub.add_parser(
+        "start",
+        help=(
+            "Start the always-on Telegram Control Plane — "
+            "control the bot via /run, /stop, /status, /balance, /report"
+        ),
+    )
+    p_tg.set_defaults(func=cmd_telegram)
 
     return parser
 

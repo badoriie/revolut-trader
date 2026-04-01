@@ -18,10 +18,11 @@ ______________________________________________________________________
 1. [Backtesting](#8-backtesting)
 1. [Monitoring Performance](#9-monitoring-performance)
 1. [Graceful Shutdown](#10-graceful-shutdown)
-1. [Deploying Unattended (Raspberry Pi / Server)](#11-deploying-unattended-raspberry-pi--server)
-1. [Troubleshooting](#12-troubleshooting)
-1. [FAQ](#13-faq)
-1. [Trading Terminology](#14-trading-terminology)
+1. [Telegram Notifications (Optional)](#11-telegram-notifications-optional)
+1. [Deploying Unattended (Raspberry Pi / Server)](#12-deploying-unattended-raspberry-pi--server)
+1. [Troubleshooting](#13-troubleshooting)
+1. [FAQ](#14-faq)
+1. [Trading Terminology](#15-trading-terminology)
 
 ______________________________________________________________________
 
@@ -143,11 +144,13 @@ make opconfig-set KEY=<key> VALUE=<value> ENV=<env>
 
 ### Optional parameters
 
-| Key                          | Default                      | Example | Notes                                                                                                   |
-| ---------------------------- | ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
-| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`  | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with |
-| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`   | On shutdown, profitable positions wait for a trailing stop of this % before closing                     |
-| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`   | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position  |
+| Key                          | Default                      | Example         | Notes                                                                                                   |
+| ---------------------------- | ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`          | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with |
+| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`           | On shutdown, profitable positions wait for a trailing stop of this % before closing                     |
+| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`           | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position  |
+| `TELEGRAM_BOT_TOKEN`         | *(none — notifications off)* | `123:ABCdef...` | Telegram Bot API token from @BotFather — enables trade and status notifications                         |
+| `TELEGRAM_CHAT_ID`           | *(none — notifications off)* | `-100123456789` | Telegram chat or channel ID to send notifications to (both token and ID must be set)                    |
 
 ### Example: full configuration for paper trading
 
@@ -434,7 +437,7 @@ The report includes:
   - `symbol_performance.png` — P&L bar chart by trading pair
   - `backtest_comparison.png` — best backtest return by strategy
 
-A `report.md` markdown file is also written to the output directory, making it easy to paste into GitHub Actions job summaries or share with collaborators.
+A `report.md` markdown file is also written to the output directory, making it easy to paste into GitHub Actions job summaries or share with collaborators. If Telegram is configured and `fpdf2` is installed (included in `--extra analytics`), a PDF version of the report is sent directly to your Telegram chat; otherwise a compact text summary is sent.
 
 ### Verifying encryption
 
@@ -467,7 +470,94 @@ make opconfig-set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=180 ENV=int
 
 ______________________________________________________________________
 
-## 11. Deploying Unattended (Raspberry Pi / Server)
+## 11. Telegram Notifications (Optional)
+
+The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, a critical error occurs, or the daily loss limit is hit. When `make db-report` runs, a PDF analytics report is sent to Telegram (requires `--extra analytics` for `fpdf2`); if fpdf2 is not installed, a text summary is sent instead.
+
+While the bot is running it also **listens for commands** you send directly in the chat, giving you on-demand access to live status and analytics without touching the server.
+
+### Set up a bot
+
+1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+1. Send `/newbot` and follow the prompts — copy the **API token** you receive
+1. Send a message to your new bot (needed to open the chat)
+1. Retrieve your **chat ID**:
+   ```bash
+   curl "https://api.telegram.org/bot<TOKEN>/getUpdates"
+   # Look for "chat":{"id": ...} in the response
+   ```
+   For a private channel, add the bot as admin and use the channel's negative ID (e.g. `-100123456789`).
+
+### Store credentials in 1Password
+
+The bot token is stored as a concealed credential via `make ops`; the chat ID is stored as a config value:
+
+```bash
+make ops ENV=prod                                          # prompts for Revolut API key and Telegram bot token
+make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<chat_id> ENV=prod
+```
+
+Both keys must be set — if either is missing, notifications are silently disabled.
+
+### What you receive
+
+| Event                  | Message                                                              |
+| ---------------------- | -------------------------------------------------------------------- |
+| Bot started            | Strategy, risk level, pairs, mode                                    |
+| Order filled           | Side, symbol, quantity, price, fee, P&L (sells)                      |
+| Shutdown complete      | Session ID, total realized P&L                                       |
+| Analytics report ready | PDF file with key metrics (fpdf2 installed) or text summary fallback |
+| Daily loss limit hit   | Current day P&L, suspended notice                                    |
+| Critical error         | Error description                                                    |
+
+### Bot commands (while the bot is running)
+
+Send these commands to your bot in Telegram at any time while the bot is running:
+
+| Command          | Response                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| `/status`        | Strategy, risk level, mode, pairs, uptime, open positions, session P&L                          |
+| `/balance`       | Cash balance, open positions with entry price and unrealised P&L, total portfolio value         |
+| `/report [days]` | Analytics summary for the last N days (default 30): trades, win rate, net P&L, Sharpe, drawdown |
+| `/help`          | List of available commands                                                                      |
+
+The bot ignores commands from any chat other than the configured `TELEGRAM_CHAT_ID`.
+
+Telegram failures never affect trading — errors are logged and discarded.
+
+### Telegram Control Plane — start, stop, and monitor from Telegram
+
+The **Telegram Control Plane** is an always-on background process that lets you control the trading bot entirely through Telegram commands — even when the bot is not running. Start it once and leave it running; all bot lifecycle management happens from your phone.
+
+```bash
+make telegram                  # start the control plane (env auto-detected)
+make telegram ENV=prod         # force production environment
+
+revt telegram start            # same via the revt binary
+revt telegram start --env int  # paper trading
+```
+
+Additional commands available only through the control plane:
+
+| Command                  | Response                                                                  |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `/run`                   | Start the trading bot with default strategy and risk                      |
+| `/run momentum moderate` | Start with a specific strategy and risk level                             |
+| `/run BTC-EUR,ETH-EUR`   | Start trading specific pairs                                              |
+| `/stop`                  | Gracefully stop the bot (cancels orders, closes positions, saves state)   |
+| `/status`                | Bot status (delegates to running bot, or "not running" when idle)         |
+| `/balance`               | Cash and positions (delegates to running bot, or "not running" when idle) |
+| `/report [days]`         | Analytics (delegates to running bot, or queries database when idle)       |
+| `/help`                  | List all available commands                                               |
+
+The control plane and `make run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
+
+- `make run` — start the bot directly (command listener active while running), **or**
+- `make telegram` — start the control plane and use `/run` to start/stop the bot
+
+______________________________________________________________________
+
+## 12. Deploying Unattended (Raspberry Pi / Server)
 
 See [Raspberry Pi Deployment](RASPBERRY_PI_DEPLOYMENT.md) for the complete guide.
 
@@ -511,7 +601,7 @@ sudo systemctl status revolut-trader
 
 ______________________________________________________________________
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### API connection issues
 
@@ -578,7 +668,7 @@ Use only supported intervals (in minutes): `1`, `5`, `15`, `30`, `60`, `240`, `1
 
 ______________________________________________________________________
 
-## 13. FAQ
+## 14. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
 No. `make run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
@@ -628,7 +718,7 @@ Only `prod` (`make run ENV=prod` / `revt run`). Both `dev` and `int` are paper-t
 
 ______________________________________________________________________
 
-## 14. Trading Terminology
+## 15. Trading Terminology
 
 Plain-language definitions for every term that appears in this app's configuration, output, or reports. No prior trading knowledge needed.
 

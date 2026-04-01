@@ -29,6 +29,7 @@ dependencies = [
 analytics = [
     "matplotlib~=3.10",
     "numpy~=2.2",
+    "fpdf2~=2.8",
 ]
 dev = [
     "pytest~=9.0",
@@ -102,6 +103,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = [
     "ignore:unclosed database:ResourceWarning",  # SQLAlchemy pool cleanup in SQLite tests
+    "ignore:AutoDateLocator was unable to pick an appropriate interval:UserWarning",  # matplotlib with minimal mock data in tests
 ]
 
 [tool.pyright]
