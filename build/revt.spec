@@ -9,7 +9,7 @@ no virtual environment needed.  Only the external `op` CLI (1Password) must be
 on the system PATH for credential commands.
 
 Release platforms (built by CI):
-    revt-macos-arm64   macOS Apple Silicon (M1/M2/M3/M4)
+    revt-linux-x86_64  Linux x86_64 (Standard servers/desktops)
     revt-linux-arm64   Linux ARM64 (Raspberry Pi 4+, AWS Graviton)
 """
 

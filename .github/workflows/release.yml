@@ -186,12 +186,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ── macOS ────────────────────────────────────────────────────────────
-          - os: macos-latest      # Apple Silicon M1/M2/M3/M4
-            artifact: revt-macos-arm64
-          # ── Linux ────────────────────────────────────────────────────────────
+          # ── Linux ARM64 ──────────────────────────────────────────────────────
           - os: ubuntu-24.04-arm  # Raspberry Pi 4+ / AWS Graviton / ARM servers
             artifact: revt-linux-arm64
+          # ── Linux x86_64 ─────────────────────────────────────────────────────
+          - os: ubuntu-latest     # Standard x86_64 Linux servers / desktops
+            artifact: revt-linux-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -292,8 +292,8 @@ jobs:
             --title "${{ steps.bump.outputs.tag }}" \
             --notes-file release_notes.md \
             --latest \
-            dist/revt-macos-arm64 \
-            dist/revt-linux-arm64
+            dist/revt-linux-arm64 \
+            dist/revt-linux-x86_64
 
       - name: Post release summary
         run: |
