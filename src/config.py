@@ -278,6 +278,10 @@ def _load_optional_int(op, key: str, error_msg: str) -> int | None:
         raise ValueError(error_msg) from e
 
 
+# Shared validation message reused across all 1Password field loaders.
+_MUST_BE_POSITIVE = "must be positive"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=False,
@@ -391,6 +395,13 @@ class Settings(BaseSettings):
 
     def _load_capital_config(self, op) -> None:
         """Load optional capital-limiting, notification, fee, and safety-limit config from 1Password."""
+        self._load_basic_capital_config(op)
+        self._load_backtest_config(op)
+        self._load_fee_config(op)
+        self._load_order_limits(op)
+
+    def _load_basic_capital_config(self, op) -> None:
+        """Load basic capital and shutdown config."""
         self.max_capital = _load_optional_float(
             op,
             "MAX_CAPITAL",
@@ -413,6 +424,9 @@ class Settings(BaseSettings):
         )
         self.telegram_bot_token = op.get_optional("TELEGRAM_BOT_TOKEN")
         self.telegram_chat_id = op.get_optional("TELEGRAM_CHAT_ID")
+
+    def _load_backtest_config(self, op) -> None:
+        """Load backtest and logging config."""
         self.backtest_days = (
             _load_optional_int(
                 op,
@@ -422,6 +436,17 @@ class Settings(BaseSettings):
             )
             or self.backtest_days
         )
+        self._load_backtest_interval(op)
+        self._load_log_level(op)
+        self.interval = _load_optional_int(
+            op,
+            "INTERVAL",
+            "Invalid INTERVAL in 1Password: must be a positive integer (seconds).\n"
+            "Set it with: make opconfig-set KEY=INTERVAL VALUE=30 ENV=dev",
+        )
+
+    def _load_backtest_interval(self, op) -> None:
+        """Load and validate backtest interval."""
         raw_backtest_interval = op.get_optional("BACKTEST_INTERVAL")
         if raw_backtest_interval is not None:
             _valid_intervals = {1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320}
@@ -436,6 +461,9 @@ class Settings(BaseSettings):
                     "Set it with: make opconfig-set KEY=BACKTEST_INTERVAL VALUE=60 ENV=dev"
                 ) from e
             self.backtest_interval = val
+
+    def _load_log_level(self, op) -> None:
+        """Load and validate log level."""
         raw_log_level = op.get_optional("LOG_LEVEL")
         if raw_log_level is not None:
             normalized = raw_log_level.upper()
@@ -446,15 +474,9 @@ class Settings(BaseSettings):
                     "Set it with: make opconfig-set KEY=LOG_LEVEL VALUE=INFO ENV=dev"
                 )
             self.log_level = normalized
-        self.interval = _load_optional_int(
-            op,
-            "INTERVAL",
-            "Invalid INTERVAL in 1Password: must be a positive integer (seconds).\n"
-            "Set it with: make opconfig-set KEY=INTERVAL VALUE=30 ENV=dev",
-        )
 
-        # Fee rates — can change if Revolut updates its schedule.
-        # Default: 0% maker (LIMIT), 0.09% taker (MARKET).
+    def _load_fee_config(self, op) -> None:
+        """Load fee rate overrides."""
         maker_fee = _load_optional_nonneg_float(
             op,
             "MAKER_FEE_PCT",
@@ -475,34 +497,81 @@ class Settings(BaseSettings):
         if taker_fee is not None:
             self.taker_fee_pct = taker_fee
 
-        # Order safety limits — set by users who want tighter or looser absolute caps.
-        raw_max_order = op.get_optional("MAX_ORDER_VALUE")
-        if raw_max_order is not None:
-            try:
-                val_f = float(raw_max_order)
-                if val_f <= 0:
-                    raise ValueError("must be positive")
-                self.max_order_value = val_f
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid MAX_ORDER_VALUE in 1Password: '{raw_max_order}'.\n"
-                    "Must be a positive number (e.g. 10000).\n"
-                    "Set it with: make opconfig-set KEY=MAX_ORDER_VALUE VALUE=10000 ENV=dev"
-                ) from e
+    def _load_order_limits(self, op) -> None:
+        """Load order safety limits."""
+        max_order = _load_optional_float(
+            op,
+            "MAX_ORDER_VALUE",
+            "Invalid MAX_ORDER_VALUE in 1Password: must be a positive number (e.g. 10000).\n"
+            "Set it with: make opconfig-set KEY=MAX_ORDER_VALUE VALUE=10000 ENV=dev",
+        )
+        if max_order is not None:
+            self.max_order_value = max_order
 
-        raw_min_order = op.get_optional("MIN_ORDER_VALUE")
-        if raw_min_order is not None:
-            try:
-                val_f = float(raw_min_order)
-                if val_f <= 0:
-                    raise ValueError("must be positive")
-                self.min_order_value = val_f
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid MIN_ORDER_VALUE in 1Password: '{raw_min_order}'.\n"
-                    "Must be a positive number (e.g. 10).\n"
-                    "Set it with: make opconfig-set KEY=MIN_ORDER_VALUE VALUE=10 ENV=dev"
-                ) from e
+        min_order = _load_optional_float(
+            op,
+            "MIN_ORDER_VALUE",
+            "Invalid MIN_ORDER_VALUE in 1Password: must be a positive number (e.g. 10).\n"
+            "Set it with: make opconfig-set KEY=MIN_ORDER_VALUE VALUE=10 ENV=dev",
+        )
+        if min_order is not None:
+            self.min_order_value = min_order
+
+    @staticmethod
+    def _load_risk_float(op, key: str, item_name: str, field_name: str, default: float) -> float:
+        """Load a positive float risk parameter from 1Password, falling back to default.
+
+        Args:
+            op:         The onepassword module.
+            key:        Full vault key (e.g. ``RISK_CONSERVATIVE_MAX_POSITION_SIZE_PCT``).
+            item_name:  Risk level name for the error message (e.g. ``"conservative"``).
+            field_name: Field name for the error message (e.g. ``"MAX_POSITION_SIZE_PCT"``).
+            default:    Value to use when the field is absent from the vault.
+
+        Returns:
+            The validated float value, or ``default`` when absent.
+        """
+        raw = op.get_optional(key)
+        if raw is None:
+            return default
+        try:
+            val = float(raw)
+            if val <= 0:
+                raise ValueError(_MUST_BE_POSITIVE)
+            return val
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid {key} in 1Password: {e}.\n"
+                f"Update: revolut-trader-risk-{item_name} → {field_name}"
+            ) from e
+
+    @staticmethod
+    def _load_risk_int(op, key: str, item_name: str, field_name: str, default: int) -> int:
+        """Load a positive integer risk parameter from 1Password, falling back to default.
+
+        Args:
+            op:         The onepassword module.
+            key:        Full vault key (e.g. ``RISK_CONSERVATIVE_MAX_OPEN_POSITIONS``).
+            item_name:  Risk level name for the error message.
+            field_name: Field name for the error message.
+            default:    Value to use when the field is absent from the vault.
+
+        Returns:
+            The validated int value, or ``default`` when absent.
+        """
+        raw = op.get_optional(key)
+        if raw is None:
+            return default
+        try:
+            val = int(raw)
+            if val <= 0:
+                raise ValueError(_MUST_BE_POSITIVE)
+            return val
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid {key} in 1Password: {e}.\n"
+                f"Update: revolut-trader-risk-{item_name} → {field_name}"
+            ) from e
 
     def _load_risk_configs(self, op) -> None:
         """Load per-risk-level parameters from 1Password risk items.
@@ -516,93 +585,149 @@ class Settings(BaseSettings):
         configs: dict[str, RiskLevelConfig] = {}
         for level in RiskLevel:
             name = level.value
-            prefix = f"RISK_{name.upper()}"
-            defaults = _RISK_LEVEL_CONFIG_DEFAULTS[name]
-
-            # MAX_POSITION_SIZE_PCT
-            raw = op.get_optional(f"{prefix}_MAX_POSITION_SIZE_PCT")
-            if raw is not None:
-                try:
-                    max_pos_pct = float(raw)
-                    if max_pos_pct <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_MAX_POSITION_SIZE_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-risk-{name} → MAX_POSITION_SIZE_PCT"
-                    ) from e
-            else:
-                max_pos_pct = defaults.max_position_size_pct
-
-            # MAX_DAILY_LOSS_PCT
-            raw = op.get_optional(f"{prefix}_MAX_DAILY_LOSS_PCT")
-            if raw is not None:
-                try:
-                    max_loss_pct = float(raw)
-                    if max_loss_pct <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_MAX_DAILY_LOSS_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-risk-{name} → MAX_DAILY_LOSS_PCT"
-                    ) from e
-            else:
-                max_loss_pct = defaults.max_daily_loss_pct
-
-            # STOP_LOSS_PCT
-            raw = op.get_optional(f"{prefix}_STOP_LOSS_PCT")
-            if raw is not None:
-                try:
-                    stop_loss_pct = float(raw)
-                    if stop_loss_pct <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_STOP_LOSS_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-risk-{name} → STOP_LOSS_PCT"
-                    ) from e
-            else:
-                stop_loss_pct = defaults.stop_loss_pct
-
-            # TAKE_PROFIT_PCT
-            raw = op.get_optional(f"{prefix}_TAKE_PROFIT_PCT")
-            if raw is not None:
-                try:
-                    take_profit_pct = float(raw)
-                    if take_profit_pct <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_TAKE_PROFIT_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-risk-{name} → TAKE_PROFIT_PCT"
-                    ) from e
-            else:
-                take_profit_pct = defaults.take_profit_pct
-
-            # MAX_OPEN_POSITIONS
-            raw = op.get_optional(f"{prefix}_MAX_OPEN_POSITIONS")
-            if raw is not None:
-                try:
-                    max_positions = int(raw)
-                    if max_positions <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_MAX_OPEN_POSITIONS in 1Password: {e}.\n"
-                        f"Update: revolut-trader-risk-{name} → MAX_OPEN_POSITIONS"
-                    ) from e
-            else:
-                max_positions = defaults.max_open_positions
-
+            p = f"RISK_{name.upper()}"
+            d = _RISK_LEVEL_CONFIG_DEFAULTS[name]
             configs[name] = RiskLevelConfig(
-                max_position_size_pct=max_pos_pct,
-                max_daily_loss_pct=max_loss_pct,
-                stop_loss_pct=stop_loss_pct,
-                take_profit_pct=take_profit_pct,
-                max_open_positions=max_positions,
+                max_position_size_pct=self._load_risk_float(
+                    op,
+                    f"{p}_MAX_POSITION_SIZE_PCT",
+                    name,
+                    "MAX_POSITION_SIZE_PCT",
+                    d.max_position_size_pct,
+                ),
+                max_daily_loss_pct=self._load_risk_float(
+                    op,
+                    f"{p}_MAX_DAILY_LOSS_PCT",
+                    name,
+                    "MAX_DAILY_LOSS_PCT",
+                    d.max_daily_loss_pct,
+                ),
+                stop_loss_pct=self._load_risk_float(
+                    op, f"{p}_STOP_LOSS_PCT", name, "STOP_LOSS_PCT", d.stop_loss_pct
+                ),
+                take_profit_pct=self._load_risk_float(
+                    op, f"{p}_TAKE_PROFIT_PCT", name, "TAKE_PROFIT_PCT", d.take_profit_pct
+                ),
+                max_open_positions=self._load_risk_int(
+                    op,
+                    f"{p}_MAX_OPEN_POSITIONS",
+                    name,
+                    "MAX_OPEN_POSITIONS",
+                    d.max_open_positions,
+                ),
             )
-
         self.risk_configs = configs
+
+    @staticmethod
+    def _load_strategy_core(
+        op, prefix: str, name: str, defaults: StrategyConfig
+    ) -> tuple[int, float, str, float | None, float | None]:
+        """Load the five core strategy fields from 1Password with fallback to defaults.
+
+        Args:
+            op:       The onepassword module.
+            prefix:   Vault key prefix (e.g. ``STRATEGY_MOMENTUM``).
+            name:     Strategy name for error messages (e.g. ``"momentum"``).
+            defaults: Fallback ``StrategyConfig`` when a field is absent.
+
+        Returns:
+            ``(interval, min_signal_strength, order_type, stop_loss_pct, take_profit_pct)``
+        """
+        interval = Settings._load_strategy_interval(op, prefix, name, defaults.interval)
+        min_signal = Settings._load_strategy_min_signal(
+            op, prefix, name, defaults.min_signal_strength
+        )
+        order_type = Settings._load_strategy_order_type(op, prefix, name, defaults.order_type)
+        stop_loss_pct = Settings._load_strategy_stop_loss(op, prefix, name, defaults.stop_loss_pct)
+        take_profit_pct = Settings._load_strategy_take_profit(
+            op, prefix, name, defaults.take_profit_pct
+        )
+        return interval, min_signal, order_type, stop_loss_pct, take_profit_pct
+
+    @staticmethod
+    def _load_strategy_interval(op, prefix: str, name: str, default: int) -> int:
+        """Load INTERVAL field for a strategy."""
+        raw = op.get_optional(f"{prefix}_INTERVAL")
+        if raw is not None:
+            try:
+                interval = int(raw)
+                if interval <= 0:
+                    raise ValueError(_MUST_BE_POSITIVE)
+                return interval
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid {prefix}_INTERVAL in 1Password: {e}.\n"
+                    f"Update: revolut-trader-strategy-{name} → INTERVAL"
+                ) from e
+        return default
+
+    @staticmethod
+    def _load_strategy_min_signal(op, prefix: str, name: str, default: float) -> float:
+        """Load MIN_SIGNAL_STRENGTH field for a strategy."""
+        raw = op.get_optional(f"{prefix}_MIN_SIGNAL_STRENGTH")
+        if raw is not None:
+            try:
+                min_signal = float(raw)
+                if not (0.0 <= min_signal <= 1.0):
+                    raise ValueError("must be between 0.0 and 1.0")
+                return min_signal
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid {prefix}_MIN_SIGNAL_STRENGTH in 1Password: {e}.\n"
+                    f"Update: revolut-trader-strategy-{name} → MIN_SIGNAL_STRENGTH"
+                ) from e
+        return default
+
+    @staticmethod
+    def _load_strategy_order_type(op, prefix: str, name: str, default: str) -> str:
+        """Load ORDER_TYPE field for a strategy."""
+        raw = op.get_optional(f"{prefix}_ORDER_TYPE")
+        if raw is not None:
+            order_type = raw.lower()
+            if order_type not in ("limit", "market"):
+                raise ValueError(
+                    f"Invalid {prefix}_ORDER_TYPE in 1Password: '{raw}'. "
+                    "Must be 'limit' or 'market'.\n"
+                    f"Update: revolut-trader-strategy-{name} → ORDER_TYPE"
+                )
+            return order_type
+        return default
+
+    @staticmethod
+    def _load_strategy_stop_loss(op, prefix: str, name: str, default: float | None) -> float | None:
+        """Load STOP_LOSS_PCT field for a strategy."""
+        raw = op.get_optional(f"{prefix}_STOP_LOSS_PCT")
+        if raw is not None:
+            try:
+                stop_loss_pct: float | None = float(raw)
+                if stop_loss_pct <= 0:  # type: ignore[operator]
+                    raise ValueError(_MUST_BE_POSITIVE)
+                return stop_loss_pct
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid {prefix}_STOP_LOSS_PCT in 1Password: {e}.\n"
+                    f"Update: revolut-trader-strategy-{name} → STOP_LOSS_PCT"
+                ) from e
+        return default
+
+    @staticmethod
+    def _load_strategy_take_profit(
+        op, prefix: str, name: str, default: float | None
+    ) -> float | None:
+        """Load TAKE_PROFIT_PCT field for a strategy."""
+        raw = op.get_optional(f"{prefix}_TAKE_PROFIT_PCT")
+        if raw is not None:
+            try:
+                take_profit_pct: float | None = float(raw)
+                if take_profit_pct <= 0:  # type: ignore[operator]
+                    raise ValueError(_MUST_BE_POSITIVE)
+                return take_profit_pct
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid {prefix}_TAKE_PROFIT_PCT in 1Password: {e}.\n"
+                    f"Update: revolut-trader-strategy-{name} → TAKE_PROFIT_PCT"
+                ) from e
+        return default
 
     def _load_strategy_configs(self, op) -> None:
         """Load per-strategy tuning constants from 1Password strategy items.
@@ -620,187 +745,114 @@ class Settings(BaseSettings):
         configs: dict[str, StrategyConfig] = {}
         for strategy in StrategyType:
             name = strategy.value
-            prefix = f"STRATEGY_{name.upper()}"
-            defaults = _STRATEGY_CONFIG_DEFAULTS[name]
-
-            # INTERVAL
-            raw = op.get_optional(f"{prefix}_INTERVAL")
-            if raw is not None:
-                try:
-                    interval = int(raw)
-                    if interval <= 0:
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_INTERVAL in 1Password: {e}.\n"
-                        f"Update: revolut-trader-strategy-{name} → INTERVAL"
-                    ) from e
-            else:
-                interval = defaults.interval
-
-            # MIN_SIGNAL_STRENGTH
-            raw = op.get_optional(f"{prefix}_MIN_SIGNAL_STRENGTH")
-            if raw is not None:
-                try:
-                    min_signal = float(raw)
-                    if not (0.0 <= min_signal <= 1.0):
-                        raise ValueError("must be between 0.0 and 1.0")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_MIN_SIGNAL_STRENGTH in 1Password: {e}.\n"
-                        f"Update: revolut-trader-strategy-{name} → MIN_SIGNAL_STRENGTH"
-                    ) from e
-            else:
-                min_signal = defaults.min_signal_strength
-
-            # ORDER_TYPE
-            raw = op.get_optional(f"{prefix}_ORDER_TYPE")
-            if raw is not None:
-                order_type = raw.lower()
-                if order_type not in ("limit", "market"):
-                    raise ValueError(
-                        f"Invalid {prefix}_ORDER_TYPE in 1Password: '{raw}'. "
-                        "Must be 'limit' or 'market'.\n"
-                        f"Update: revolut-trader-strategy-{name} → ORDER_TYPE"
-                    )
-            else:
-                order_type = defaults.order_type
-
-            # STOP_LOSS_PCT (optional)
-            raw = op.get_optional(f"{prefix}_STOP_LOSS_PCT")
-            if raw is not None:
-                try:
-                    stop_loss_pct: float | None = float(raw)
-                    if stop_loss_pct <= 0:  # type: ignore[operator]
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_STOP_LOSS_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-strategy-{name} → STOP_LOSS_PCT"
-                    ) from e
-            else:
-                stop_loss_pct = defaults.stop_loss_pct
-
-            # TAKE_PROFIT_PCT (optional)
-            raw = op.get_optional(f"{prefix}_TAKE_PROFIT_PCT")
-            if raw is not None:
-                try:
-                    take_profit_pct: float | None = float(raw)
-                    if take_profit_pct <= 0:  # type: ignore[operator]
-                        raise ValueError("must be positive")
-                except ValueError as e:
-                    raise ValueError(
-                        f"Invalid {prefix}_TAKE_PROFIT_PCT in 1Password: {e}.\n"
-                        f"Update: revolut-trader-strategy-{name} → TAKE_PROFIT_PCT"
-                    ) from e
-            else:
-                take_profit_pct = defaults.take_profit_pct
-
-            # === Internal calibration parameters (all optional, None = use strategy default) ===
-
-            spread_threshold = self._load_strategy_float(
-                op, f"{prefix}_SPREAD_THRESHOLD", name, "SPREAD_THRESHOLD", positive=True
+            p = f"STRATEGY_{name.upper()}"
+            interval, min_signal, order_type, stop_loss_pct, take_profit_pct = (
+                self._load_strategy_core(op, p, name, _STRATEGY_CONFIG_DEFAULTS[name])
             )
-            inventory_target = self._load_strategy_float(
-                op, f"{prefix}_INVENTORY_TARGET", name, "INVENTORY_TARGET", positive=True
-            )
-            rsi_period = self._load_strategy_int(op, f"{prefix}_RSI_PERIOD", name, "RSI_PERIOD")
-            rsi_overbought = self._load_strategy_float(
-                op, f"{prefix}_RSI_OVERBOUGHT", name, "RSI_OVERBOUGHT", positive=True
-            )
-            rsi_oversold = self._load_strategy_float(
-                op, f"{prefix}_RSI_OVERSOLD", name, "RSI_OVERSOLD", positive=True
-            )
-            fast_period = self._load_strategy_int(op, f"{prefix}_FAST_PERIOD", name, "FAST_PERIOD")
-            slow_period = self._load_strategy_int(op, f"{prefix}_SLOW_PERIOD", name, "SLOW_PERIOD")
-            lookback_period = self._load_strategy_int(
-                op, f"{prefix}_LOOKBACK_PERIOD", name, "LOOKBACK_PERIOD"
-            )
-            num_std_dev = self._load_strategy_float(
-                op, f"{prefix}_NUM_STD_DEV", name, "NUM_STD_DEV", positive=True
-            )
-            min_deviation = self._load_strategy_float(
-                op, f"{prefix}_MIN_DEVIATION", name, "MIN_DEVIATION", positive=True
-            )
-            breakout_threshold = self._load_strategy_float(
-                op, f"{prefix}_BREAKOUT_THRESHOLD", name, "BREAKOUT_THRESHOLD", positive=True
-            )
-
-            # buy_zone and sell_zone must be in [0, 1]
-            buy_zone = self._load_strategy_zone(op, f"{prefix}_BUY_ZONE", name, "BUY_ZONE")
-            sell_zone = self._load_strategy_zone(op, f"{prefix}_SELL_ZONE", name, "SELL_ZONE")
-
-            rsi_confirmation_oversold = self._load_strategy_float(
-                op,
-                f"{prefix}_RSI_CONFIRMATION_OVERSOLD",
-                name,
-                "RSI_CONFIRMATION_OVERSOLD",
-                positive=True,
-            )
-            rsi_confirmation_overbought = self._load_strategy_float(
-                op,
-                f"{prefix}_RSI_CONFIRMATION_OVERBOUGHT",
-                name,
-                "RSI_CONFIRMATION_OVERBOUGHT",
-                positive=True,
-            )
-            min_range_pct = self._load_strategy_float(
-                op, f"{prefix}_MIN_RANGE_PCT", name, "MIN_RANGE_PCT", positive=False
-            )
-            min_consensus = self._load_strategy_zone(
-                op, f"{prefix}_MIN_CONSENSUS", name, "MIN_CONSENSUS"
-            )
-            weight_momentum = self._load_strategy_float(
-                op, f"{prefix}_WEIGHT_MOMENTUM", name, "WEIGHT_MOMENTUM", positive=True
-            )
-            weight_breakout = self._load_strategy_float(
-                op, f"{prefix}_WEIGHT_BREAKOUT", name, "WEIGHT_BREAKOUT", positive=True
-            )
-            weight_market_making = self._load_strategy_float(
-                op, f"{prefix}_WEIGHT_MARKET_MAKING", name, "WEIGHT_MARKET_MAKING", positive=True
-            )
-            weight_mean_reversion = self._load_strategy_float(
-                op, f"{prefix}_WEIGHT_MEAN_REVERSION", name, "WEIGHT_MEAN_REVERSION", positive=True
-            )
-            weight_range_reversion = self._load_strategy_float(
-                op,
-                f"{prefix}_WEIGHT_RANGE_REVERSION",
-                name,
-                "WEIGHT_RANGE_REVERSION",
-                positive=True,
-            )
-
             configs[name] = StrategyConfig(
                 interval=interval,
                 min_signal_strength=min_signal,
                 order_type=order_type,
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
-                spread_threshold=spread_threshold,
-                inventory_target=inventory_target,
-                rsi_period=rsi_period,
-                rsi_overbought=rsi_overbought,
-                rsi_oversold=rsi_oversold,
-                fast_period=fast_period,
-                slow_period=slow_period,
-                lookback_period=lookback_period,
-                num_std_dev=num_std_dev,
-                min_deviation=min_deviation,
-                breakout_threshold=breakout_threshold,
-                buy_zone=buy_zone,
-                sell_zone=sell_zone,
-                rsi_confirmation_oversold=rsi_confirmation_oversold,
-                rsi_confirmation_overbought=rsi_confirmation_overbought,
-                min_range_pct=min_range_pct,
-                min_consensus=min_consensus,
-                weight_momentum=weight_momentum,
-                weight_breakout=weight_breakout,
-                weight_market_making=weight_market_making,
-                weight_mean_reversion=weight_mean_reversion,
-                weight_range_reversion=weight_range_reversion,
+                spread_threshold=self._load_strategy_float(
+                    op, f"{p}_SPREAD_THRESHOLD", name, "SPREAD_THRESHOLD"
+                ),
+                inventory_target=self._load_strategy_float(
+                    op, f"{p}_INVENTORY_TARGET", name, "INVENTORY_TARGET"
+                ),
+                **self._load_strategy_rsi_params(op, p, name),
+                **self._load_strategy_ema_params(op, p, name),
+                **self._load_strategy_mean_reversion_params(op, p, name),
+                **self._load_strategy_breakout_params(op, p, name),
+                **self._load_strategy_range_reversion_params(op, p, name),
+                **self._load_strategy_multi_params(op, p, name),
             )
-
         self.strategy_configs = configs
+
+    def _load_strategy_rsi_params(self, op, prefix: str, name: str) -> dict:
+        """Load RSI-related parameters."""
+        return {
+            "rsi_period": self._load_strategy_int(op, f"{prefix}_RSI_PERIOD", name, "RSI_PERIOD"),
+            "rsi_overbought": self._load_strategy_float(
+                op, f"{prefix}_RSI_OVERBOUGHT", name, "RSI_OVERBOUGHT"
+            ),
+            "rsi_oversold": self._load_strategy_float(
+                op, f"{prefix}_RSI_OVERSOLD", name, "RSI_OVERSOLD"
+            ),
+            "rsi_confirmation_oversold": self._load_strategy_float(
+                op, f"{prefix}_RSI_CONFIRMATION_OVERSOLD", name, "RSI_CONFIRMATION_OVERSOLD"
+            ),
+            "rsi_confirmation_overbought": self._load_strategy_float(
+                op, f"{prefix}_RSI_CONFIRMATION_OVERBOUGHT", name, "RSI_CONFIRMATION_OVERBOUGHT"
+            ),
+        }
+
+    def _load_strategy_ema_params(self, op, prefix: str, name: str) -> dict:
+        """Load EMA-related parameters."""
+        return {
+            "fast_period": self._load_strategy_int(
+                op, f"{prefix}_FAST_PERIOD", name, "FAST_PERIOD"
+            ),
+            "slow_period": self._load_strategy_int(
+                op, f"{prefix}_SLOW_PERIOD", name, "SLOW_PERIOD"
+            ),
+        }
+
+    def _load_strategy_mean_reversion_params(self, op, prefix: str, name: str) -> dict:
+        """Load mean reversion parameters."""
+        return {
+            "lookback_period": self._load_strategy_int(
+                op, f"{prefix}_LOOKBACK_PERIOD", name, "LOOKBACK_PERIOD"
+            ),
+            "num_std_dev": self._load_strategy_float(
+                op, f"{prefix}_NUM_STD_DEV", name, "NUM_STD_DEV"
+            ),
+            "min_deviation": self._load_strategy_float(
+                op, f"{prefix}_MIN_DEVIATION", name, "MIN_DEVIATION"
+            ),
+        }
+
+    def _load_strategy_breakout_params(self, op, prefix: str, name: str) -> dict:
+        """Load breakout strategy parameters."""
+        return {
+            "breakout_threshold": self._load_strategy_float(
+                op, f"{prefix}_BREAKOUT_THRESHOLD", name, "BREAKOUT_THRESHOLD"
+            ),
+        }
+
+    def _load_strategy_range_reversion_params(self, op, prefix: str, name: str) -> dict:
+        """Load range reversion parameters."""
+        return {
+            "buy_zone": self._load_strategy_zone(op, f"{prefix}_BUY_ZONE", name, "BUY_ZONE"),
+            "sell_zone": self._load_strategy_zone(op, f"{prefix}_SELL_ZONE", name, "SELL_ZONE"),
+            "min_range_pct": self._load_strategy_float(
+                op, f"{prefix}_MIN_RANGE_PCT", name, "MIN_RANGE_PCT", positive=False
+            ),
+        }
+
+    def _load_strategy_multi_params(self, op, prefix: str, name: str) -> dict:
+        """Load multi-strategy parameters."""
+        return {
+            "min_consensus": self._load_strategy_zone(
+                op, f"{prefix}_MIN_CONSENSUS", name, "MIN_CONSENSUS"
+            ),
+            "weight_momentum": self._load_strategy_float(
+                op, f"{prefix}_WEIGHT_MOMENTUM", name, "WEIGHT_MOMENTUM"
+            ),
+            "weight_breakout": self._load_strategy_float(
+                op, f"{prefix}_WEIGHT_BREAKOUT", name, "WEIGHT_BREAKOUT"
+            ),
+            "weight_market_making": self._load_strategy_float(
+                op, f"{prefix}_WEIGHT_MARKET_MAKING", name, "WEIGHT_MARKET_MAKING"
+            ),
+            "weight_mean_reversion": self._load_strategy_float(
+                op, f"{prefix}_WEIGHT_MEAN_REVERSION", name, "WEIGHT_MEAN_REVERSION"
+            ),
+            "weight_range_reversion": self._load_strategy_float(
+                op, f"{prefix}_WEIGHT_RANGE_REVERSION", name, "WEIGHT_RANGE_REVERSION"
+            ),
+        }
 
     @staticmethod
     def _load_strategy_float(
@@ -824,7 +876,7 @@ class Settings(BaseSettings):
         try:
             val = float(raw)
             if positive and val <= 0:
-                raise ValueError("must be positive")
+                raise ValueError(_MUST_BE_POSITIVE)
             if not positive and val < 0:
                 raise ValueError("must be non-negative")
             return val
@@ -853,7 +905,7 @@ class Settings(BaseSettings):
         try:
             val = int(raw)
             if val <= 0:
-                raise ValueError("must be positive")
+                raise ValueError(_MUST_BE_POSITIVE)
             return val
         except ValueError as e:
             raise ValueError(
