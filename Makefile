@@ -150,6 +150,13 @@ setup:
 				|| { op item edit $$CREDS --vault $(OP_VAULT) "REVOLUT_API_KEY[concealed]=<add-your-$$env-api-key>" >/dev/null \
 				     && echo "  REVOLUT_API_KEY: placeholder added"; }; \
 		fi; \
+		if op item get $$CREDS --vault $(OP_VAULT) --fields DATABASE_ENCRYPTION_KEY >/dev/null 2>&1; then \
+			echo "  DATABASE_ENCRYPTION_KEY: exists (preserving to protect encrypted data)"; \
+		else \
+			ENCRYPTION_KEY=$$(uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"); \
+			op item edit $$CREDS --vault $(OP_VAULT) "DATABASE_ENCRYPTION_KEY[concealed]=$$ENCRYPTION_KEY" >/dev/null \
+				&& echo "  DATABASE_ENCRYPTION_KEY: generated and stored"; \
+		fi; \
 		if op item get $$CONFIG --vault $(OP_VAULT) >/dev/null 2>&1; then \
 			echo "  $$CONFIG: exists"; \
 		else \
@@ -165,6 +172,14 @@ setup:
 					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
 					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
 					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"LOG_LEVEL[text]=<optional-e.g-INFO>" \
+					"INTERVAL[text]=<optional-trading-loop-interval-seconds>" \
+					"BACKTEST_DAYS[text]=<optional-e.g-30>" \
+					"BACKTEST_INTERVAL[text]=<optional-e.g-60>" \
+					"MAKER_FEE_PCT[text]=<optional-e.g-0>" \
+					"TAKER_FEE_PCT[text]=<optional-e.g-0.0009>" \
+					"MAX_ORDER_VALUE[text]=<optional-e.g-10000>" \
+					"MIN_ORDER_VALUE[text]=<optional-e.g-10>" \
 					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
 				echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
@@ -181,6 +196,14 @@ setup:
 					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
 					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
 					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
+					"LOG_LEVEL[text]=<optional-e.g-INFO>" \
+					"INTERVAL[text]=<optional-trading-loop-interval-seconds>" \
+					"BACKTEST_DAYS[text]=<optional-e.g-30>" \
+					"BACKTEST_INTERVAL[text]=<optional-e.g-60>" \
+					"MAKER_FEE_PCT[text]=<optional-e.g-0>" \
+					"TAKER_FEE_PCT[text]=<optional-e.g-0.0009>" \
+					"MAX_ORDER_VALUE[text]=<optional-e.g-10000>" \
+					"MIN_ORDER_VALUE[text]=<optional-e.g-10>" \
 					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
 					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 			fi; \
@@ -194,9 +217,33 @@ setup:
 		op item get $$CONFIG --vault $(OP_VAULT) --fields SHUTDOWN_MAX_WAIT_SECONDS >/dev/null 2>&1 \
 			|| { op item edit $$CONFIG --vault $(OP_VAULT) "SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" >/dev/null \
 			     && echo "  SHUTDOWN_MAX_WAIT_SECONDS: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields LOG_LEVEL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "LOG_LEVEL[text]=<optional-e.g-INFO>" >/dev/null \
+			     && echo "  LOG_LEVEL: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields INTERVAL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "INTERVAL[text]=<optional-trading-loop-interval-seconds>" >/dev/null \
+			     && echo "  INTERVAL: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields BACKTEST_DAYS >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "BACKTEST_DAYS[text]=<optional-e.g-30>" >/dev/null \
+			     && echo "  BACKTEST_DAYS: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields BACKTEST_INTERVAL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "BACKTEST_INTERVAL[text]=<optional-e.g-60>" >/dev/null \
+			     && echo "  BACKTEST_INTERVAL: placeholder added"; }; \
 		op item get $$CONFIG --vault $(OP_VAULT) --fields TELEGRAM_CHAT_ID >/dev/null 2>&1 \
 			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" >/dev/null \
 			     && echo "  TELEGRAM_CHAT_ID: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields MAKER_FEE_PCT >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAKER_FEE_PCT[text]=<optional-e.g-0>" >/dev/null \
+			     && echo "  MAKER_FEE_PCT: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields TAKER_FEE_PCT >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TAKER_FEE_PCT[text]=<optional-e.g-0.0009>" >/dev/null \
+			     && echo "  TAKER_FEE_PCT: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields MAX_ORDER_VALUE >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAX_ORDER_VALUE[text]=<optional-e.g-10000>" >/dev/null \
+			     && echo "  MAX_ORDER_VALUE: placeholder added"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields MIN_ORDER_VALUE >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MIN_ORDER_VALUE[text]=<optional-e.g-10>" >/dev/null \
+			     && echo "  MIN_ORDER_VALUE: placeholder added"; }; \
 		if [ "$$env" = "dev" ]; then \
 			echo "  $$env: mock API — skipping Ed25519 key generation"; \
 		else \
@@ -221,6 +268,97 @@ setup:
 				echo "  ======================================================"; \
 				rm -rf $$TMPDIR; \
 			fi; \
+		fi; \
+		echo ""; \
+	done
+	@echo ""
+	@# --- Create/update per-risk-level config items (no env suffix — shared across envs) ---
+	@echo "Setting up risk level config items..."
+	@for risk_info in \
+		"conservative:1.5:3.0:1.5:2.5:3" \
+		"moderate:3.0:5.0:2.5:4.0:5" \
+		"aggressive:5.0:10.0:4.0:7.0:8"; \
+	do \
+		level=$$(echo $$risk_info | cut -d: -f1); \
+		max_pos=$$(echo $$risk_info | cut -d: -f2); \
+		max_loss=$$(echo $$risk_info | cut -d: -f3); \
+		sl=$$(echo $$risk_info | cut -d: -f4); \
+		tp=$$(echo $$risk_info | cut -d: -f5); \
+		max_positions=$$(echo $$risk_info | cut -d: -f6); \
+		item="revolut-trader-risk-$$level"; \
+		if op item get $$item --vault $(OP_VAULT) >/dev/null 2>&1; then \
+			echo "  $$item: exists"; \
+		else \
+			op item create --category "Secure Note" --vault $(OP_VAULT) --title $$item \
+				"MAX_POSITION_SIZE_PCT[text]=$$max_pos" \
+				"MAX_DAILY_LOSS_PCT[text]=$$max_loss" \
+				"STOP_LOSS_PCT[text]=$$sl" \
+				"TAKE_PROFIT_PCT[text]=$$tp" \
+				"MAX_OPEN_POSITIONS[text]=$$max_positions" \
+				>/dev/null && echo "  $$item: created with defaults"; \
+		fi; \
+		op item get $$item --vault $(OP_VAULT) --fields MAX_POSITION_SIZE_PCT >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "MAX_POSITION_SIZE_PCT[text]=$$max_pos" >/dev/null \
+			     && echo "  $$level MAX_POSITION_SIZE_PCT: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields MAX_DAILY_LOSS_PCT >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "MAX_DAILY_LOSS_PCT[text]=$$max_loss" >/dev/null \
+			     && echo "  $$level MAX_DAILY_LOSS_PCT: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields STOP_LOSS_PCT >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "STOP_LOSS_PCT[text]=$$sl" >/dev/null \
+			     && echo "  $$level STOP_LOSS_PCT: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields TAKE_PROFIT_PCT >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "TAKE_PROFIT_PCT[text]=$$tp" >/dev/null \
+			     && echo "  $$level TAKE_PROFIT_PCT: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields MAX_OPEN_POSITIONS >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "MAX_OPEN_POSITIONS[text]=$$max_positions" >/dev/null \
+			     && echo "  $$level MAX_OPEN_POSITIONS: placeholder added"; }; \
+		echo ""; \
+	done
+	@echo ""
+	@# --- Create/update per-strategy config items (no env suffix — shared across envs) ---
+	@echo "Setting up strategy config items..."
+	@for strategy_info in \
+		"market_making:5:0.3:limit:0.5:0.3" \
+		"momentum:10:0.6:market:2.5:4.0" \
+		"breakout:5:0.7:market:3.0:5.0" \
+		"mean_reversion:15:0.5:limit:1.0:1.5" \
+		"range_reversion:15:0.5:limit:1.0:1.5" \
+		"multi_strategy:10:0.55:limit::"; \
+	do \
+		name=$$(echo $$strategy_info | cut -d: -f1); \
+		interval=$$(echo $$strategy_info | cut -d: -f2); \
+		min_signal=$$(echo $$strategy_info | cut -d: -f3); \
+		order_type=$$(echo $$strategy_info | cut -d: -f4); \
+		stop_loss=$$(echo $$strategy_info | cut -d: -f5); \
+		take_profit=$$(echo $$strategy_info | cut -d: -f6); \
+		item="revolut-trader-strategy-$$name"; \
+		if op item get $$item --vault $(OP_VAULT) >/dev/null 2>&1; then \
+			echo "  $$item: exists"; \
+		else \
+			fields="INTERVAL[text]=$$interval MIN_SIGNAL_STRENGTH[text]=$$min_signal ORDER_TYPE[text]=$$order_type"; \
+			if [ -n "$$stop_loss" ]; then fields="$$fields STOP_LOSS_PCT[text]=$$stop_loss"; fi; \
+			if [ -n "$$take_profit" ]; then fields="$$fields TAKE_PROFIT_PCT[text]=$$take_profit"; fi; \
+			op item create --category "Secure Note" --vault $(OP_VAULT) --title $$item $$fields >/dev/null \
+				&& echo "  $$item: created with defaults"; \
+		fi; \
+		op item get $$item --vault $(OP_VAULT) --fields INTERVAL >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "INTERVAL[text]=$$interval" >/dev/null \
+			     && echo "  $$name INTERVAL: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields MIN_SIGNAL_STRENGTH >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "MIN_SIGNAL_STRENGTH[text]=$$min_signal" >/dev/null \
+			     && echo "  $$name MIN_SIGNAL_STRENGTH: placeholder added"; }; \
+		op item get $$item --vault $(OP_VAULT) --fields ORDER_TYPE >/dev/null 2>&1 \
+			|| { op item edit $$item --vault $(OP_VAULT) "ORDER_TYPE[text]=$$order_type" >/dev/null \
+			     && echo "  $$name ORDER_TYPE: placeholder added"; }; \
+		if [ -n "$$stop_loss" ]; then \
+			op item get $$item --vault $(OP_VAULT) --fields STOP_LOSS_PCT >/dev/null 2>&1 \
+				|| { op item edit $$item --vault $(OP_VAULT) "STOP_LOSS_PCT[text]=$$stop_loss" >/dev/null \
+				     && echo "  $$name STOP_LOSS_PCT: placeholder added"; }; \
+		fi; \
+		if [ -n "$$take_profit" ]; then \
+			op item get $$item --vault $(OP_VAULT) --fields TAKE_PROFIT_PCT >/dev/null 2>&1 \
+				|| { op item edit $$item --vault $(OP_VAULT) "TAKE_PROFIT_PCT[text]=$$take_profit" >/dev/null \
+				     && echo "  $$name TAKE_PROFIT_PCT: placeholder added"; }; \
 		fi; \
 		echo ""; \
 	done
@@ -318,9 +456,29 @@ opshow:
 	@echo ""
 	@echo "=== Configuration ($(OP_CONFIG)) ==="
 	@echo "  TRADING_MODE              = (derived: dev/int → paper, prod → live)"
-	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS TELEGRAM_CHAT_ID; do \
+	@for field in RISK_LEVEL BASE_CURRENCY TRADING_PAIRS DEFAULT_STRATEGY INITIAL_CAPITAL MAX_CAPITAL SHUTDOWN_TRAILING_STOP_PCT SHUTDOWN_MAX_WAIT_SECONDS LOG_LEVEL INTERVAL BACKTEST_DAYS BACKTEST_INTERVAL MAKER_FEE_PCT TAKER_FEE_PCT MAX_ORDER_VALUE MIN_ORDER_VALUE TELEGRAM_CHAT_ID; do \
 		value=$$(op item get $(OP_CONFIG) --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
 		printf "  %-25s = %s\n" "$$field" "$$value"; \
+	done
+	@echo ""
+	@echo "=== Risk level configs ==="
+	@for level in conservative moderate aggressive; do \
+		item="revolut-trader-risk-$$level"; \
+		echo "  [$$level]"; \
+		for field in MAX_POSITION_SIZE_PCT MAX_DAILY_LOSS_PCT STOP_LOSS_PCT TAKE_PROFIT_PCT MAX_OPEN_POSITIONS; do \
+			value=$$(op item get $$item --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
+			printf "    %-22s = %s\n" "$$field" "$$value"; \
+		done; \
+	done
+	@echo ""
+	@echo "=== Strategy configs ==="
+	@for name in market_making momentum breakout mean_reversion range_reversion multi_strategy; do \
+		item="revolut-trader-strategy-$$name"; \
+		echo "  [$$name]"; \
+		for field in INTERVAL MIN_SIGNAL_STRENGTH ORDER_TYPE STOP_LOSS_PCT TAKE_PROFIT_PCT SPREAD_THRESHOLD INVENTORY_TARGET FAST_PERIOD SLOW_PERIOD RSI_PERIOD RSI_OVERBOUGHT RSI_OVERSOLD LOOKBACK_PERIOD NUM_STD_DEV MIN_DEVIATION BREAKOUT_THRESHOLD BUY_ZONE SELL_ZONE RSI_CONFIRMATION_OVERSOLD RSI_CONFIRMATION_OVERBOUGHT MIN_RANGE_PCT MIN_CONSENSUS WEIGHT_MOMENTUM WEIGHT_BREAKOUT WEIGHT_MARKET_MAKING WEIGHT_MEAN_REVERSION WEIGHT_RANGE_REVERSION; do \
+			value=$$(op item get $$item --vault $(OP_VAULT) --fields $$field 2>/dev/null) || continue; \
+			printf "    %-32s = %s\n" "$$field" "$$value"; \
+		done; \
 	done
 
 opstatus:

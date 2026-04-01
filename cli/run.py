@@ -27,10 +27,14 @@ async def run_bot(args):
     from src.bot import TradingBot
     from src.config import RiskLevel, StrategyType, settings
 
-    # Parse arguments
-    strategy_type = StrategyType(args.strategy)
-    risk_level = RiskLevel(args.risk)
+    # CLI flags override 1Password settings; fall back to 1Password values when not given.
+    effective_log_level = args.log_level or settings.log_level
+    setup_logging(effective_log_level)
+
+    strategy_type = StrategyType(args.strategy or settings.default_strategy.value)
+    risk_level = RiskLevel(args.risk or settings.risk_level.value)
     trading_pairs = args.pairs.split(",") if args.pairs else None
+    effective_interval = args.interval if args.interval is not None else settings.interval
 
     env = os.environ.get("ENVIRONMENT", "?")
     logger.info("=" * 60)
@@ -40,7 +44,9 @@ async def run_bot(args):
     logger.info(f"Strategy: {strategy_type.value}")
     logger.info(f"Risk Level: {risk_level.value}")
     logger.info(f"Trading Mode: {settings.trading_mode.value} (derived from environment)")
-    interval_label = f"{args.interval}s" if args.interval is not None else "strategy-dependent"
+    interval_label = (
+        f"{effective_interval}s" if effective_interval is not None else "strategy-dependent"
+    )
     logger.info(f"Interval: {interval_label}")
     logger.info("=" * 60)
 
@@ -53,7 +59,7 @@ async def run_bot(args):
 
     try:
         await bot.start()
-        await bot.run_trading_loop(interval=args.interval)
+        await bot.run_trading_loop(interval=effective_interval)
     except KeyboardInterrupt:
         logger.info("\n👋 Shutting down gracefully...")
     except Exception as e:
@@ -103,9 +109,16 @@ Trading mode is derived from environment:
         "--strategy",
         "-s",
         type=str,
-        choices=["market_making", "momentum", "mean_reversion", "multi_strategy"],
-        default="market_making",
-        help="Trading strategy to use (default: market_making)",
+        choices=[
+            "market_making",
+            "momentum",
+            "mean_reversion",
+            "multi_strategy",
+            "breakout",
+            "range_reversion",
+        ],
+        default=None,
+        help="Trading strategy to use (default: DEFAULT_STRATEGY from 1Password config)",
     )
 
     parser.add_argument(
@@ -113,8 +126,8 @@ Trading mode is derived from environment:
         "-r",
         type=str,
         choices=["conservative", "moderate", "aggressive"],
-        default="conservative",
-        help="Risk management level (default: conservative)",
+        default=None,
+        help="Risk management level (default: RISK_LEVEL from 1Password config)",
     )
 
     parser.add_argument(
@@ -142,8 +155,8 @@ Trading mode is derived from environment:
         "-l",
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level (default: INFO)",
+        default=None,
+        help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
 
     args = parser.parse_args()
@@ -156,8 +169,8 @@ Trading mode is derived from environment:
         logger.error("ENVIRONMENT not set. Use --env or export ENVIRONMENT=dev|int|prod")
         sys.exit(1)
 
-    # Setup logging
-    setup_logging(args.log_level)
+    # Bootstrap logging at INFO; run_bot reconfigures once settings are loaded.
+    setup_logging(args.log_level or "INFO")
 
     env = os.environ["ENVIRONMENT"]
     logger.info(f"Environment: {env}")

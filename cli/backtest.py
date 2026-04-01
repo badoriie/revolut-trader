@@ -30,10 +30,16 @@ def setup_logging(log_level: str) -> None:
 
 async def run_backtest(args) -> None:
     """Run backtest with specified configuration."""
-    strategy_type = StrategyType(args.strategy)
-    risk_level = RiskLevel(args.risk)
-    symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
-    initial_capital = Decimal(str(args.capital))
+    # CLI flags override 1Password settings; fall back to 1Password values when not given.
+    strategy_type = StrategyType(args.strategy or settings.default_strategy.value)
+    risk_level = RiskLevel(args.risk or settings.risk_level.value)
+    raw_pairs = args.pairs if args.pairs else ",".join(settings.trading_pairs)
+    symbols = raw_pairs.split(",")
+    initial_capital = Decimal(
+        str(args.capital if args.capital is not None else settings.paper_initial_capital)
+    )
+    effective_days = args.days if args.days is not None else settings.backtest_days
+    effective_interval = args.interval if args.interval is not None else settings.backtest_interval
 
     api_client = create_api_client(settings.environment)
     await api_client.initialize()
@@ -48,8 +54,8 @@ async def run_backtest(args) -> None:
     try:
         results = await engine.run(
             symbols=symbols,
-            days=args.days,
-            interval=args.interval,
+            days=effective_days,
+            interval=effective_interval,
         )
 
         results.print_summary()
@@ -74,8 +80,8 @@ async def run_backtest(args) -> None:
             strategy=strategy_type.value,
             risk_level=risk_level.value,
             symbols=symbols,
-            days=args.days,
-            interval=args.interval,
+            days=effective_days,
+            interval=str(effective_interval),
             initial_capital=initial_capital,
             results=results_dict,
         )
@@ -111,57 +117,57 @@ Examples:
             "breakout",
             "range_reversion",
         ],
-        default="market_making",
-        help="Trading strategy to backtest (default: market_making)",
+        default=None,
+        help="Trading strategy to backtest (default: DEFAULT_STRATEGY from 1Password config)",
     )
     parser.add_argument(
         "--risk",
         "-r",
         type=str,
         choices=["conservative", "moderate", "aggressive"],
-        default="conservative",
-        help="Risk management level (default: conservative)",
+        default=None,
+        help="Risk management level (default: RISK_LEVEL from 1Password config)",
     )
     parser.add_argument(
         "--pairs",
         "-p",
         type=str,
-        default="BTC-EUR,ETH-EUR",
-        help="Comma-separated trading pairs (default: BTC-EUR,ETH-EUR)",
+        default=None,
+        help="Comma-separated trading pairs (default: TRADING_PAIRS from 1Password config)",
     )
     parser.add_argument(
         "--days",
         "-d",
         type=int,
-        default=30,
-        help="Number of days of historical data (default: 30)",
+        default=None,
+        help="Number of days of historical data (default: BACKTEST_DAYS from 1Password config, or 30)",
     )
     parser.add_argument(
         "--interval",
         "-i",
         type=int,
-        default=60,
-        choices=[1, 5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60, use 1 for highest granularity)",
+        default=None,
+        choices=[1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320],
+        help="Candle interval in minutes (default: BACKTEST_INTERVAL from 1Password config, or 60)",
     )
     parser.add_argument(
         "--capital",
         "-c",
         type=float,
-        default=10000.0,
-        help="Initial capital in EUR (default: 10000)",
+        default=None,
+        help="Initial capital in EUR (default: INITIAL_CAPITAL from 1Password config)",
     )
     parser.add_argument(
         "--log-level",
         "-l",
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level (default: INFO)",
+        default=None,
+        help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
 
     args = parser.parse_args()
-    setup_logging(args.log_level)
+    setup_logging(args.log_level or settings.log_level)
 
     try:
         asyncio.run(run_backtest(args))

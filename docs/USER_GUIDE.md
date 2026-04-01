@@ -144,13 +144,21 @@ make opconfig-set KEY=<key> VALUE=<value> ENV=<env>
 
 ### Optional parameters
 
-| Key                          | Default                      | Example         | Notes                                                                                                   |
-| ---------------------------- | ---------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
-| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`          | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with |
-| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`           | On shutdown, profitable positions wait for a trailing stop of this % before closing                     |
-| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`           | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position  |
-| `TELEGRAM_BOT_TOKEN`         | *(none — notifications off)* | `123:ABCdef...` | Telegram Bot API token from @BotFather — enables trade and status notifications                         |
-| `TELEGRAM_CHAT_ID`           | *(none — notifications off)* | `-100123456789` | Telegram chat or channel ID to send notifications to (both token and ID must be set)                    |
+| Key                          | Default                      | Example         | Notes                                                                                                    |
+| ---------------------------- | ---------------------------- | --------------- | -------------------------------------------------------------------------------------------------------- |
+| `MAX_CAPITAL`                | *(none — uses full balance)* | `5000`          | Caps the amount used for trading. Useful if your account holds more than you want the bot to trade with  |
+| `SHUTDOWN_TRAILING_STOP_PCT` | *(none — close immediately)* | `0.5`           | On shutdown, profitable positions wait for a trailing stop of this % before closing                      |
+| `SHUTDOWN_MAX_WAIT_SECONDS`  | `120`                        | `180`           | Hard timeout; if the trailing stop has not triggered after this many seconds, force-close the position   |
+| `LOG_LEVEL`                  | `INFO`                       | `DEBUG`         | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, or `ERROR`. CLI `--log-level` overrides this              |
+| `INTERVAL`                   | *(strategy-dependent)*       | `30`            | Trading loop interval in seconds. Overrides the per-strategy default. CLI `--interval` overrides this    |
+| `BACKTEST_DAYS`              | `30`                         | `90`            | Default look-back window for backtests. CLI `--days` overrides this                                      |
+| `BACKTEST_INTERVAL`          | `60`                         | `1440`          | Default candle width in minutes for backtests (1/5/15/30/60/240/1440/…). CLI `--interval` overrides this |
+| `MAKER_FEE_PCT`              | `0.0`                        | `0.0`           | Maker fee rate (LIMIT orders). Update this if Revolut changes its fee schedule                           |
+| `TAKER_FEE_PCT`              | `0.0009`                     | `0.0009`        | Taker fee rate (MARKET orders). Update this if Revolut changes its fee schedule                          |
+| `MAX_ORDER_VALUE`            | `10000`                      | `5000`          | Absolute maximum order value in base currency (EUR). Prevents accidental oversized orders                |
+| `MIN_ORDER_VALUE`            | `10`                         | `25`            | Minimum order value in base currency (EUR). Avoids submitting dust trades                                |
+| `TELEGRAM_BOT_TOKEN`         | *(none — notifications off)* | `123:ABCdef...` | Telegram Bot API token from @BotFather — enables trade and status notifications                          |
+| `TELEGRAM_CHAT_ID`           | *(none — notifications off)* | `-100123456789` | Telegram chat or channel ID to send notifications to (both token and ID must be set)                     |
 
 ### Example: full configuration for paper trading
 
@@ -211,6 +219,25 @@ These are applied automatically on top of the risk-level baseline:
 | range_reversion | 1.0%                    | 1.5%                    |
 | multi_strategy  | *(risk-level baseline)* | *(risk-level baseline)* |
 
+### Internal strategy calibration (advanced)
+
+Each strategy's 1Password item (`revolut-trader-strategy-{name}`) accepts optional internal tuning fields. When absent, the strategy uses its own built-in defaults. These are for advanced users who want to fine-tune indicator periods and thresholds without changing code.
+
+| Strategy          | Tunable fields                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `momentum`        | `FAST_PERIOD`, `SLOW_PERIOD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`                                                     |
+| `market_making`   | `SPREAD_THRESHOLD`, `INVENTORY_TARGET`                                                                                           |
+| `mean_reversion`  | `LOOKBACK_PERIOD`, `NUM_STD_DEV`, `MIN_DEVIATION`                                                                                |
+| `breakout`        | `LOOKBACK_PERIOD`, `BREAKOUT_THRESHOLD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`                                          |
+| `range_reversion` | `BUY_ZONE`, `SELL_ZONE`, `RSI_PERIOD`, `RSI_CONFIRMATION_OVERSOLD`, `RSI_CONFIRMATION_OVERBOUGHT`, `MIN_RANGE_PCT`               |
+| `multi_strategy`  | `MIN_CONSENSUS`, `WEIGHT_MOMENTUM`, `WEIGHT_BREAKOUT`, `WEIGHT_MARKET_MAKING`, `WEIGHT_MEAN_REVERSION`, `WEIGHT_RANGE_REVERSION` |
+
+```bash
+# Example: shorten the momentum EMA periods for faster signals
+op item edit revolut-trader-strategy-momentum --vault revolut-trader \
+  FAST_PERIOD[text]="8" SLOW_PERIOD[text]="20"
+```
+
 ______________________________________________________________________
 
 ## 6. Choosing a Risk Level
@@ -224,6 +251,28 @@ The risk level controls how large each position is relative to your portfolio an
 | **aggressive**   | 5% of portfolio   | 10% per day    | 8                  |
 
 **Recommendation:** Start with `conservative`, especially in paper-trading mode. Move to `moderate` only after observing stable performance across multiple backtesting runs and a full week of paper trading.
+
+### Customising risk level parameters
+
+Each risk level's parameters are stored in a dedicated, environment-agnostic 1Password item (`revolut-trader-risk-conservative`, `revolut-trader-risk-moderate`, `revolut-trader-risk-aggressive`). You can tune any of the following fields without touching code:
+
+| Field                   | conservative | moderate | aggressive | Notes                               |
+| ----------------------- | ------------ | -------- | ---------- | ----------------------------------- |
+| `MAX_POSITION_SIZE_PCT` | `1.5`        | `3.0`    | `5.0`      | Max position as % of portfolio      |
+| `MAX_DAILY_LOSS_PCT`    | `3.0`        | `5.0`    | `10.0`     | Daily loss limit as % of portfolio  |
+| `STOP_LOSS_PCT`         | `1.5`        | `2.5`    | `4.0`      | Stop-loss percentage per position   |
+| `TAKE_PROFIT_PCT`       | `2.5`        | `4.0`    | `7.0`      | Take-profit percentage per position |
+| `MAX_OPEN_POSITIONS`    | `3`          | `5`      | `8`        | Maximum concurrent open positions   |
+
+```bash
+# Example: tighten the conservative stop-loss to 1%
+make opconfig-set KEY=STOP_LOSS_PCT VALUE=1.0 ENV=prod   # targets revolut-trader-risk-conservative
+
+# Or with the revt CLI:
+revt config set STOP_LOSS_PCT 1.0 --env prod
+```
+
+> These items are shared across environments — you are tuning the risk profile itself, not an environment-specific setting.
 
 ______________________________________________________________________
 

@@ -68,7 +68,7 @@ ______________________________________________________________________
 
 ## Stored Items
 
-The bot uses two 1Password items per environment in the `revolut-trader` vault.
+The bot uses two 1Password items per environment plus shared risk-level items in the `revolut-trader` vault.
 
 ### Credentials (`revolut-trader-credentials-{env}`)
 
@@ -83,16 +83,24 @@ The bot uses two 1Password items per environment in the `revolut-trader` vault.
 
 ### Trading Configuration (`revolut-trader-config-{env}`)
 
-| Field                        | Type | Default           | dev / int | prod       | Valid Values                                                                                          |
-| ---------------------------- | ---- | ----------------- | --------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| `DEFAULT_STRATEGY`           | text | `market_making`   | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion`        |
-| `RISK_LEVEL`                 | text | `conservative`    | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                              |
-| `BASE_CURRENCY`              | text | `EUR`             | Required  | Required   | `EUR`, `USD`, `GBP`                                                                                   |
-| `TRADING_PAIRS`              | text | `BTC-EUR,ETH-EUR` | Required  | Required   | Comma-separated symbols                                                                               |
-| `INITIAL_CAPITAL`            | text | `10000`           | Required  | Not needed | Any positive number                                                                                   |
-| `MAX_CAPITAL`                | text | _(not set)_       | Optional  | Optional   | Any positive number — caps how much cash the bot can use regardless of account balance                |
-| `SHUTDOWN_TRAILING_STOP_PCT` | text | _(not set)_       | Optional  | Optional   | e.g. `0.5` for 0.5% — trailing stop % for profitable positions on shutdown; omit to close immediately |
-| `SHUTDOWN_MAX_WAIT_SECONDS`  | text | `120`             | Optional  | Optional   | Hard timeout before force-closing a profitable position whose trailing stop has not triggered         |
+| Field                        | Type | Default              | dev / int | prod       | Valid Values                                                                                           |
+| ---------------------------- | ---- | -------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| `DEFAULT_STRATEGY`           | text | `market_making`      | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion`         |
+| `RISK_LEVEL`                 | text | `conservative`       | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                               |
+| `BASE_CURRENCY`              | text | `EUR`                | Required  | Required   | `EUR`, `USD`, `GBP`                                                                                    |
+| `TRADING_PAIRS`              | text | `BTC-EUR,ETH-EUR`    | Required  | Required   | Comma-separated symbols                                                                                |
+| `INITIAL_CAPITAL`            | text | `10000`              | Required  | Not needed | Any positive number                                                                                    |
+| `MAX_CAPITAL`                | text | _(not set)_          | Optional  | Optional   | Any positive number — caps how much cash the bot can use regardless of account balance                 |
+| `SHUTDOWN_TRAILING_STOP_PCT` | text | _(not set)_          | Optional  | Optional   | e.g. `0.5` for 0.5% — trailing stop % for profitable positions on shutdown; omit to close immediately  |
+| `SHUTDOWN_MAX_WAIT_SECONDS`  | text | `120`                | Optional  | Optional   | Hard timeout before force-closing a profitable position whose trailing stop has not triggered          |
+| `LOG_LEVEL`                  | text | `INFO`               | Optional  | Optional   | `DEBUG`, `INFO`, `WARNING`, or `ERROR` — CLI `--log-level` overrides this per-run                      |
+| `INTERVAL`                   | text | _(strategy default)_ | Optional  | Optional   | Trading loop interval in seconds — overrides the per-strategy default; CLI `--interval` overrides this |
+| `BACKTEST_DAYS`              | text | `30`                 | Optional  | Optional   | Default look-back window in days for all backtest commands; CLI `--days` overrides this                |
+| `BACKTEST_INTERVAL`          | text | `60`                 | Optional  | Optional   | Default candle width in minutes for backtests (must be a valid choice); CLI `--interval` overrides     |
+| `MAKER_FEE_PCT`              | text | `0.0`                | Optional  | Optional   | Maker fee rate applied to LIMIT orders — update when Revolut changes its fee schedule                  |
+| `TAKER_FEE_PCT`              | text | `0.0009`             | Optional  | Optional   | Taker fee rate applied to MARKET orders (0.09% default) — update when Revolut changes its fee schedule |
+| `MAX_ORDER_VALUE`            | text | `10000`              | Optional  | Optional   | Absolute max order value in base currency (EUR) — prevents accidental oversized orders                 |
+| `MIN_ORDER_VALUE`            | text | `10`                 | Optional  | Optional   | Minimum order value in base currency (EUR) — filters out dust trades                                   |
 
 > **TRADING_MODE is not stored in 1Password.** It is derived from the environment: dev/int → paper, prod → live. This is intentionally non-configurable.
 >
@@ -103,6 +111,32 @@ If any required field is missing, the bot refuses to start with an actionable er
 ```
 RuntimeError: RISK_LEVEL not found in 1Password config.
 Run: make opconfig-init
+```
+
+### Risk Level Configuration (`revolut-trader-risk-{level}`)
+
+Three environment-agnostic items — one per risk level — hold the numerical parameters for each profile. These items are shared across all environments (dev / int / prod), because the risk profile is a property of the user's strategy, not the deployment environment.
+
+Items: `revolut-trader-risk-conservative`, `revolut-trader-risk-moderate`, `revolut-trader-risk-aggressive`
+
+| Field                   | Type | conservative | moderate | aggressive | Notes                              |
+| ----------------------- | ---- | ------------ | -------- | ---------- | ---------------------------------- |
+| `MAX_POSITION_SIZE_PCT` | text | `1.5`        | `3.0`    | `5.0`      | Max position as % of portfolio     |
+| `MAX_DAILY_LOSS_PCT`    | text | `3.0`        | `5.0`    | `10.0`     | Daily loss limit as % of portfolio |
+| `STOP_LOSS_PCT`         | text | `1.5`        | `2.5`    | `4.0`      | Stop-loss % per position           |
+| `TAKE_PROFIT_PCT`       | text | `2.5`        | `4.0`    | `7.0`      | Take-profit % per position         |
+| `MAX_OPEN_POSITIONS`    | text | `3`          | `5`      | `8`        | Maximum concurrent open positions  |
+
+`make setup` creates all three items with the defaults shown above. To customise:
+
+```bash
+# Tighten the conservative stop-loss to 1%
+op item edit revolut-trader-risk-conservative --vault revolut-trader \
+  STOP_LOSS_PCT[text]="1.0"
+
+# Increase max open positions for moderate risk
+op item edit revolut-trader-risk-moderate --vault revolut-trader \
+  MAX_OPEN_POSITIONS[text]="7"
 ```
 
 ______________________________________________________________________

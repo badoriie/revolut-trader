@@ -185,10 +185,17 @@ async def run_compare(args) -> None:
     Args:
         args: Parsed CLI arguments.
     """
+    # CLI flags override 1Password settings; fall back to 1Password values when not given.
     strategies = args.strategies.split(",") if args.strategies else ALL_STRATEGIES
-    risk_levels = args.risk_levels.split(",") if args.risk_levels else [args.risk]
-    symbols = args.pairs.split(",") if args.pairs else ["BTC-EUR", "ETH-EUR"]
-    initial_capital = Decimal(str(args.capital))
+    effective_risk = args.risk or settings.risk_level.value
+    risk_levels = args.risk_levels.split(",") if args.risk_levels else [effective_risk]
+    raw_pairs = args.pairs if args.pairs else ",".join(settings.trading_pairs)
+    symbols = raw_pairs.split(",")
+    initial_capital = Decimal(
+        str(args.capital if args.capital is not None else settings.paper_initial_capital)
+    )
+    effective_days = args.days if args.days is not None else settings.backtest_days
+    effective_interval = args.interval if args.interval is not None else settings.backtest_interval
 
     api_client = create_api_client(settings.environment)
     await api_client.initialize()
@@ -220,8 +227,8 @@ async def run_compare(args) -> None:
 
                 results = await engine.run(
                     symbols=symbols,
-                    days=args.days,
-                    interval=args.interval,
+                    days=effective_days,
+                    interval=effective_interval,
                 )
 
                 # Persist to DB
@@ -230,8 +237,8 @@ async def run_compare(args) -> None:
                     strategy=strategy_str,
                     risk_level=risk_level_str,
                     symbols=symbols,
-                    days=args.days,
-                    interval=args.interval,
+                    days=effective_days,
+                    interval=effective_interval,
                     initial_capital=initial_capital,
                     results=results,
                 )
@@ -294,8 +301,8 @@ Examples:
         "-r",
         type=str,
         choices=ALL_RISK_LEVELS,
-        default="conservative",
-        help="Risk level for all runs (default: conservative). Use --risk-levels to test multiple.",
+        default=None,
+        help="Risk level for all runs (default: RISK_LEVEL from 1Password config). Use --risk-levels to test multiple.",
     )
     parser.add_argument(
         "--risk-levels",
@@ -311,42 +318,42 @@ Examples:
         "--pairs",
         "-p",
         type=str,
-        default="BTC-EUR,ETH-EUR",
-        help="Comma-separated trading pairs (default: BTC-EUR,ETH-EUR)",
+        default=None,
+        help="Comma-separated trading pairs (default: TRADING_PAIRS from 1Password config)",
     )
     parser.add_argument(
         "--days",
         "-d",
         type=int,
-        default=30,
-        help="Days of historical data (default: 30)",
+        default=None,
+        help="Days of historical data (default: BACKTEST_DAYS from 1Password config, or 30)",
     )
     parser.add_argument(
         "--interval",
         "-i",
         type=int,
-        default=60,
+        default=None,
         choices=[1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320],
-        help="Candle interval in minutes (default: 60)",
+        help="Candle interval in minutes (default: BACKTEST_INTERVAL from 1Password config, or 60)",
     )
     parser.add_argument(
         "--capital",
         "-c",
         type=float,
-        default=10000.0,
-        help="Initial capital in EUR (default: 10000)",
+        default=None,
+        help="Initial capital in EUR (default: INITIAL_CAPITAL from 1Password config)",
     )
     parser.add_argument(
         "--log-level",
         "-l",
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="WARNING",
-        help="Logging level (default: WARNING to keep output clean)",
+        default=None,
+        help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
 
     args = parser.parse_args()
-    setup_logging(args.log_level)
+    setup_logging(args.log_level or settings.log_level)
 
     try:
         asyncio.run(run_compare(args))

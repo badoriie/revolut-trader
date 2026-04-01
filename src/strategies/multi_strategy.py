@@ -25,6 +25,11 @@ class MultiStrategy(BaseStrategy):
 
     A consensus signal is produced only when the weighted score of the
     winning direction meets or exceeds ``min_consensus``.
+
+    All tunable parameters (weights, min_consensus) are loaded from the
+    ``revolut-trader-strategy-multi_strategy`` 1Password item at startup so
+    users can calibrate without changing code.  When a field is absent from
+    1Password the constructor default is used.
     """
 
     def __init__(
@@ -34,9 +39,18 @@ class MultiStrategy(BaseStrategy):
     ):
         super().__init__("Multi-Strategy")
 
-        # Default weights — momentum and breakout lead; range reversion is
-        # a lighter complement since its signal frequency is lower.
-        self.weights = weights or {
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("multi_strategy")
+
+        effective_min_consensus = (
+            scfg.min_consensus if scfg and scfg.min_consensus is not None else min_consensus
+        )
+        self.min_consensus = effective_min_consensus
+
+        # Build weights: 1Password overrides constructor argument which overrides defaults.
+        default_weights = weights or {
             "momentum": 0.30,
             "breakout": 0.25,
             "market_making": 0.20,
@@ -44,7 +58,20 @@ class MultiStrategy(BaseStrategy):
             "range_reversion": 0.10,
         }
 
-        self.min_consensus = min_consensus
+        # Apply per-weight overrides from 1Password when present.
+        if scfg:
+            if scfg.weight_momentum is not None:
+                default_weights["momentum"] = scfg.weight_momentum
+            if scfg.weight_breakout is not None:
+                default_weights["breakout"] = scfg.weight_breakout
+            if scfg.weight_market_making is not None:
+                default_weights["market_making"] = scfg.weight_market_making
+            if scfg.weight_mean_reversion is not None:
+                default_weights["mean_reversion"] = scfg.weight_mean_reversion
+            if scfg.weight_range_reversion is not None:
+                default_weights["range_reversion"] = scfg.weight_range_reversion
+
+        self.weights = default_weights
 
         # Initialize sub-strategies
         self.strategies: dict[str, BaseStrategy] = {

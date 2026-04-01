@@ -74,6 +74,7 @@ class TelegramNotifier:
                     },
                 )
                 response.raise_for_status()
+            logger.info("Telegram message sent ({} chars)", len(text))
         except Exception as exc:
             logger.warning(f"Telegram notification failed: {exc}")
 
@@ -227,6 +228,7 @@ class TelegramNotifier:
                     files={"document": (filename, document, "application/pdf")},
                 )
                 response.raise_for_status()
+            logger.info("Telegram document sent: {} ({} bytes)", filename, len(document))
         except Exception as exc:
             logger.warning(f"Telegram document upload failed: {exc}")
 
@@ -313,7 +315,10 @@ class TelegramNotifier:
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("result", []) if data.get("ok") else []
+                updates = data.get("result", []) if data.get("ok") else []
+                if updates:
+                    logger.info("Telegram: received {} update(s)", len(updates))
+                return updates
         except TimeoutError:
             logger.warning(f"Telegram getUpdates timed out after {self._LONG_POLL_TIMEOUT + 15}s")
             return []
@@ -359,4 +364,9 @@ class TelegramNotifier:
                 # Strip optional @BotName suffix (e.g. /status@MyBot → status)
                 command = parts[0].lstrip("/").split("@")[0].lower()
                 args = parts[1:]
+                logger.info(
+                    "Telegram command received: /{}{}",
+                    command,
+                    f" {' '.join(args)}" if args else "",
+                )
                 await command_handler(command, args)
