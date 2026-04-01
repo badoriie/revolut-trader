@@ -55,8 +55,13 @@ class TelegramControlPlane:
         await self.notifier.reply("🤖 Telegram Control Plane started. Type /help for commands.")
         await self.notifier.start_polling(self._handle_command, self._stop_event)
 
+    async def shutdown_async(self) -> None:
+        """Send shutdown notification and signal the polling loop to exit."""
+        await self.notifier.reply("🔴 Telegram Control Plane is shutting down...")
+        self._stop_event.set()
+
     def shutdown(self) -> None:
-        """Signal the polling loop to exit."""
+        """Signal the polling loop to exit (synchronous wrapper)."""
         self._stop_event.set()
 
     # ------------------------------------------------------------------
@@ -77,7 +82,7 @@ class TelegramControlPlane:
             "stop": self._cmd_stop,
             "status": self._cmd_status,
             "balance": self._cmd_balance,
-            "report": lambda: self._cmd_report(int(args[0]) if args else 30),
+            "report": lambda: self._cmd_report(int(args[0]) if args and args[0].isdigit() else 30),
         }
         handler = dispatch.get(command)
         if handler is None:
@@ -94,12 +99,12 @@ class TelegramControlPlane:
     async def _cmd_help(self) -> None:
         """Send the list of available commands."""
         msg = (
-            "🤖 *Revolut Trader Control Plane*\n\n"
-            "/run \\[strategy\\] \\[risk\\] \\[pairs,...\\] — start the trading bot\n"
+            "🤖 <b>Revolut Trader Control Plane</b>\n\n"
+            "/run [strategy] [risk] [pairs,...] — start the trading bot\n"
             "/stop — stop the trading bot\n"
-            "/status — bot status and P&L\n"
+            "/status — bot status and P&amp;L\n"
             "/balance — cash balance and positions\n"
-            "/report \\[days\\] — analytics report \\(default 30\\)\n"
+            "/report [days] — analytics report (default 30)\n"
             "/help — this message"
         )
         await self.notifier.reply(msg)
@@ -293,7 +298,10 @@ def run_control_plane() -> None:
 
     def _handle_signal(signum: int, frame: object) -> None:
         logger.info(f"Received signal {signum}, shutting down…")
-        plane.shutdown()
+        # Schedule async shutdown to send Telegram notification
+        task = loop.create_task(plane.shutdown_async())
+        # Store reference to avoid warning (task will complete during loop shutdown)
+        _ = task
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)

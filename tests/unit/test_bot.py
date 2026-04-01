@@ -357,6 +357,25 @@ class TestStop:
         await bot.stop()
         mock_persistence.end_session.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_stop_sends_telegram_shutdown_notification(self, bot, mock_persistence):
+        """Bot should send a Telegram notification before stopping the polling loop."""
+        from unittest.mock import AsyncMock
+
+        bot.is_running = True
+        bot.api_client = None
+        bot.notifier = AsyncMock()
+        bot._telegram_stop_event = None
+        bot._telegram_polling_task = None
+
+        await bot.stop()
+
+        # Verify shutdown notification was sent
+        bot.notifier.reply.assert_called_once()
+        call_args = bot.notifier.reply.call_args[0][0]
+        assert "shutting down" in call_args.lower()
+        assert "🔴" in call_args
+
 
 class TestRunTradingLoop:
     @pytest.mark.asyncio

@@ -633,10 +633,12 @@ class TestStartPolling:
         assert dispatched == []
 
     async def test_ignores_non_command_messages(self):
+        """Non-command text should get a reply but not dispatch to handler."""
         import asyncio
 
         updates = [{"update_id": 3, "message": {"text": "hello world", "chat": {"id": CHAT_ID}}}]
         dispatched: list[str] = []
+        replied: list[str] = []
 
         async def handler(cmd: str, args: list[str]) -> None:
             dispatched.append(cmd)
@@ -651,11 +653,20 @@ class TestStartPolling:
             stop.set()
             return []
 
+        async def fake_reply(text: str) -> None:
+            replied.append(text)
+
         notifier = TelegramNotifier(token=TOKEN, chat_id=CHAT_ID)
-        with patch.object(notifier, "get_updates", side_effect=fake_get_updates):
+        with (
+            patch.object(notifier, "get_updates", side_effect=fake_get_updates),
+            patch.object(notifier, "reply", side_effect=fake_reply),
+        ):
             await notifier.start_polling(handler, stop)
 
-        assert dispatched == []
+        assert dispatched == []  # No command dispatched
+        assert len(replied) == 1  # But a reply was sent
+        assert "only responds to commands" in replied[0]
+        assert "/help" in replied[0]
 
     async def test_increments_offset_after_each_update(self):
         import asyncio

@@ -297,9 +297,11 @@ class TelegramNotifier:
             List of raw update dicts, or ``[]`` on failure.
         """
         try:
+            # Configure httpx timeout to be longer than Telegram's long-poll timeout
+            timeout = httpx.Timeout(self._LONG_POLL_TIMEOUT + 10.0, connect=5.0)
             async with (
-                httpx.AsyncClient() as client,
-                asyncio.timeout(self._LONG_POLL_TIMEOUT + 5),
+                httpx.AsyncClient(timeout=timeout) as client,
+                asyncio.timeout(self._LONG_POLL_TIMEOUT + 15),
             ):
                 response = await client.get(
                     self._get_updates_url,
@@ -313,10 +315,10 @@ class TelegramNotifier:
                 data = response.json()
                 return data.get("result", []) if data.get("ok") else []
         except TimeoutError:
-            logger.warning(f"Telegram getUpdates timed out after {self._LONG_POLL_TIMEOUT + 5}s")
+            logger.warning(f"Telegram getUpdates timed out after {self._LONG_POLL_TIMEOUT + 15}s")
             return []
         except Exception as exc:
-            logger.warning(f"Telegram getUpdates failed: {exc}")
+            logger.warning(f"Telegram getUpdates failed: {exc!r}", exc_info=True)
             return []
 
     async def start_polling(
@@ -347,6 +349,11 @@ class TelegramNotifier:
                     continue  # security: ignore messages from other chats
                 text = message.get("text", "")
                 if not text.startswith("/"):
+                    # Inform user that only commands are accepted
+                    await self.reply(
+                        "❌ This bot only responds to commands.\n"
+                        "Type /help to see available commands."
+                    )
                     continue
                 parts = text.split()
                 # Strip optional @BotName suffix (e.g. /status@MyBot → status)

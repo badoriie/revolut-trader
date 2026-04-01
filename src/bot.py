@@ -25,6 +25,36 @@ from src.strategies.range_reversion import RangeReversionStrategy
 from src.utils.db_persistence import DatabasePersistence
 from src.utils.telegram import TelegramNotifier
 
+
+def _setup_database_logging(persistence: DatabasePersistence, session_id: int | None = None) -> int:
+    """Configure loguru to save WARNING+ logs to the encrypted database.
+
+    Returns the sink_id so it can be removed later.
+
+    Args:
+        persistence: Database persistence instance.
+        session_id: Optional trading session ID to associate with logs.
+
+    Returns:
+        The loguru sink ID (use logger.remove(sink_id) to stop).
+    """
+
+    def database_sink(message: object) -> None:
+        """Loguru sink that persists WARNING+ logs to the database."""
+        record = message.record  # type: ignore[attr-defined]
+        # Only save WARNING, ERROR, and CRITICAL to avoid filling the database
+        if record["level"].no >= 30:  # WARNING=30, ERROR=40, CRITICAL=50
+            persistence.save_log_entry(
+                level=record["level"].name,
+                message=record["message"],
+                module=record["name"],
+                session_id=session_id,
+            )
+
+    # Add database sink for WARNING+ logs
+    return logger.add(database_sink, level="WARNING", format="{message}")
+
+
 # Recommended polling interval per strategy — balances signal freshness against API cost.
 # Market-making and breakout react to order-book changes in seconds; mean-reversion and
 # range-reversion operate on slower statistical drift.  Override with --interval if needed.
@@ -83,6 +113,7 @@ class TradingBot:
         self._started_at: datetime | None = None
         self._telegram_stop_event: asyncio.Event | None = None
         self._telegram_polling_task: asyncio.Task[None] | None = None
+        self._db_log_sink_id: int | None = None  # loguru sink ID for database logging
         # Use deque with maxlen to prevent unbounded memory growth
         # Keeps last 1000 snapshots (~16 hours at 1min intervals, or ~7 days at 10min intervals)
         self.portfolio_snapshots: deque[PortfolioSnapshot] = deque(maxlen=1000)
@@ -169,6 +200,12 @@ class TradingBot:
             initial_balance=self.cash_balance,
         )
         logger.info(f"Trading session started: {self.current_session_id}")
+
+        # Enable database logging for WARNING+ messages
+        self._db_log_sink_id = _setup_database_logging(
+            self.persistence, session_id=self.current_session_id
+        )
+        logger.info("Database logging enabled for WARNING+ messages")
 
         # Initialize API client (mock for dev, real for int/prod)
         self.api_client = create_api_client(settings.environment)
@@ -304,6 +341,10 @@ class TradingBot:
         logger.info("Please wait — cancelling orders and closing all positions before exit...")
         self.is_running = False
 
+        # Notify via Telegram before shutting down the polling loop
+        if self.notifier:
+            await self.notifier.reply("🔴 Trading bot is shutting down...")
+
         # Stop Telegram command listener before shutdown notifications
         if self._telegram_stop_event:
             self._telegram_stop_event.set()
@@ -312,6 +353,11 @@ class TradingBot:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._telegram_polling_task
             self._telegram_polling_task = None
+
+        # Remove database logging sink
+        if self._db_log_sink_id is not None:
+            logger.remove(self._db_log_sink_id)
+            self._db_log_sink_id = None
 
         # Graceful shutdown: cancel orders, close ALL positions.
         # Profitable positions wait for a trailing stop (if configured) before closing.

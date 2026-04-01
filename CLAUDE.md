@@ -49,6 +49,9 @@ make backtest-matrix         # all strategies × all risk levels matrix
 make db-backtests            # view stored results (uses ENV)
 make db-export-csv           # export results to CSV
 
+# Logs (decrypted from database)
+make logs                    # view recent WARNING+ logs (LIMIT=50 LEVEL=... SESSION=...)
+
 # Database (per environment: data/dev.db, data/int.db, data/prod.db)
 make db                      # show database overview (ENV=dev)
 make db-stats                # show database statistics
@@ -59,8 +62,7 @@ make db-report               # comprehensive analytics report with charts (DAYS=
 
 # API utilities (use ENV to select API keys)
 make api-test ENV=int
-make api-balance ENV=int
-make api-ticker SYMBOL=BTC-EUR ENV=int
+make api-ready ENV=int       # check API permissions (view + trade)
 
 # 1Password / credential management (per environment)
 make setup                   # first-time setup: creates items for dev/int/prod
@@ -158,7 +160,7 @@ revt db encrypt-status
 
 **Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is derived from environment (not stored in 1Password). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode (dev/int). `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never trades with more than this amount (e.g., account holds 50,000 EUR but MAX_CAPITAL=5,000 → bot uses 5,000). `SHUTDOWN_TRAILING_STOP_PCT` is optional — when set (e.g., `0.5` for 0.5%), profitable positions on shutdown wait for a trailing stop before closing; when absent, profitable positions are closed immediately. `SHUTDOWN_MAX_WAIT_SECONDS` is optional — hard timeout (default 120s) before force-closing a profitable position whose trailing stop has not triggered. Config fails fast with actionable error messages if 1Password fields are missing.
 
-**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. Use `make db-export-csv ENV=prod` for on-demand exports.
+**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. WARNING+ logs are automatically persisted to the database via a loguru sink (`_setup_database_logging` in `src/bot.py`); view with `make logs`. Use `make db-export-csv ENV=prod` for on-demand exports.
 
 **Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
 
@@ -184,7 +186,7 @@ revt db encrypt-status
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
 
-**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions), `telegram_control.py` (always-on Telegram Control Plane).
+**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions), `telegram_control.py` (always-on Telegram Control Plane), `view_logs.py` (view decrypted WARNING+ logs from the database).
 
 **Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols. When Telegram is configured, sends the report as a PDF file (via `sendDocument`) if `fpdf2` is installed (`--extra analytics`); falls back to a compact text summary (`notify_report_ready`) when fpdf2 is absent.
 
@@ -377,5 +379,6 @@ Claude Code must handle this proactively without being asked.
 | `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
 | `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
 | `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
+| `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
 | `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |

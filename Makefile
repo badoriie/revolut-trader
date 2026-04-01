@@ -1,4 +1,4 @@
-.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run telegram backtest backtest-hf backtest-compare backtest-matrix logs logs-follow ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test api-balance api-ticker api-tickers api-all-tickers api-currencies api-currency-pairs api-last-public-trades api-order-book api-candles api-open-orders api-historical-orders api-trades api-public-trades api-order telegram-test
+.PHONY: help setup install clean deep-clean test lint format typecheck security check pre-commit pre-commit-install run telegram backtest backtest-hf backtest-compare backtest-matrix logs ops opshow opstatus opdelete opconfig-init opconfig-set opconfig-show opconfig-delete backup restore db db-stats db-analytics db-backtests db-export db-export-csv db-encrypt-setup db-encrypt-status db-report api-ready api-test telegram-test
 
 # ============================================================================
 # Environment — auto-detected from git context, or explicit override
@@ -63,22 +63,8 @@ help:
 	@echo "  make backtest-matrix   - All strategies x all risk levels matrix"
 	@echo ""
 	@echo "API Testing (defaults to int — use ENV=prod for production):"
-	@echo "  make api-test                             - Test authenticated connection"
-	@echo "  make api-ready                            - Check API permissions (view + trade)"
-	@echo "  make api-balance                          - Account balances"
-	@echo "  make api-ticker SYMBOL=BTC-EUR            - Single ticker (via order book)"
-	@echo "  make api-tickers SYMBOLS=BTC-EUR          - Multiple tickers"
-	@echo "  make api-all-tickers                      - All pairs (GET /tickers)"
-	@echo "  make api-currencies                       - All currencies"
-	@echo "  make api-currency-pairs                   - All pairs config"
-	@echo "  make api-last-public-trades               - Last 100 public trades"
-	@echo "  make api-order-book SYMBOL=BTC-EUR        - Order book snapshot"
-	@echo "  make api-candles SYMBOL=BTC-EUR           - Candles (60min, last 10)"
-	@echo "  make api-open-orders                      - All active orders"
-	@echo "  make api-historical-orders                - Completed/cancelled orders"
-	@echo "  make api-trades SYMBOL=BTC-EUR            - Private trade history"
-	@echo "  make api-public-trades SYMBOL=BTC-EUR     - Public trade history"
-	@echo "  make api-order ORDER_ID=<uuid>            - Single order details"
+	@echo "  make api-test          - Test authenticated connection"
+	@echo "  make api-ready         - Check API permissions (view + trade)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make test              - Run tests with coverage"
@@ -90,9 +76,8 @@ help:
 	@echo "  make pre-commit        - Run pre-commit hooks on all files"
 	@echo "  make pre-commit-install - Install pre-commit + commit-msg hooks"
 	@echo ""
-	@echo "Logs & Backup:"
-	@echo "  make logs              - Redirect: logs are in the encrypted database"
-	@echo "  make logs-follow       - Redirect: logs are in the encrypted database"
+	@echo "Logs (uses ENV for DB file selection):"
+	@echo "  make logs              - View recent logs from database (LIMIT=50 LEVEL=...)"
 	@echo "  make backup            - Create a timestamped backup of data/ to backups/"
 	@echo "  make restore           - Interactively restore data/ from a backup"
 	@echo ""
@@ -540,78 +525,6 @@ api-test:
 telegram-test:
 	@ENVIRONMENT=$(ENV) uv run revt telegram test
 
-api-balance:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py balance
-
-api-ticker:
-	$(call require_real_api,$@)
-	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py ticker --symbol $$SYMBOL
-
-api-tickers:
-	$(call require_real_api,$@)
-	@SYMBOLS=$${SYMBOLS:-BTC-EUR,ETH-EUR,SOL-EUR}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py tickers --symbols $$SYMBOLS
-
-api-candles:
-	$(call require_real_api,$@)
-	@SYMBOL=$${SYMBOL:-BTC-EUR}; \
-	INTERVAL=$${INTERVAL:-60}; \
-	LIMIT=$${LIMIT:-10}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py candles --symbol $$SYMBOL --interval $$INTERVAL --limit $$LIMIT
-
-api-all-tickers:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py all-tickers
-
-api-currencies:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currencies
-
-api-currency-pairs:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py currency-pairs
-
-api-last-public-trades:
-	$(call require_real_api,$@)
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py last-public-trades
-
-api-order-book:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-order-book SYMBOL=BTC-EUR [DEPTH=20]"; exit 1; fi
-	@DEPTH=$${DEPTH:-20}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order-book --symbol $(SYMBOL) --depth $$DEPTH
-
-api-open-orders:
-	$(call require_real_api,$@)
-	@ARGS=""; \
-	[ -n "$(SYMBOL)" ] && ARGS="--symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py open-orders $$ARGS
-
-api-historical-orders:
-	$(call require_real_api,$@)
-	@LIMIT=$${LIMIT:-20}; \
-	ARGS="--limit $$LIMIT"; \
-	[ -n "$(SYMBOL)" ] && ARGS="$$ARGS --symbol $(SYMBOL)"; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py historical-orders $$ARGS
-
-api-trades:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-trades SYMBOL=BTC-EUR"; exit 1; fi
-	@LIMIT=$${LIMIT:-20}; \
-	ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py trades --symbol $(SYMBOL) --limit $$LIMIT
-
-api-public-trades:
-	$(call require_real_api,$@)
-	@if [ -z "$(SYMBOL)" ]; then echo "Usage: make api-public-trades SYMBOL=BTC-EUR"; exit 1; fi
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py public-trades --symbol $(SYMBOL)
-
-api-order:
-	$(call require_real_api,$@)
-	@if [ -z "$(ORDER_ID)" ]; then echo "Usage: make api-order ORDER_ID=<uuid>"; exit 1; fi
-	@ENVIRONMENT=$(API_ENV) uv run python cli/api_test.py order --order-id $(ORDER_ID)
-
 # ============================================================================
 # Code Quality
 # ============================================================================
@@ -650,10 +563,7 @@ check: lint format typecheck security test
 # ============================================================================
 
 logs:
-	@echo "Logs are stored in the encrypted database. Use: make db-stats"
-
-logs-follow:
-	@echo "Logs are stored in the encrypted database. Use: make db-stats"
+	@ENVIRONMENT=$(ENV) uv run python cli/view_logs.py --limit $${LIMIT:-50} $${LEVEL:+--level $$LEVEL} $${SESSION:+--session $$SESSION}
 
 # ============================================================================
 # Backup & Restore
