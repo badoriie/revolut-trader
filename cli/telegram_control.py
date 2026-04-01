@@ -14,6 +14,7 @@ The control plane never exits on its own; stop it with Ctrl-C or SIGTERM.
 """
 
 import asyncio
+import contextlib
 import os
 import signal
 import sys
@@ -161,18 +162,22 @@ class TelegramControlPlane:
         closed, DB saved).
         """
         assert self.bot is not None
+        cancelled = False
         try:
             await self.bot.run_trading_loop()
         except asyncio.CancelledError:
-            pass
+            cancelled = True
         except Exception as exc:
             logger.error(f"Trading loop crashed: {exc}", exc_info=True)
-            await self.notifier.reply(f"❌ Trading bot crashed: {exc}")
+            with contextlib.suppress(Exception):
+                await self.notifier.reply(f"❌ Trading bot crashed: {exc}")
         finally:
             if self.bot is not None and self.bot.is_running:
                 await self.bot.stop()
             self.bot = None
             self._bot_task = None
+            if cancelled:
+                raise asyncio.CancelledError
 
     # ------------------------------------------------------------------
     # /stop

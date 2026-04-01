@@ -66,6 +66,13 @@ except ImportError:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
+# Shared display constants
+# ---------------------------------------------------------------------------
+
+_PNL_LABEL_EUR = "P&L (EUR)"
+_TOTAL_PNL_LABEL_EUR = "Total P&L (EUR)"
+
+# ---------------------------------------------------------------------------
 # Pure financial math helpers
 # ---------------------------------------------------------------------------
 
@@ -465,7 +472,7 @@ def _chart_pnl_distribution(
         ax.hist(losses, bins=bins, color="#F44336", alpha=0.7, label=f"Losses ({len(losses)})")
     ax.axvline(0, color="black", linewidth=1.0, linestyle="--")
     ax.set_title("Trade P&L Distribution", fontsize=14, fontweight="bold")
-    ax.set_xlabel("P&L (EUR)")
+    ax.set_xlabel(_PNL_LABEL_EUR)
     ax.set_ylabel("Trade Count")
     ax.legend()
     ax.grid(True, alpha=0.3)
@@ -491,7 +498,7 @@ def _chart_symbol_performance(
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_title("P&L by Symbol", fontsize=14, fontweight="bold")
     ax.set_xlabel("Symbol")
-    ax.set_ylabel("Total P&L (EUR)")
+    ax.set_ylabel(_TOTAL_PNL_LABEL_EUR)
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("€%.0f"))
     ax.grid(True, alpha=0.3, axis="y")
     plt.xticks(rotation=20, ha="right")
@@ -756,6 +763,143 @@ def _pdf_table(
         pdf.ln()
 
 
+def _format_metric_value(value: float, format_spec: str, fallback: str = "N/A") -> str:
+    """Format a metric value with fallback for missing/zero values."""
+    return f"{value:{format_spec}}" if value else fallback
+
+
+def _pdf_core_metrics_section(pdf: Any, metrics: dict[str, Any]) -> None:  # pragma: no cover
+    """Render the core metrics two-column table into *pdf*."""
+    total_trades = metrics.get("total_trades", 0)
+    win_rate = metrics.get("win_rate", 0.0)
+    total_pnl = metrics.get("total_pnl", 0.0)
+    total_fees = metrics.get("total_fees", 0.0)
+    ret_pct = metrics.get("return_pct", 0.0)
+    max_dd = metrics.get("max_drawdown_pct", 0.0)
+    sharpe = metrics.get("sharpe_ratio", 0.0)
+    sortino = metrics.get("sortino_ratio", 0.0)
+    profit_factor = metrics.get("profit_factor", 0.0)
+    initial = metrics.get("initial_value", 0.0)
+    final = metrics.get("final_value", 0.0)
+
+    pnl_pfx = "+" if total_pnl >= 0 else "-"
+    ret_pfx = "+" if ret_pct >= 0 else ""
+
+    _pdf_section_header(pdf, "Core Metrics")
+    _pdf_two_col_table(
+        pdf,
+        [
+            ("Total Trades", str(total_trades)),
+            ("Win Rate", f"{win_rate:.1f}%"),
+            ("Total P&L", f"{pnl_pfx}EUR{abs(total_pnl):,.2f}"),
+            ("Total Fees", f"EUR{total_fees:,.2f}"),
+            ("Return", f"{ret_pfx}{ret_pct:.2f}%"),
+            ("Initial Portfolio Value", f"EUR{initial:,.2f}" if initial else "N/A"),
+            ("Final Portfolio Value", f"EUR{final:,.2f}" if final else "N/A"),
+            ("Max Drawdown", f"{max_dd:.2f}%"),
+            ("Sharpe Ratio", _format_metric_value(sharpe, ".3f")),
+            ("Sortino Ratio", _format_metric_value(sortino, ".3f")),
+            ("Profit Factor", _format_metric_value(profit_factor, ".2f")),
+        ],
+    )
+
+
+def _pdf_symbol_section(
+    pdf: Any, symbol_analytics: list[dict[str, Any]]
+) -> None:  # pragma: no cover
+    """Render the per-symbol breakdown table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Per-Symbol Breakdown")
+    _pdf_table(
+        pdf,
+        headers=["Symbol", "Trades", "Win%", _PNL_LABEL_EUR, "Fees (EUR)"],
+        rows=[
+            [
+                s["symbol"],
+                str(s["total_trades"]),
+                f"{s['win_rate']:.1f}%",
+                f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
+                f"{s['total_fees']:,.2f}",
+            ]
+            for s in symbol_analytics
+        ],
+        col_widths=[40, 22, 22, 52, 44],
+    )
+
+
+def _pdf_strategy_section(
+    pdf: Any, strategy_analytics: list[dict[str, Any]]
+) -> None:  # pragma: no cover
+    """Render the per-strategy breakdown table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Per-Strategy Breakdown (Live Trades)")
+    _pdf_table(
+        pdf,
+        headers=["Strategy", "Trades", "Win%", _PNL_LABEL_EUR],
+        rows=[
+            [
+                s["strategy"],
+                str(s["total_trades"]),
+                f"{s['win_rate']:.1f}%",
+                f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
+            ]
+            for s in strategy_analytics
+        ],
+        col_widths=[65, 25, 25, 65],
+    )
+
+
+def _pdf_backtest_section(pdf: Any, backtest_analytics: dict[str, Any]) -> None:  # pragma: no cover
+    """Render the backtest summary two-column table into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Backtest Summary")
+    best = backtest_analytics.get("best_run", {})
+    bt_rows: list[tuple[str, str]] = [
+        ("Total runs", str(backtest_analytics["total_runs"])),
+        (
+            "Profitable runs",
+            f"{backtest_analytics['profitable_runs']} "
+            f"({backtest_analytics.get('success_rate', 0):.1f}%)",
+        ),
+        ("Avg return", f"{backtest_analytics.get('avg_return_pct', 0):.2f}%"),
+    ]
+    if best:
+        bt_rows.append(
+            ("Best strategy", f"{best['strategy']} ({best.get('return_pct', 0):.1f}% return)")
+        )
+    _pdf_two_col_table(pdf, bt_rows)
+
+
+def _pdf_suggestions_section(pdf: Any, suggestions: list[str]) -> None:  # pragma: no cover
+    """Render the improvement suggestions list into *pdf*."""
+    pdf.ln(4)
+    _pdf_section_header(pdf, "Improvement Suggestions")
+    for i, suggestion in enumerate(suggestions, 1):
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(8, 5, f"{i}.")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5, _pdf_safe_text(suggestion))
+        pdf.ln(1)
+
+
+def _pdf_charts_section(pdf: Any, chart_paths: list[Path]) -> None:  # pragma: no cover
+    """Embed PNG chart images into *pdf* on a new page."""
+    pdf.add_page()
+    _pdf_section_header(pdf, "Charts")
+    for chart_path in chart_paths:
+        if not chart_path.exists():
+            continue
+        try:
+            pdf.ln(2)
+            pdf.set_font("Helvetica", "I", 9)
+            chart_caption = _pdf_safe_text(chart_path.stem.replace("_", " ").title())
+            pdf.cell(0, 5, chart_caption, new_x="LMARGIN", new_y="NEXT")
+            pdf.image(str(chart_path), w=180)
+            pdf.ln(4)
+        except Exception:
+            logger.debug(f"Could not embed chart {chart_path.name} in PDF — skipping")
+
+
 def _generate_pdf(
     md_path: Path,
     metrics: dict[str, Any],
@@ -797,7 +941,6 @@ def _generate_pdf(
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    # ── Title ─────────────────────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(
         0,
@@ -808,126 +951,23 @@ def _generate_pdf(
     )
     pdf.ln(3)
 
-    # ── Core Metrics ──────────────────────────────────────────────────────────
-    _pdf_section_header(pdf, "Core Metrics")
-    total_trades = metrics.get("total_trades", 0)
-    win_rate = metrics.get("win_rate", 0.0)
-    total_pnl = metrics.get("total_pnl", 0.0)
-    total_fees = metrics.get("total_fees", 0.0)
-    ret_pct = metrics.get("return_pct", 0.0)
-    max_dd = metrics.get("max_drawdown_pct", 0.0)
-    sharpe = metrics.get("sharpe_ratio", 0.0)
-    sortino = metrics.get("sortino_ratio", 0.0)
-    profit_factor = metrics.get("profit_factor", 0.0)
-    initial = metrics.get("initial_value", 0.0)
-    final = metrics.get("final_value", 0.0)
-    pnl_pfx = "+" if total_pnl >= 0 else "-"
-    ret_pfx = "+" if ret_pct >= 0 else ""
-    _pdf_two_col_table(
-        pdf,
-        [
-            ("Total Trades", str(total_trades)),
-            ("Win Rate", f"{win_rate:.1f}%"),
-            ("Total P&L", f"{pnl_pfx}EUR{abs(total_pnl):,.2f}"),
-            ("Total Fees", f"EUR{total_fees:,.2f}"),
-            ("Return", f"{ret_pfx}{ret_pct:.2f}%"),
-            ("Initial Portfolio Value", f"EUR{initial:,.2f}" if initial else "N/A"),
-            ("Final Portfolio Value", f"EUR{final:,.2f}" if final else "N/A"),
-            ("Max Drawdown", f"{max_dd:.2f}%"),
-            ("Sharpe Ratio", f"{sharpe:.3f}" if sharpe else "N/A"),
-            ("Sortino Ratio", f"{sortino:.3f}" if sortino else "N/A"),
-            ("Profit Factor", f"{profit_factor:.2f}" if profit_factor else "N/A"),
-        ],
-    )
+    _pdf_core_metrics_section(pdf, metrics)
 
-    # ── Per-Symbol Breakdown ──────────────────────────────────────────────────
     if symbol_analytics:
-        pdf.ln(4)
-        _pdf_section_header(pdf, "Per-Symbol Breakdown")
-        _pdf_table(
-            pdf,
-            headers=["Symbol", "Trades", "Win%", "P&L (EUR)", "Fees (EUR)"],
-            rows=[
-                [
-                    s["symbol"],
-                    str(s["total_trades"]),
-                    f"{s['win_rate']:.1f}%",
-                    f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
-                    f"{s['total_fees']:,.2f}",
-                ]
-                for s in symbol_analytics
-            ],
-            col_widths=[40, 22, 22, 52, 44],
-        )
+        _pdf_symbol_section(pdf, symbol_analytics)
 
-    # ── Per-Strategy Breakdown ────────────────────────────────────────────────
     if strategy_analytics:
-        pdf.ln(4)
-        _pdf_section_header(pdf, "Per-Strategy Breakdown (Live Trades)")
-        _pdf_table(
-            pdf,
-            headers=["Strategy", "Trades", "Win%", "P&L (EUR)"],
-            rows=[
-                [
-                    s["strategy"],
-                    str(s["total_trades"]),
-                    f"{s['win_rate']:.1f}%",
-                    f"{'+' if s['total_pnl'] >= 0 else ''}{s['total_pnl']:,.2f}",
-                ]
-                for s in strategy_analytics
-            ],
-            col_widths=[65, 25, 25, 65],
-        )
+        _pdf_strategy_section(pdf, strategy_analytics)
 
-    # ── Backtest Summary ──────────────────────────────────────────────────────
     if backtest_analytics and backtest_analytics.get("total_runs", 0) > 0:
-        pdf.ln(4)
-        _pdf_section_header(pdf, "Backtest Summary")
-        best = backtest_analytics.get("best_run", {})
-        bt_rows: list[tuple[str, str]] = [
-            ("Total runs", str(backtest_analytics["total_runs"])),
-            (
-                "Profitable runs",
-                f"{backtest_analytics['profitable_runs']} "
-                f"({backtest_analytics.get('success_rate', 0):.1f}%)",
-            ),
-            ("Avg return", f"{backtest_analytics.get('avg_return_pct', 0):.2f}%"),
-        ]
-        if best:
-            bt_rows.append(
-                ("Best strategy", f"{best['strategy']} ({best.get('return_pct', 0):.1f}% return)")
-            )
-        _pdf_two_col_table(pdf, bt_rows)
+        _pdf_backtest_section(pdf, backtest_analytics)
 
-    # ── Improvement Suggestions ───────────────────────────────────────────────
     if suggestions:
-        pdf.ln(4)
-        _pdf_section_header(pdf, "Improvement Suggestions")
-        for i, suggestion in enumerate(suggestions, 1):
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(8, 5, f"{i}.")
-            pdf.set_font("Helvetica", "", 9)
-            pdf.multi_cell(0, 5, _pdf_safe_text(suggestion))
-            pdf.ln(1)
+        _pdf_suggestions_section(pdf, suggestions)
 
-    # ── Charts ────────────────────────────────────────────────────────────────
     if chart_paths:
-        pdf.add_page()
-        _pdf_section_header(pdf, "Charts")
-        for chart_path in chart_paths:
-            if not chart_path.exists():
-                continue
-            try:
-                pdf.ln(2)
-                pdf.set_font("Helvetica", "I", 9)
-                chart_caption = _pdf_safe_text(chart_path.stem.replace("_", " ").title())
-                pdf.cell(0, 5, chart_caption, new_x="LMARGIN", new_y="NEXT")
-                pdf.image(str(chart_path), w=180)
-                pdf.ln(4)
-            except Exception:
-                logger.debug(f"Could not embed chart {chart_path.name} in PDF — skipping")
+        _pdf_charts_section(pdf, chart_paths)
 
-    # ── Footer ────────────────────────────────────────────────────────────────
     pdf.ln(2)
     pdf.set_font("Helvetica", "I", 8)
     pdf.cell(0, 5, _pdf_safe_text(f"Full report: {md_path}"), new_x="LMARGIN", new_y="NEXT")

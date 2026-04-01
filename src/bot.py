@@ -110,6 +110,39 @@ class TradingBot:
             )
             # Will fail when trying to initialize API client
 
+    async def _initialize_balance(self) -> None:
+        """Fetch live balance and apply MAX_CAPITAL cap if configured."""
+        # Get initial balance (live mode fetches real balance from the API)
+        if self.trading_mode == TradingMode.LIVE:
+            self.cash_balance = await self._fetch_live_balance()
+
+        # Apply MAX_CAPITAL cap — limits how much money the bot can trade with.
+        if settings.max_capital is not None:
+            max_cap = Decimal(str(settings.max_capital))
+            if self.cash_balance > max_cap:
+                logger.info(
+                    f"MAX_CAPITAL cap applied: {self.currency_symbol}{self.cash_balance:,.2f} "
+                    f"→ {self.currency_symbol}{max_cap:,.2f}"
+                )
+                self.cash_balance = max_cap
+
+    async def _start_telegram_command_listener(self) -> None:
+        """Start background Telegram command listener task."""
+        if self.notifier:
+            await self.notifier.notify_started(
+                strategy=self.strategy_type.value,
+                risk_level=self.risk_level.value,
+                pairs=self.trading_pairs,
+                mode=self.trading_mode.value,
+            )
+            self._telegram_stop_event = asyncio.Event()
+            self._telegram_polling_task = asyncio.create_task(
+                self.notifier.start_polling(
+                    self._handle_telegram_command, self._telegram_stop_event
+                )
+            )
+            logger.info("Telegram command listener started")
+
     async def start(self, start_command_listener: bool = True) -> None:
         """Initialize and start the trading bot.
 
@@ -142,21 +175,7 @@ class TradingBot:
         await self.api_client.initialize()
 
         # Check key permissions before going further
-        perms = await self.api_client.check_permissions()
-        if not perms["view"]:
-            raise RuntimeError(
-                "API key cannot read market data. Check credentials with 'make api-ready'."
-            )
-        if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
-            raise RuntimeError(
-                "API key is read-only — cannot start in LIVE mode.\n"
-                "Switch to paper mode ('make run ENV=int' / 'revt run --env int') or create a key with "
-                "trading permissions in Revolut X."
-            )
-        if not perms["trade"]:
-            logger.info(
-                "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
-            )
+        await self._validate_permissions()
 
         # Initialize risk manager with strategy so per-strategy overrides apply.
         self.risk_manager = RiskManager(
@@ -173,58 +192,70 @@ class TradingBot:
         # Initialize strategy
         self.strategy = self._create_strategy(self.strategy_type)
 
-        # Get initial balance
-        if self.trading_mode == TradingMode.LIVE:
-            try:
-                balance_data = await self.api_client.get_balance()
-                # Extract base currency available balance from the balances dict.
-                # get_balance() returns {"balances": {currency: {available, ...}}, ...}
-                base = settings.base_currency
-                base_balances = balance_data.get("balances", {}).get(base, {})
-                available = base_balances.get("available")
-                if available is None:
-                    raise RuntimeError(f"No {base} balance found. Ensure the account holds {base}.")
-                self.cash_balance = Decimal(str(available))
-                logger.info(f"Live account balance: {self.currency_symbol}{self.cash_balance:,.2f}")
-            except RuntimeError:
-                raise
-            except Exception as e:
-                logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
-                logger.critical("Cannot start live trading without accurate balance information!")
-                raise RuntimeError(
-                    "Cannot start live trading without account balance. "
-                    "Please check API connection and credentials."
-                ) from e
-
-        # Apply MAX_CAPITAL cap — limits how much money the bot can trade with.
-        if settings.max_capital is not None:
-            max_cap = Decimal(str(settings.max_capital))
-            if self.cash_balance > max_cap:
-                logger.info(
-                    f"MAX_CAPITAL cap applied: {self.currency_symbol}{self.cash_balance:,.2f} "
-                    f"→ {self.currency_symbol}{max_cap:,.2f}"
-                )
-                self.cash_balance = max_cap
+        # Fetch balance and apply capital cap
+        await self._initialize_balance()
 
         self.is_running = True
         self._started_at = datetime.now(UTC)
         logger.info("Trading bot started successfully!")
 
-        if self.notifier:
-            await self.notifier.notify_started(
-                strategy=self.strategy_type.value,
-                risk_level=self.risk_level.value,
-                pairs=self.trading_pairs,
-                mode=self.trading_mode.value,
+        # Start Telegram command listener if requested
+        if start_command_listener and self.notifier:
+            await self._start_telegram_command_listener()
+
+    async def _validate_permissions(self) -> None:
+        """Check API key permissions and raise RuntimeError if they are insufficient.
+
+        Requires ``self.api_client`` to be initialised.  Raises if the key cannot
+        read market data, or if the key is read-only in LIVE mode.  In paper mode
+        a read-only key is allowed — orders will not be sent to the exchange.
+        """
+        assert self.api_client is not None
+        perms = await self.api_client.check_permissions()
+        if not perms["view"]:
+            raise RuntimeError(
+                "API key cannot read market data. Check credentials with 'make api-ready'."
             )
-            if start_command_listener:
-                self._telegram_stop_event = asyncio.Event()
-                self._telegram_polling_task = asyncio.create_task(
-                    self.notifier.start_polling(
-                        self._handle_telegram_command, self._telegram_stop_event
-                    )
-                )
-                logger.info("Telegram command listener started")
+        if self.trading_mode == TradingMode.LIVE and not perms["trade"]:
+            raise RuntimeError(
+                "API key is read-only — cannot start in LIVE mode.\n"
+                "Switch to paper mode ('make run ENV=int' / 'revt run --env int') or create a key with "
+                "trading permissions in Revolut X."
+            )
+        if not perms["trade"]:
+            logger.info(
+                "API key is read-only — running in simulation mode (orders will not be sent to exchange)"
+            )
+
+    async def _fetch_live_balance(self) -> Decimal:
+        """Fetch and return the available base-currency balance from the live API.
+
+        Only called in LIVE mode.  Raises RuntimeError if the balance cannot be
+        retrieved — trading must not start without accurate balance information.
+
+        Returns:
+            Available base-currency balance as a Decimal.
+        """
+        assert self.api_client is not None
+        try:
+            balance_data = await self.api_client.get_balance()
+            # get_balance() returns {"balances": {currency: {available, ...}}, ...}
+            base = settings.base_currency
+            available = balance_data.get("balances", {}).get(base, {}).get("available")
+            if available is None:
+                raise RuntimeError(f"No {base} balance found. Ensure the account holds {base}.")
+            balance = Decimal(str(available))
+            logger.info(f"Live account balance: {self.currency_symbol}{balance:,.2f}")
+            return balance
+        except RuntimeError:
+            raise
+        except Exception as e:
+            logger.critical(f"CRITICAL: Failed to get account balance in LIVE mode: {e}")
+            logger.critical("Cannot start live trading without accurate balance information!")
+            raise RuntimeError(
+                "Cannot start live trading without account balance. "
+                "Please check API connection and credentials."
+            ) from e
 
     async def _shutdown_executor(self) -> None:
         """Cancel orders, close all positions, and process shutdown results.

@@ -89,7 +89,7 @@ def _make_order(
 
 def test_url_contains_token():
     n = TelegramNotifier(token="abc:XYZ", chat_id="42")
-    assert "abc:XYZ" in n._url
+    assert "abc:XYZ" in n._send_message_url
 
 
 # ── Silent failure ────────────────────────────────────────────────────────────
@@ -577,7 +577,7 @@ class TestGetUpdates:
 
     async def test_updates_url_contains_token(self):
         notifier = TelegramNotifier(token="mytoken:XYZ", chat_id="42")
-        assert "mytoken:XYZ" in notifier._updates_url
+        assert "mytoken:XYZ" in notifier._get_updates_url
 
 
 # ── start_polling ─────────────────────────────────────────────────────────────

@@ -36,9 +36,6 @@ class TelegramNotifier:
     characters (``&``, ``<``, ``>``) are handled correctly.
     """
 
-    _API_URL = "https://api.telegram.org/bot{token}/sendMessage"
-    _DOC_URL = "https://api.telegram.org/bot{token}/sendDocument"
-    _UPDATES_URL = "https://api.telegram.org/bot{token}/getUpdates"
     # Short timeout: a slow Telegram API must not stall the trading loop.
     _TIMEOUT = 30.0  # file uploads need a longer timeout than text messages
 
@@ -50,9 +47,10 @@ class TelegramNotifier:
             chat_id: Target chat or channel ID.  Use a negative integer
                      string for channels (e.g. ``"-100123456789"``).
         """
-        self._url = self._API_URL.format(token=token)
-        self._doc_url = self._DOC_URL.format(token=token)
-        self._updates_url = self._UPDATES_URL.format(token=token)
+        _base = f"https://api.telegram.org/bot{token}"
+        self._send_message_url = f"{_base}/sendMessage"
+        self._send_document_url = f"{_base}/sendDocument"
+        self._get_updates_url = f"{_base}/getUpdates"
         self._chat_id = chat_id
 
     async def _send(self, text: str) -> None:
@@ -67,7 +65,7 @@ class TelegramNotifier:
         try:
             async with httpx.AsyncClient(timeout=self._TIMEOUT) as client:
                 response = await client.post(
-                    self._url,
+                    self._send_message_url,
                     json={
                         "chat_id": self._chat_id,
                         "text": text,
@@ -177,7 +175,7 @@ class TelegramNotifier:
         """
         async with httpx.AsyncClient(timeout=self._TIMEOUT) as client:
             response = await client.post(
-                self._url,
+                self._send_message_url,
                 json={
                     "chat_id": self._chat_id,
                     "text": "✅ <b>Revolut Trader</b> — Telegram notifications are working correctly.",
@@ -223,7 +221,7 @@ class TelegramNotifier:
         try:
             async with httpx.AsyncClient(timeout=self._TIMEOUT) as client:
                 response = await client.post(
-                    self._doc_url,
+                    self._send_document_url,
                     data={"chat_id": self._chat_id, "parse_mode": "HTML", "caption": caption},
                     files={"document": (filename, document, "application/pdf")},
                 )
@@ -299,9 +297,12 @@ class TelegramNotifier:
             List of raw update dicts, or ``[]`` on failure.
         """
         try:
-            async with httpx.AsyncClient(timeout=float(timeout + 5)) as client:
+            async with (
+                httpx.AsyncClient() as client,
+                asyncio.timeout(timeout + 5),
+            ):
                 response = await client.get(
-                    self._updates_url,
+                    self._get_updates_url,
                     params={
                         "offset": offset,
                         "timeout": timeout,
@@ -311,6 +312,9 @@ class TelegramNotifier:
                 response.raise_for_status()
                 data = response.json()
                 return data.get("result", []) if data.get("ok") else []
+        except TimeoutError:
+            logger.warning(f"Telegram getUpdates timed out after {timeout + 5}s")
+            return []
         except Exception as exc:
             logger.warning(f"Telegram getUpdates failed: {exc}")
             return []
