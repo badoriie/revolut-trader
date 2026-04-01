@@ -333,3 +333,237 @@ class TestShutdownConfigLoading:
         ):
             with pytest.raises(ValueError, match=r"(?i)shutdown_max_wait_seconds"):
                 Settings()
+
+
+class TestLogLevelConfigLoading:
+    """Tests that LOG_LEVEL loads correctly from 1Password as an optional config."""
+
+    def test_log_level_loaded_when_set(self) -> None:
+        """LOG_LEVEL should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "LOG_LEVEL": "DEBUG"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.log_level == "DEBUG"
+
+    def test_log_level_case_insensitive(self) -> None:
+        """LOG_LEVEL should accept lowercase values and normalise to uppercase."""
+        config = {**_BASE_CONFIG, "LOG_LEVEL": "warning"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.log_level == "WARNING"
+
+    def test_log_level_defaults_to_info_when_not_set(self) -> None:
+        """LOG_LEVEL should default to INFO when not present in 1Password."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.log_level == "INFO"
+
+    def test_invalid_log_level_rejected(self) -> None:
+        """An unrecognised LOG_LEVEL MUST be rejected with an actionable error."""
+        config = {**_BASE_CONFIG, "LOG_LEVEL": "VERBOSE"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)log_level"):
+                Settings()
+
+    def test_all_valid_log_levels_accepted(self) -> None:
+        """All four valid log levels must be accepted."""
+        for level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            config = {**_BASE_CONFIG, "LOG_LEVEL": level}
+
+            with (
+                patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+                patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+            ):
+                s = Settings()
+
+            assert s.log_level == level
+
+
+class TestIntervalConfigLoading:
+    """Tests that INTERVAL loads correctly from 1Password as an optional config."""
+
+    def test_interval_loaded_when_set(self) -> None:
+        """INTERVAL should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "INTERVAL": "30"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.interval == 30
+
+    def test_interval_none_when_not_set(self) -> None:
+        """INTERVAL should be None when not in 1Password (strategy default is used)."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.interval is None
+
+    def test_invalid_interval_rejected(self) -> None:
+        """Non-integer INTERVAL MUST be rejected with an actionable error."""
+        config = {**_BASE_CONFIG, "INTERVAL": "not_an_int"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)interval"):
+                Settings()
+
+    def test_zero_interval_rejected(self) -> None:
+        """INTERVAL=0 MUST be rejected (zero-second loop would spin indefinitely)."""
+        config = {**_BASE_CONFIG, "INTERVAL": "0"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)interval"):
+                Settings()
+
+    def test_negative_interval_rejected(self) -> None:
+        """Negative INTERVAL MUST be rejected."""
+        config = {**_BASE_CONFIG, "INTERVAL": "-5"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)interval"):
+                Settings()
+
+
+class TestBacktestConfigLoading:
+    """Tests that BACKTEST_DAYS and BACKTEST_INTERVAL load correctly from 1Password."""
+
+    def test_backtest_days_loaded_when_set(self) -> None:
+        """BACKTEST_DAYS should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "BACKTEST_DAYS": "90"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.backtest_days == 90
+
+    def test_backtest_days_defaults_to_30_when_not_set(self) -> None:
+        """BACKTEST_DAYS should default to 30 when not in 1Password."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.backtest_days == 30
+
+    def test_invalid_backtest_days_rejected(self) -> None:
+        """Non-integer BACKTEST_DAYS MUST be rejected."""
+        config = {**_BASE_CONFIG, "BACKTEST_DAYS": "not_an_int"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)backtest_days"):
+                Settings()
+
+    def test_zero_backtest_days_rejected(self) -> None:
+        """BACKTEST_DAYS=0 MUST be rejected."""
+        config = {**_BASE_CONFIG, "BACKTEST_DAYS": "0"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)backtest_days"):
+                Settings()
+
+    def test_backtest_interval_loaded_when_set(self) -> None:
+        """BACKTEST_INTERVAL should be loaded from 1Password when present."""
+        config = {**_BASE_CONFIG, "BACKTEST_INTERVAL": "1440"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.backtest_interval == 1440
+
+    def test_backtest_interval_defaults_to_60_when_not_set(self) -> None:
+        """BACKTEST_INTERVAL should default to 60 when not in 1Password."""
+        config = {**_BASE_CONFIG}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            s = Settings()
+
+        assert s.backtest_interval == 60
+
+    def test_invalid_backtest_interval_rejected(self) -> None:
+        """Non-integer BACKTEST_INTERVAL MUST be rejected."""
+        config = {**_BASE_CONFIG, "BACKTEST_INTERVAL": "not_an_int"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)backtest_interval"):
+                Settings()
+
+    def test_backtest_interval_invalid_choice_rejected(self) -> None:
+        """BACKTEST_INTERVAL must be one of the supported candle widths."""
+        config = {**_BASE_CONFIG, "BACKTEST_INTERVAL": "7"}
+
+        with (
+            patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+            patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+        ):
+            with pytest.raises(ValueError, match=r"(?i)backtest_interval"):
+                Settings()
+
+    def test_all_valid_backtest_intervals_accepted(self) -> None:
+        """All documented candle widths must be accepted."""
+        for minutes in [1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320]:
+            config = {**_BASE_CONFIG, "BACKTEST_INTERVAL": str(minutes)}
+
+            with (
+                patch(PATCH_OP_GET, side_effect=_mock_get(config)),
+                patch(PATCH_OP_GET_OPTIONAL, side_effect=_mock_get_optional(config)),
+            ):
+                s = Settings()
+
+            assert s.backtest_interval == minutes

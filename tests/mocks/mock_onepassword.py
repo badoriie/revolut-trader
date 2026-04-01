@@ -8,6 +8,9 @@ TRADING_MODE is not stored in 1Password — it is derived from the environment
 (dev/int → paper, prod → live).  INITIAL_CAPITAL is only needed for paper
 mode environments (dev/int).  MAX_CAPITAL is optional for all environments —
 when set, it caps the cash balance at startup.
+
+Strategy configs are loaded from revolut-trader-strategy-{name} items and
+stored with STRATEGY_{NAME_UPPER}_{FIELD} keys in the flat cache.
 """
 
 _MOCK_PRIVATE_KEY = (
@@ -47,6 +50,42 @@ def create_mock_vault(environment: str = "dev", max_capital: str | None = None) 
     # MAX_CAPITAL — optional for all environments.
     if max_capital is not None:
         base["MAX_CAPITAL"] = max_capital
+
+    # Strategy configs — loaded from revolut-trader-strategy-{name} items.
+    # Keys are namespaced: STRATEGY_{NAME_UPPER}_{FIELD}.
+    for name, interval, min_signal, order_type, stop_loss, take_profit in [
+        ("market_making", "5", "0.3", "limit", "0.5", "0.3"),
+        ("momentum", "10", "0.6", "market", "2.5", "4.0"),
+        ("breakout", "5", "0.7", "market", "3.0", "5.0"),
+        ("mean_reversion", "15", "0.5", "limit", "1.0", "1.5"),
+        ("range_reversion", "15", "0.5", "limit", "1.0", "1.5"),
+        ("multi_strategy", "10", "0.55", "limit", None, None),
+    ]:
+        prefix = f"STRATEGY_{name.upper()}"
+        base[f"{prefix}_INTERVAL"] = interval
+        base[f"{prefix}_MIN_SIGNAL_STRENGTH"] = min_signal
+        base[f"{prefix}_ORDER_TYPE"] = order_type
+        if stop_loss is not None:
+            base[f"{prefix}_STOP_LOSS_PCT"] = stop_loss
+        if take_profit is not None:
+            base[f"{prefix}_TAKE_PROFIT_PCT"] = take_profit
+        # Internal calibration params are intentionally omitted here so they
+        # default to None in StrategyConfig and each strategy uses its own defaults.
+        # Override specific fields in tests that need non-default values.
+
+    # Risk level configs — loaded from revolut-trader-risk-{level} items.
+    # Keys are namespaced: RISK_{LEVEL_UPPER}_{FIELD}.
+    for level, max_pos, max_loss, sl, tp, max_pos_count in [
+        ("conservative", "1.5", "3.0", "1.5", "2.5", "3"),
+        ("moderate", "3.0", "5.0", "2.5", "4.0", "5"),
+        ("aggressive", "5.0", "10.0", "4.0", "7.0", "8"),
+    ]:
+        prefix = f"RISK_{level.upper()}"
+        base[f"{prefix}_MAX_POSITION_SIZE_PCT"] = max_pos
+        base[f"{prefix}_MAX_DAILY_LOSS_PCT"] = max_loss
+        base[f"{prefix}_STOP_LOSS_PCT"] = sl
+        base[f"{prefix}_TAKE_PROFIT_PCT"] = tp
+        base[f"{prefix}_MAX_OPEN_POSITIONS"] = max_pos_count
 
     return base
 

@@ -29,6 +29,10 @@ class RangeReversionStrategy(BaseStrategy):
 
     Best suited for ranging (non-trending) markets.  In strongly trending markets,
     consider using Momentum or Breakout instead.
+
+    All tunable parameters are loaded from the ``revolut-trader-strategy-range_reversion``
+    1Password item at startup so users can calibrate without changing code.
+    When a field is absent from 1Password the constructor default is used.
     """
 
     def __init__(
@@ -58,12 +62,36 @@ class RangeReversionStrategy(BaseStrategy):
                                          or illiquid markets (default 1 %).
         """
         super().__init__("Range Reversion")
-        self.buy_zone = Decimal(str(buy_zone))
-        self.sell_zone = Decimal(str(sell_zone))
-        self.rsi_period = rsi_period
-        self.rsi_confirmation_oversold = Decimal(str(rsi_confirmation_oversold))
-        self.rsi_confirmation_overbought = Decimal(str(rsi_confirmation_overbought))
-        self.min_range_pct = Decimal(str(min_range_pct))
+
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("range_reversion")
+
+        self.buy_zone = Decimal(
+            str(scfg.buy_zone if scfg and scfg.buy_zone is not None else buy_zone)
+        )
+        self.sell_zone = Decimal(
+            str(scfg.sell_zone if scfg and scfg.sell_zone is not None else sell_zone)
+        )
+        self.rsi_period = scfg.rsi_period if scfg and scfg.rsi_period is not None else rsi_period
+        self.rsi_confirmation_oversold = Decimal(
+            str(
+                scfg.rsi_confirmation_oversold
+                if scfg and scfg.rsi_confirmation_oversold is not None
+                else rsi_confirmation_oversold
+            )
+        )
+        self.rsi_confirmation_overbought = Decimal(
+            str(
+                scfg.rsi_confirmation_overbought
+                if scfg and scfg.rsi_confirmation_overbought is not None
+                else rsi_confirmation_overbought
+            )
+        )
+        self.min_range_pct = Decimal(
+            str(scfg.min_range_pct if scfg and scfg.min_range_pct is not None else min_range_pct)
+        )
 
         # Per-symbol RSI state
         self.rsi_indicator: dict[str, RSI] = {}

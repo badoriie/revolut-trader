@@ -24,12 +24,10 @@ from loguru import logger
 
 from src.api.client import RevolutAPIClient
 from src.api.mock_client import MockRevolutAPIClient
-from src.config import RiskLevel, StrategyType
+from src.config import RiskLevel, StrategyType, settings
 from src.execution.executor import (
     _DEFAULT_MIN_SIGNAL_STRENGTH,
     _DEFAULT_ORDER_TYPE,
-    _STRATEGY_MIN_SIGNAL_STRENGTH,
-    _STRATEGY_ORDER_TYPE,
 )
 from src.models.domain import (
     CandleData,
@@ -650,7 +648,8 @@ class BacktestEngine:
 
         # Mirror the live-trading signal strength filter from OrderExecutor.
         strategy_key = signal.strategy.lower().replace(" ", "_").replace("-", "_")
-        min_strength = _STRATEGY_MIN_SIGNAL_STRENGTH.get(strategy_key, _DEFAULT_MIN_SIGNAL_STRENGTH)
+        _scfg = settings.strategy_configs.get(strategy_key)
+        min_strength = _scfg.min_signal_strength if _scfg else _DEFAULT_MIN_SIGNAL_STRENGTH
         if float(signal.strength) < min_strength:
             logger.debug(
                 f"{symbol}: signal strength {signal.strength:.2f} below threshold "
@@ -673,7 +672,7 @@ class BacktestEngine:
         # Mirror the live executor's per-strategy order type selection.
         # Momentum/breakout → MARKET (speed-critical, fills at ask/bid).
         # All others → LIMIT (patient fills, only when price is reached).
-        order_type = _STRATEGY_ORDER_TYPE.get(strategy_key, _DEFAULT_ORDER_TYPE)
+        order_type = OrderType(_scfg.order_type.upper()) if _scfg else _DEFAULT_ORDER_TYPE
 
         quantity = self.risk_manager.calculate_position_size(
             portfolio_value=portfolio_value,

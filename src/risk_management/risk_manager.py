@@ -28,73 +28,13 @@ class RiskParams(TypedDict):
     max_open_positions: int
 
 
-# Risk parameters indexed by level.  Single source of truth — Settings no
-# longer duplicates this dict.
-_RISK_PARAMS: dict[RiskLevel, RiskParams] = {
-    RiskLevel.CONSERVATIVE: {
-        "max_position_size_pct": 1.5,
-        "max_daily_loss_pct": 3.0,
-        "stop_loss_pct": 1.5,
-        "take_profit_pct": 2.5,
-        "max_open_positions": 3,
-    },
-    RiskLevel.MODERATE: {
-        "max_position_size_pct": 3.0,
-        "max_daily_loss_pct": 5.0,
-        "stop_loss_pct": 2.5,
-        "take_profit_pct": 4.0,
-        "max_open_positions": 5,
-    },
-    RiskLevel.AGGRESSIVE: {
-        "max_position_size_pct": 5.0,
-        "max_daily_loss_pct": 10.0,
-        "stop_loss_pct": 4.0,
-        "take_profit_pct": 7.0,
-        "max_open_positions": 8,
-    },
-}
-
-
-# Per-strategy risk parameter overrides applied on top of the risk-level baseline.
-# Only stop_loss_pct and take_profit_pct are overridden here — they reflect each
-# strategy's characteristic holding pattern and volatility tolerance.
-# max_position_size_pct is intentionally NOT overridden: position sizing reflects
-# the user's risk appetite (conservative/moderate/aggressive), not the strategy type.
-# Keeping position size risk-level-controlled means the backtest matrix produces
-# meaningfully different results across risk levels.
-# max_open_positions and max_daily_loss_pct also remain risk-level concerns.
-_STRATEGY_RISK_OVERRIDES: dict[str, dict[str, float]] = {
-    "market_making": {
-        "stop_loss_pct": 0.5,  # Tight: short-lived spread trades
-        "take_profit_pct": 0.3,  # Small spread capture target
-    },
-    "momentum": {
-        "stop_loss_pct": 2.5,  # Wider: trends need room to develop
-        "take_profit_pct": 4.0,  # Ride the trend further
-    },
-    "breakout": {
-        "stop_loss_pct": 3.0,  # Widest: breakouts need breathing room
-        "take_profit_pct": 5.0,  # Breakouts have large price targets
-    },
-    "mean_reversion": {
-        "stop_loss_pct": 1.0,  # Tight: if it doesn't revert quickly, exit
-        "take_profit_pct": 1.5,  # Small mean-reversion capture
-    },
-    "range_reversion": {
-        "stop_loss_pct": 1.0,
-        "take_profit_pct": 1.5,
-    },
-    # multi_strategy intentionally absent — sub-strategy mix varies too much for fixed overrides
-}
-
-
 class RiskManager:
     """Risk management system for controlling trading exposure."""
 
     def __init__(
         self,
         risk_level: RiskLevel | None = None,
-        max_order_value: int = 10000,
+        max_order_value: float | None = None,
         strategy: str | None = None,
     ):
         """Initialise the risk manager.
@@ -104,10 +44,11 @@ class RiskManager:
                              if not provided.
             max_order_value: Absolute maximum order value in the base currency
                              (e.g. EUR).  Acts as a hard ceiling regardless of
-                             portfolio size.
+                             portfolio size.  Falls back to ``settings.max_order_value``
+                             (loaded from 1Password, default 10,000) when not provided.
             strategy:        Active strategy name (e.g. ``"momentum"``).  When
                              provided, per-strategy overrides in
-                             ``_STRATEGY_RISK_OVERRIDES`` are applied on top of the
+                             ``settings.strategy_configs`` are applied on top of the
                              risk-level baseline for stop-loss and take-profit.
                              Position sizing always follows the risk level so that
                              conservative/moderate/aggressive produce different trade
@@ -116,17 +57,25 @@ class RiskManager:
         self.risk_level = risk_level or settings.risk_level
         self.risk_params = self._get_risk_parameters_for_level(self.risk_level)
 
-        # Apply per-strategy overrides on top of the risk-level baseline.
-        if strategy and strategy in _STRATEGY_RISK_OVERRIDES:
-            overrides = _STRATEGY_RISK_OVERRIDES[strategy]
-            self.risk_params = {**self.risk_params, **overrides}
-            logger.info(f"Strategy risk overrides applied for '{strategy}': {overrides}")
+        # Apply per-strategy SL/TP overrides from 1Password strategy config.
+        if strategy:
+            scfg = settings.strategy_configs.get(strategy)
+            if scfg and (scfg.stop_loss_pct is not None or scfg.take_profit_pct is not None):
+                overrides = {}
+                if scfg.stop_loss_pct is not None:
+                    overrides["stop_loss_pct"] = scfg.stop_loss_pct
+                if scfg.take_profit_pct is not None:
+                    overrides["take_profit_pct"] = scfg.take_profit_pct
+                self.risk_params = {**self.risk_params, **overrides}
+                logger.info(f"Strategy risk overrides applied for '{strategy}': {overrides}")
         self.daily_pnl = Decimal("0")
         self.daily_loss_limit_hit = False
 
         # Absolute safety ceiling — prevents catastrophically large orders even
         # when the portfolio is large enough to satisfy position-percentage rules.
-        self.max_order_value = Decimal(str(max_order_value))
+        # Falls back to settings.max_order_value (loaded from 1Password, default 10,000).
+        effective_max = max_order_value if max_order_value is not None else settings.max_order_value
+        self.max_order_value = Decimal(str(effective_max))
         self.max_quantity_multiplier = Decimal("1000")  # Max 1000x normal position
 
         currency_symbols = {"EUR": "€", "USD": "$", "GBP": "£"}
@@ -140,24 +89,33 @@ class RiskManager:
 
     @staticmethod
     def _get_risk_parameters_for_level(risk_level: RiskLevel) -> RiskParams:
-        """Return risk parameters for a specific risk level.
+        """Return risk parameters for a specific risk level from 1Password settings.
 
         Args:
             risk_level: The risk level to look up.
 
         Returns:
-            Typed ``RiskParams`` dict for the given level.
+            Typed ``RiskParams`` dict for the given level, loaded from 1Password
+            (``revolut-trader-risk-{level}`` item) with hardcoded fallback defaults.
 
         Raises:
             ValueError: If ``risk_level`` is not a known ``RiskLevel`` value.
                 Fails fast rather than silently falling back, which could mask
                 misconfiguration and leave the bot trading at the wrong limits.
         """
-        if risk_level not in _RISK_PARAMS:
+        level_str = risk_level.value if isinstance(risk_level, RiskLevel) else str(risk_level)
+        rcfg = settings.risk_configs.get(level_str)
+        if rcfg is None:
             raise ValueError(
                 f"Unknown risk level: {risk_level!r}. Valid values: {[r.value for r in RiskLevel]}"
             )
-        return _RISK_PARAMS[risk_level]
+        return {
+            "max_position_size_pct": rcfg.max_position_size_pct,
+            "max_daily_loss_pct": rcfg.max_daily_loss_pct,
+            "stop_loss_pct": rcfg.stop_loss_pct,
+            "take_profit_pct": rcfg.take_profit_pct,
+            "max_open_positions": rcfg.max_open_positions,
+        }
 
     def get_risk_parameters(self) -> RiskParams:
         """Return the current risk parameters for this RiskManager instance."""
@@ -255,10 +213,10 @@ class RiskManager:
         a very large portfolio can still be an enormous absolute amount).
 
         Checks performed:
-        1. Order value ≤ absolute maximum (``max_order_value``).
+        1. Order value ≤ absolute maximum (``max_order_value`` from 1Password).
         2. Order value ≤ total portfolio (no leverage / impossible orders).
         3. Quantity sanity (catches accidental extra zeros — fat-finger protection).
-        4. Minimum order value (prevents dust orders where fees exceed value).
+        4. Minimum order value (from 1Password, prevents dust orders where fees exceed value).
 
         Args:
             order: Order to validate.
@@ -270,7 +228,7 @@ class RiskManager:
         """
         order_value = order.quantity * current_price
 
-        # Check 1: Absolute maximum order value.
+        # Check 1: Absolute maximum order value (from 1Password, default €10,000).
         if order_value > self.max_order_value:
             return (
                 False,
@@ -295,8 +253,8 @@ class RiskManager:
                 f"(max reasonable: {max_reasonable_qty:,.8f})",
             )
 
-        # Check 4: Minimum order value — prevents dust orders.
-        min_order_value = Decimal("10")
+        # Check 4: Minimum order value (from 1Password, default €10) — prevents dust orders.
+        min_order_value = Decimal(str(settings.min_order_value))
         if order_value < min_order_value:
             return (
                 False,
