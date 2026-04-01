@@ -913,88 +913,49 @@ def cmd_db(args: argparse.Namespace) -> None:
         print(f"Database encryption: {status}")
 
 
-def _update_from_binary() -> None:
-    """Update when running as a frozen PyInstaller binary."""
-    import json
+def _get_binary_name_for_platform() -> str:
+    """Determine the binary name for the current platform.
+
+    Returns:
+        Binary name string (e.g., "revt-linux-arm64").
+
+    Raises:
+        SystemExit: If platform is not supported.
+    """
     import platform
-    import shutil
-    import tempfile
-    import urllib.error
-    import urllib.request
 
-    def get_current_version() -> str | None:
-        """Get current version from pyproject.toml."""
-        try:
-            import tomllib  # Python 3.11+
-        except ImportError:
-            import tomli as tomllib  # type: ignore[import-not-found]  # fallback for older Python
-
-        pyproject_path = _ROOT / "pyproject.toml"
-        if pyproject_path.exists():
-            with open(pyproject_path, "rb") as f:
-                data = tomllib.load(f)
-                return data.get("project", {}).get("version")
-        return None
-
-    def get_latest_release_tag() -> str | None:
-        """Get latest release tag from GitHub API."""
-        try:
-            url = "https://api.github.com/repos/badoriie/revolut-trader/releases/latest"
-            req = urllib.request.Request(url)
-            req.add_header("Accept", "application/vnd.github.v3+json")
-            # nosec B310: HTTPS URL from trusted GitHub API
-            with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
-                data = json.loads(response.read().decode())
-                return data.get("tag_name")  # e.g., "v0.3.0"
-        except Exception:
-            return None
-
-    print("🔄 Checking for updates...")
-    print()
-
-    # Get current and latest versions
-    current_version = get_current_version()
-    latest_tag = get_latest_release_tag()
-
-    if current_version and latest_tag:
-        # Normalize versions for comparison (remove 'v' prefix if present)
-        current = current_version.lstrip("v")
-        latest = latest_tag.lstrip("v")
-
-        print(f"Current version: v{current}")
-        print(f"Latest release:  {latest_tag}")
-        print()
-
-        if current == latest:
-            print("✅ Already up to date!")
-            print()
-            print("You're running the latest version.")
-            return
-
-        print("📥 New version available!")
-        print()
-
-    # Determine platform and binary name
     system = platform.system().lower()
     machine = platform.machine().lower()
 
     if system == "linux":
         if "arm" in machine or "aarch64" in machine:
-            binary_name = "revt-linux-arm64"
-        elif "x86_64" in machine or "amd64" in machine:
-            binary_name = "revt-linux-x86_64"
-        else:
-            print(f"❌ Unsupported Linux architecture: {machine}")
-            print("   Supported: ARM64, x86_64")
-            sys.exit(1)
+            return "revt-linux-arm64"
+        if "x86_64" in machine or "amd64" in machine:
+            return "revt-linux-x86_64"
+
+        print(f"❌ Unsupported Linux architecture: {machine}")
+        print("   Supported: ARM64, x86_64")
+        sys.exit(1)
     else:
         print(f"❌ Unsupported platform: {system}")
         print("   Supported platforms: Linux (ARM64, x86_64)")
         sys.exit(1)
 
-    # Download URL
-    url = f"https://github.com/badoriie/revolut-trader/releases/latest/download/{binary_name}"
-    print(f"Downloading: {url}")
+
+def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
+    """Download binary from URL and replace current executable.
+
+    Args:
+        url: Download URL for the binary.
+        latest_tag: Latest version tag for display (e.g., "v0.3.0").
+
+    Raises:
+        SystemExit: If download or installation fails.
+    """
+    import shutil
+    import tempfile
+    import urllib.error
+    import urllib.request
 
     try:
         # Download to temp file
@@ -1041,6 +1002,82 @@ def _update_from_binary() -> None:
     except Exception as e:
         print(f"\n❌ Update failed: {e}")
         sys.exit(1)
+
+
+def _check_binary_version() -> tuple[str | None, str | None]:
+    """Check current and latest binary versions.
+
+    Returns:
+        Tuple of (current_version, latest_tag) or (None, None) if unavailable.
+    """
+    import json
+    import urllib.request
+
+    def get_current_version() -> str | None:
+        """Get current version from pyproject.toml."""
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import-not-found]  # fallback for older Python
+
+        pyproject_path = _ROOT / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                return data.get("project", {}).get("version")
+        return None
+
+    def get_latest_release_tag() -> str | None:
+        """Get latest release tag from GitHub API."""
+        try:
+            url = "https://api.github.com/repos/badoriie/revolut-trader/releases/latest"
+            req = urllib.request.Request(url)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            # nosec B310: HTTPS URL from trusted GitHub API
+            with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
+                data = json.loads(response.read().decode())
+                return data.get("tag_name")  # e.g., "v0.3.0"
+        except Exception:
+            return None
+
+    return get_current_version(), get_latest_release_tag()
+
+
+def _update_from_binary() -> None:
+    """Update when running as a frozen PyInstaller binary."""
+    print("🔄 Checking for updates...")
+    print()
+
+    # Get current and latest versions
+    current_version, latest_tag = _check_binary_version()
+
+    if current_version and latest_tag:
+        # Normalize versions for comparison (remove 'v' prefix if present)
+        current = current_version.lstrip("v")
+        latest = latest_tag.lstrip("v")
+
+        print(f"Current version: v{current}")
+        print(f"Latest release:  {latest_tag}")
+        print()
+
+        if current == latest:
+            print("✅ Already up to date!")
+            print()
+            print("You're running the latest version.")
+            return
+
+        print("📥 New version available!")
+        print()
+
+    # Determine platform and binary name
+    binary_name = _get_binary_name_for_platform()
+
+    # Download URL
+    url = f"https://github.com/badoriie/revolut-trader/releases/latest/download/{binary_name}"
+    print(f"Downloading: {url}")
+
+    # Download and install
+    _download_and_install_binary(url, latest_tag)
 
 
 def _update_from_source() -> None:

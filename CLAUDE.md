@@ -344,6 +344,17 @@ Database encryption is mandatory. `DatabaseEncryption` auto-generates a key in 1
 
 Every public function needs type annotations on all parameters and return value, plus a docstring explaining what it does and (for critical functions) why it matters.
 
+### Cognitive Complexity — Maximum 15
+
+All functions must have a cognitive complexity of **at most 15** (SonarCloud standard). When a function exceeds this threshold:
+
+1. **Extract helper methods** — break down complex logic into focused, single-responsibility functions
+1. **Use early returns** — reduce nesting by returning early for edge cases
+1. **Avoid deep nesting** — prefer flat, linear control flow over nested if/else chains
+1. **Limit conditionals** — keep the number of decision points low
+
+Keeping functions simple improves maintainability, testability, and readability. Each helper function should be independently testable and reusable.
+
 ### Documentation Updates — Always, No Exceptions
 
 Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
