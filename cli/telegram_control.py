@@ -162,11 +162,12 @@ class TelegramControlPlane:
         closed, DB saved).
         """
         assert self.bot is not None
-        cancelled = False
+        error_to_raise: BaseException | None = None
         try:
             await self.bot.run_trading_loop()
-        except asyncio.CancelledError:
-            cancelled = True
+        except asyncio.CancelledError as exc:
+            # Save exception to re-raise after cleanup
+            error_to_raise = exc
         except Exception as exc:
             logger.error(f"Trading loop crashed: {exc}", exc_info=True)
             with contextlib.suppress(Exception):
@@ -176,8 +177,10 @@ class TelegramControlPlane:
                 await self.bot.stop()
             self.bot = None
             self._bot_task = None
-            if cancelled:
-                raise asyncio.CancelledError
+
+        # Re-raise CancelledError after all cleanup is complete
+        if error_to_raise:
+            raise error_to_raise
 
     # ------------------------------------------------------------------
     # /stop

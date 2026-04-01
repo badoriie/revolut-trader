@@ -38,6 +38,7 @@ class TelegramNotifier:
 
     # Short timeout: a slow Telegram API must not stall the trading loop.
     _TIMEOUT = 30.0  # file uploads need a longer timeout than text messages
+    _LONG_POLL_TIMEOUT = 25  # Telegram long-poll timeout (getUpdates)
 
     def __init__(self, token: str, chat_id: str) -> None:
         """Initialise the notifier with bot credentials.
@@ -283,7 +284,7 @@ class TelegramNotifier:
         """
         await self._send(text)
 
-    async def get_updates(self, offset: int = 0, timeout: int = 30) -> list[dict[str, Any]]:
+    async def get_updates(self, offset: int = 0) -> list[dict[str, Any]]:
         """Fetch pending updates from Telegram via long polling (getUpdates).
 
         Returns an empty list on any error so the polling loop continues safely.
@@ -291,7 +292,6 @@ class TelegramNotifier:
         Args:
             offset:  First update ID to return; pass previous ``update_id + 1``
                      to acknowledge processed updates.
-            timeout: Long-poll timeout in seconds.
 
         Returns:
             List of raw update dicts, or ``[]`` on failure.
@@ -299,13 +299,13 @@ class TelegramNotifier:
         try:
             async with (
                 httpx.AsyncClient() as client,
-                asyncio.timeout(timeout + 5),
+                asyncio.timeout(self._LONG_POLL_TIMEOUT + 5),
             ):
                 response = await client.get(
                     self._get_updates_url,
                     params={
                         "offset": offset,
-                        "timeout": timeout,
+                        "timeout": self._LONG_POLL_TIMEOUT,
                         "allowed_updates": ["message"],
                     },
                 )
@@ -313,7 +313,7 @@ class TelegramNotifier:
                 data = response.json()
                 return data.get("result", []) if data.get("ok") else []
         except TimeoutError:
-            logger.warning(f"Telegram getUpdates timed out after {timeout + 5}s")
+            logger.warning(f"Telegram getUpdates timed out after {self._LONG_POLL_TIMEOUT + 5}s")
             return []
         except Exception as exc:
             logger.warning(f"Telegram getUpdates failed: {exc}")
@@ -338,7 +338,7 @@ class TelegramNotifier:
         """
         offset = 0
         while not stop_event.is_set():
-            updates = await self.get_updates(offset=offset, timeout=25)
+            updates = await self.get_updates(offset=offset)
             for update in updates:
                 offset = update["update_id"] + 1
                 message = update.get("message", {})

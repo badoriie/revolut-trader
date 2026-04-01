@@ -597,7 +597,7 @@ class TestStartPolling:
 
         stop = asyncio.Event()
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             stop.set()
             return updates if offset == 0 else []
 
@@ -619,7 +619,7 @@ class TestStartPolling:
         stop = asyncio.Event()
         call_count = [0]
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             call_count[0] += 1
             if call_count[0] == 1:
                 return updates
@@ -644,7 +644,7 @@ class TestStartPolling:
         stop = asyncio.Event()
         call_count = [0]
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             call_count[0] += 1
             if call_count[0] == 1:
                 return updates
@@ -669,7 +669,7 @@ class TestStartPolling:
         stop = asyncio.Event()
         call_count = [0]
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             offsets_seen.append(offset)
             call_count[0] += 1
             if call_count[0] == 1:
@@ -696,7 +696,7 @@ class TestStartPolling:
 
         stop = asyncio.Event()
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             stop.set()
             return updates if offset == 0 else []
 
@@ -717,7 +717,7 @@ class TestStartPolling:
 
         stop = asyncio.Event()
 
-        async def fake_get_updates(offset: int = 0, timeout: int = 30) -> list:
+        async def fake_get_updates(offset: int = 0) -> list:
             stop.set()
             return updates if offset == 0 else []
 
