@@ -13,6 +13,7 @@ Usage
     revt config                View / update trading configuration
     revt api <endpoint>        Call Revolut X API endpoints
     revt db  <subcommand>      Database management and analytics
+    revt update                Update revt (preserves data/ and config)
 """
 
 from __future__ import annotations
@@ -123,6 +124,165 @@ def _op(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 # ---------------------------------------------------------------------------
+# Update notification helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_update_cache(cache_file: Path, cache_ttl: int) -> tuple[str, str] | None:
+    """Read and validate update cache.
+
+    Returns:
+        Tuple of (current, latest) if cache is fresh and update available, else None.
+    """
+    import json
+    import time
+
+    if not cache_file.exists():
+        return None
+
+    try:
+        with open(cache_file) as f:
+            cache = json.load(f)
+            if time.time() - cache.get("timestamp", 0) < cache_ttl:
+                # Cache is fresh
+                if cache.get("update_available"):
+                    return (cache.get("current"), cache.get("latest"))
+                return None
+    except Exception as e:
+        # Invalid cache, will re-check - silently continue
+        import logging
+
+        logging.debug(f"Failed to read update cache: {e}")
+    return None
+
+
+def _get_current_version_from_pyproject() -> str | None:
+    """Get current version from pyproject.toml."""
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[import-not-found]  # fallback
+        except ImportError:
+            return None  # Can't check without tomllib
+
+    pyproject_path = _ROOT / "pyproject.toml"
+    if not pyproject_path.exists():
+        return None
+
+    try:
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+            return data.get("project", {}).get("version")
+    except Exception:
+        return None
+
+
+def _get_latest_github_release() -> str | None:
+    """Get latest release tag from GitHub API.
+
+    Returns:
+        Latest tag (without 'v' prefix) or None if unavailable.
+    """
+    import json
+    import urllib.request
+
+    try:
+        url = "https://api.github.com/repos/badoriie/revolut-trader/releases/latest"
+        req = urllib.request.Request(url)
+        req.add_header("Accept", "application/vnd.github.v3+json")
+        # nosec B310: HTTPS URL from trusted GitHub API
+        with urllib.request.urlopen(req, timeout=5) as response:  # nosec B310
+            data = json.loads(response.read().decode())
+            return data.get("tag_name", "").lstrip("v")
+    except Exception:
+        # Network error or rate limit - don't show notification
+        return None
+
+
+def _write_update_cache(
+    cache_file: Path, current: str, latest: str, update_available: bool
+) -> None:
+    """Write update check results to cache file."""
+    import json
+    import time
+
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(
+                {
+                    "timestamp": time.time(),
+                    "current": current,
+                    "latest": latest,
+                    "update_available": update_available,
+                },
+                f,
+            )
+    except Exception as e:
+        # Cache write failure is non-critical - silently continue
+        import logging
+
+        logging.debug(f"Failed to write update cache: {e}")
+
+
+def _check_for_updates() -> tuple[str, str] | None:
+    """Check if a new version is available.
+
+    Returns:
+        Tuple of (current_version, latest_version) if update available, else None.
+
+    Uses a cache file to avoid hitting GitHub API too frequently (once per day).
+    """
+    cache_file = _ROOT / "data" / ".update_check_cache"
+    cache_ttl = 86400  # 24 hours in seconds
+
+    # Check cache first
+    cached_result = _read_update_cache(cache_file, cache_ttl)
+    if cached_result is not None:
+        return cached_result
+
+    # Get current version
+    current_version = _get_current_version_from_pyproject()
+    if not current_version:
+        return None
+
+    # Get latest release from GitHub API
+    latest_tag = _get_latest_github_release()
+    if not latest_tag:
+        return None
+
+    # Compare versions
+    current = current_version.lstrip("v")
+    latest = latest_tag.lstrip("v")
+    update_available = current != latest
+
+    # Update cache
+    _write_update_cache(cache_file, current, latest, update_available)
+
+    if update_available:
+        return (current, latest)
+    return None
+
+
+def _show_update_notification() -> None:
+    """Show update notification if a new version is available."""
+    result = _check_for_updates()
+    if result:
+        current, latest = result
+        print()
+        print("┌─────────────────────────────────────────────────────────────┐")
+        print("│  📦  Update Available!                                      │")
+        print("│                                                             │")
+        print(f"│  Current: v{current:<48} │")
+        print(f"│  Latest:  v{latest:<48} │")
+        print("│                                                             │")
+        print("│  Update now:  revt update                                  │")
+        print("└─────────────────────────────────────────────────────────────┘")
+        print()
+
+
+# ---------------------------------------------------------------------------
 # cmd: run
 # ---------------------------------------------------------------------------
 
@@ -133,6 +293,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     Sets ENVIRONMENT early (before any ``src.config`` import) then delegates to
     ``cli.run.run_bot`` via a compatible argument namespace.
     """
+    # Check for updates (non-blocking, cached)
+    _show_update_notification()
+
     env = _resolve_env(args)
 
     print(f"\n  Environment : {_env_badge(env)}")
@@ -192,6 +355,9 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
     Sets ENVIRONMENT then delegates to the appropriate backtest CLI function.
     """
+    # Check for updates (non-blocking, cached)
+    _show_update_notification()
+
     _resolve_env(args)
 
     from loguru import logger
@@ -646,6 +812,9 @@ def cmd_telegram(args: argparse.Namespace) -> None:
     sub_cmd = getattr(args, "telegram_cmd", None) or "test"
 
     if sub_cmd == "start":
+        # Check for updates (non-blocking, cached)
+        _show_update_notification()
+
         # Deferred import — ENVIRONMENT must be set before src.config is loaded.
         from cli.telegram_control import run_control_plane
 
@@ -744,6 +913,329 @@ def cmd_db(args: argparse.Namespace) -> None:
         print(f"Database encryption: {status}")
 
 
+def _get_binary_name_for_platform() -> str:
+    """Determine the binary name for the current platform.
+
+    Returns:
+        Binary name string (e.g., "revt-linux-arm64").
+
+    Raises:
+        SystemExit: If platform is not supported.
+    """
+    import platform
+
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+
+    if system == "linux":
+        if "arm" in machine or "aarch64" in machine:
+            return "revt-linux-arm64"
+        if "x86_64" in machine or "amd64" in machine:
+            return "revt-linux-x86_64"
+
+        print(f"❌ Unsupported Linux architecture: {machine}")
+        print("   Supported: ARM64, x86_64")
+        sys.exit(1)
+    else:
+        print(f"❌ Unsupported platform: {system}")
+        print("   Supported platforms: Linux (ARM64, x86_64)")
+        sys.exit(1)
+
+
+def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
+    """Download binary from URL and replace current executable.
+
+    Args:
+        url: Download URL for the binary.
+        latest_tag: Latest version tag for display (e.g., "v0.3.0").
+
+    Raises:
+        SystemExit: If download or installation fails.
+    """
+    import shutil
+    import tempfile
+    import urllib.error
+    import urllib.request
+
+    try:
+        # Download to temp file
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            # nosec B310: HTTPS URL from trusted GitHub releases
+            urllib.request.urlretrieve(url, tmp.name)  # nosec B310
+            tmp_path = Path(tmp.name)
+
+        # Make executable
+        tmp_path.chmod(0o755)
+
+        # Get current binary path
+        current_binary = Path(sys.executable)
+        backup_path = current_binary.with_suffix(".backup")
+
+        # Backup current binary
+        if current_binary.exists():
+            shutil.copy2(current_binary, backup_path)
+            print(f"✓ Backed up current binary to: {backup_path}")
+
+        # Replace with new binary
+        shutil.move(str(tmp_path), str(current_binary))
+        print(f"✓ Updated: {current_binary}")
+        print()
+        print("✅ Update complete!")
+        print()
+        if latest_tag:
+            print(f"Now running: {latest_tag}")
+            print()
+        print("Verify:")
+        print(f"  {current_binary} --version")
+        print()
+        print("Rollback (if needed):")
+        print(f"  mv {backup_path} {current_binary}")
+
+    except urllib.error.HTTPError as e:
+        print(f"\n❌ Download failed: {e}")
+        print(f"   URL: {url}")
+        print("\n   This might mean:")
+        print("   - No release exists for your platform")
+        print("   - Network connectivity issue")
+        print("   - GitHub release not yet published")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Update failed: {e}")
+        sys.exit(1)
+
+
+def _check_binary_version() -> tuple[str | None, str | None]:
+    """Check current and latest binary versions.
+
+    Returns:
+        Tuple of (current_version, latest_tag) or (None, None) if unavailable.
+    """
+    import json
+    import urllib.request
+
+    def get_current_version() -> str | None:
+        """Get current version from pyproject.toml."""
+        try:
+            import tomllib  # Python 3.11+
+        except ImportError:
+            import tomli as tomllib  # type: ignore[import-not-found]  # fallback for older Python
+
+        pyproject_path = _ROOT / "pyproject.toml"
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                return data.get("project", {}).get("version")
+        return None
+
+    def get_latest_release_tag() -> str | None:
+        """Get latest release tag from GitHub API."""
+        try:
+            url = "https://api.github.com/repos/badoriie/revolut-trader/releases/latest"
+            req = urllib.request.Request(url)
+            req.add_header("Accept", "application/vnd.github.v3+json")
+            # nosec B310: HTTPS URL from trusted GitHub API
+            with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
+                data = json.loads(response.read().decode())
+                return data.get("tag_name")  # e.g., "v0.3.0"
+        except Exception:
+            return None
+
+    return get_current_version(), get_latest_release_tag()
+
+
+def _update_from_binary() -> None:
+    """Update when running as a frozen PyInstaller binary."""
+    print("🔄 Checking for updates...")
+    print()
+
+    # Get current and latest versions
+    current_version, latest_tag = _check_binary_version()
+
+    if current_version and latest_tag:
+        # Normalize versions for comparison (remove 'v' prefix if present)
+        current = current_version.lstrip("v")
+        latest = latest_tag.lstrip("v")
+
+        print(f"Current version: v{current}")
+        print(f"Latest release:  {latest_tag}")
+        print()
+
+        if current == latest:
+            print("✅ Already up to date!")
+            print()
+            print("You're running the latest version.")
+            return
+
+        print("📥 New version available!")
+        print()
+
+    # Determine platform and binary name
+    binary_name = _get_binary_name_for_platform()
+
+    # Download URL
+    url = f"https://github.com/badoriie/revolut-trader/releases/latest/download/{binary_name}"
+    print(f"Downloading: {url}")
+
+    # Download and install
+    _download_and_install_binary(url, latest_tag)
+
+
+def _update_from_source() -> None:
+    """Update when running from source (git repository)."""
+    print("🔄 Checking for updates...")
+    print()
+
+    # Check if in git repository
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True,
+            check=True,
+            cwd=_ROOT,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("❌ Not in a git repository")
+        print("   Clone from: https://github.com/badoriie/revolut-trader")
+        sys.exit(1)
+
+    # Get current branch
+    current_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    # Fetch to check for updates
+    print("⬇️  Fetching latest changes...")
+    subprocess.run(["git", "fetch", "origin"], check=True, cwd=_ROOT)
+
+    # Check if behind
+    local_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    remote_commit = subprocess.run(
+        ["git", "rev-parse", f"origin/{current_branch}"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    print(f"Current branch: {current_branch}")
+    print()
+
+    if local_commit == remote_commit:
+        print("✅ Already up to date!")
+        print()
+        print("Your local branch matches origin.")
+        return
+
+    # Show what's new
+    commits_behind = subprocess.run(
+        ["git", "rev-list", "--count", f"HEAD..origin/{current_branch}"],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    print(f"📥 {commits_behind} new commit(s) available")
+    print()
+
+    # Check for uncommitted changes
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+    )
+
+    has_changes = bool(status.stdout.strip())
+
+    if has_changes:
+        print("📦 Stashing local changes...")
+        subprocess.run(["git", "stash", "push", "-m", "revt update"], check=True, cwd=_ROOT)
+        print("✓ Changes stashed")
+        print()
+
+    # Pull latest changes
+    print(f"📥 Pulling origin/{current_branch}...")
+    result = subprocess.run(
+        ["git", "pull", "origin", current_branch],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+    )
+
+    if result.returncode != 0:
+        print(f"❌ Pull failed:\n{result.stderr}")
+        if has_changes:
+            print("\n🔄 Re-applying stashed changes...")
+            subprocess.run(["git", "stash", "pop"], cwd=_ROOT)
+        sys.exit(1)
+
+    print("✓ Pulled latest changes")
+    if result.stdout.strip():
+        print(result.stdout)
+
+    # Re-apply stashed changes if any
+    if has_changes:
+        print("🔄 Re-applying local changes...")
+        pop_result = subprocess.run(
+            ["git", "stash", "pop"],
+            capture_output=True,
+            text=True,
+            cwd=_ROOT,
+        )
+        if pop_result.returncode == 0:
+            print("✓ Changes re-applied")
+        else:
+            print("⚠️  Conflicts detected — resolve manually")
+            print(pop_result.stdout)
+
+    # Update dependencies
+    print()
+    print("📦 Updating dependencies...")
+    subprocess.run(["uv", "sync", "--extra", "dev"], check=True, cwd=_ROOT)
+    print("✓ Dependencies updated")
+
+    print()
+    print("✅ Update complete!")
+    print()
+    print("ℹ️  Your data/ folder and 1Password config are untouched.")
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    """Update the codebase while preserving data and configuration.
+
+    Running from source:
+        - Checks if already up to date
+        - Stashes local changes (if any)
+        - Pulls latest from origin/main
+        - Re-applies stashed changes
+        - Reinstalls dependencies (uv sync)
+
+    Running as frozen binary:
+        - Checks current version vs latest release
+        - Downloads the latest release binary for current platform (if newer)
+        - Replaces the current binary
+        - Preserves all data, config, and 1Password credentials
+
+    The data/ folder and all 1Password configuration remain untouched.
+    """
+    # Check if running as frozen binary
+    if getattr(sys, "frozen", False):
+        _update_from_binary()
+    else:
+        _update_from_source()
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -800,6 +1292,8 @@ examples:
 
   revt telegram test                          verify Telegram notifications are working
   revt telegram start                         start always-on Telegram Control Plane
+
+  revt update                                 update revt (preserves data/ and config)
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -1043,6 +1537,13 @@ examples:
         ),
     )
     p_tg.set_defaults(func=cmd_telegram)
+
+    # ── update ────────────────────────────────────────────────────────────────
+    p_update = sub.add_parser(
+        "update",
+        help="Update revt to the latest version (preserves data/ folder and 1Password config)",
+    )
+    p_update.set_defaults(func=cmd_update)
 
     return parser
 

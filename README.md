@@ -32,14 +32,14 @@ See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, tradi
 
 Download `revt` for your platform from the [latest release](../../releases/latest):
 
-| Platform                                | File               |
-| --------------------------------------- | ------------------ |
-| macOS Apple Silicon (M1/M2/M3/M4)       | `revt-macos-arm64` |
-| Linux ARM64 (Raspberry Pi 4+, Graviton) | `revt-linux-arm64` |
+| Platform                                 | File                |
+| ---------------------------------------- | ------------------- |
+| Linux x86_64 (Standard servers/desktops) | `revt-linux-x86_64` |
+| Linux ARM64 (Raspberry Pi 4+, Graviton)  | `revt-linux-arm64`  |
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-macos-arm64 \
+# Linux x86_64
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-x86_64 \
   -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
 
 # Linux ARM64 (Raspberry Pi 4+ / ARM servers)
@@ -56,6 +56,20 @@ revt run                  # start live trading
 ```
 
 See [1Password Setup](docs/1PASSWORD.md) for credential configuration.
+
+### Updating
+
+Keep `revt` up to date (preserves your data and configuration):
+
+```bash
+revt update               # updates binary or pulls latest code
+```
+
+The `update` command:
+
+- **Binary users**: Downloads and replaces the binary with the latest release
+- **Source users**: Pulls latest changes from git and updates dependencies
+- **Safe**: Never touches `data/` folder or 1Password configuration
 
 ### Run from source (developers)
 

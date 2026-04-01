@@ -75,7 +75,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 ### `revt` — user-facing CLI (production binary + source runner)
 
-The `revt` binary is built for **macOS ARM64** and **Linux ARM64 (Raspberry Pi 4+)** by the `build-revt` CI job and attached to every GitHub release as a downloadable asset. Users download it, `chmod +x`, put it in their PATH, and use it directly with no Python or uv required. When running as a frozen binary, `revt` always defaults to the `prod` environment.
+The `revt` binary is built for **Linux x86_64** and **Linux ARM64 (Raspberry Pi 4+)** by the `build-revt` CI job and attached to every GitHub release as a downloadable asset. Users download it, `chmod +x`, put it in their PATH, and use it directly with no Python or uv required. When running as a frozen binary, `revt` always defaults to the `prod` environment.
 
 ```bash
 # Build locally (for testing)
@@ -344,6 +344,17 @@ Database encryption is mandatory. `DatabaseEncryption` auto-generates a key in 1
 
 Every public function needs type annotations on all parameters and return value, plus a docstring explaining what it does and (for critical functions) why it matters.
 
+### Cognitive Complexity — Maximum 15
+
+All functions must have a cognitive complexity of **at most 15** (SonarCloud standard). When a function exceeds this threshold:
+
+1. **Extract helper methods** — break down complex logic into focused, single-responsibility functions
+1. **Use early returns** — reduce nesting by returning early for edge cases
+1. **Avoid deep nesting** — prefer flat, linear control flow over nested if/else chains
+1. **Limit conditionals** — keep the number of decision points low
+
+Keeping functions simple improves maintainability, testability, and readability. Each helper function should be independently testable and reusable.
+
 ### Documentation Updates — Always, No Exceptions
 
 Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
@@ -391,4 +402,4 @@ Claude Code must handle this proactively without being asked.
 | `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
 | `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
 | `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
-| `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-macos-arm64` and `revt-linux-arm64` release assets                                                                          |
+| `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-linux-x86_64` and `revt-linux-arm64` release assets                                                                         |
