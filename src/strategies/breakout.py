@@ -24,6 +24,10 @@ class BreakoutStrategy(BaseStrategy):
 
     Signal strength scales with how far the price has moved beyond the breakout
     level, ranging from 0.5 (at the threshold) up to 1.0 (well past the threshold).
+
+    All tunable parameters are loaded from the ``revolut-trader-strategy-breakout``
+    1Password item at startup so users can calibrate without changing code.
+    When a field is absent from 1Password the constructor default is used.
     """
 
     def __init__(
@@ -47,11 +51,29 @@ class BreakoutStrategy(BaseStrategy):
                                   (market is already exhausted downward).
         """
         super().__init__("Breakout")
-        self.lookback_period = lookback_period
-        self.breakout_threshold = Decimal(str(breakout_threshold))
-        self.rsi_period = rsi_period
-        self.rsi_overbought = Decimal(str(rsi_overbought))
-        self.rsi_oversold = Decimal(str(rsi_oversold))
+
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("breakout")
+
+        self.lookback_period = (
+            scfg.lookback_period if scfg and scfg.lookback_period is not None else lookback_period
+        )
+        self.breakout_threshold = Decimal(
+            str(
+                scfg.breakout_threshold
+                if scfg and scfg.breakout_threshold is not None
+                else breakout_threshold
+            )
+        )
+        self.rsi_period = scfg.rsi_period if scfg and scfg.rsi_period is not None else rsi_period
+        self.rsi_overbought = Decimal(
+            str(scfg.rsi_overbought if scfg and scfg.rsi_overbought is not None else rsi_overbought)
+        )
+        self.rsi_oversold = Decimal(
+            str(scfg.rsi_oversold if scfg and scfg.rsi_oversold is not None else rsi_oversold)
+        )
 
         # Per-symbol state
         self.price_history: dict[str, deque[Decimal]] = {}

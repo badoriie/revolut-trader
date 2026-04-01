@@ -11,6 +11,11 @@ class MarketMakingStrategy(BaseStrategy):
     """
     Market Making Strategy: Places limit orders on both sides of the order book
     to profit from the bid-ask spread.
+
+    All tunable parameters (spread threshold, inventory target) are loaded from
+    the ``revolut-trader-strategy-market_making`` 1Password item at startup so
+    users can calibrate without changing code.  When a field is absent from
+    1Password the constructor default is used.
     """
 
     def __init__(
@@ -20,9 +25,26 @@ class MarketMakingStrategy(BaseStrategy):
         inventory_target: float = 0.5,  # Target 50% long/short balance
     ):
         super().__init__("Market Making")
-        self.spread_threshold = Decimal(str(spread_threshold))
+
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("market_making")
+
+        effective_spread = (
+            scfg.spread_threshold
+            if scfg and scfg.spread_threshold is not None
+            else spread_threshold
+        )
+        effective_inventory = (
+            scfg.inventory_target
+            if scfg and scfg.inventory_target is not None
+            else inventory_target
+        )
+
+        self.spread_threshold = Decimal(str(effective_spread))
         self.order_book_depth = order_book_depth
-        self.inventory_target = Decimal(str(inventory_target))
+        self.inventory_target = Decimal(str(effective_inventory))
 
     async def analyze(
         self,

@@ -89,9 +89,9 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations:
 `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy`, `BreakoutStrategy`, `RangeReversionStrategy`.
-Adding a strategy only requires a new file implementing `BaseStrategy`.
+Each strategy's tuning constants (`INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE`, `STOP_LOSS_PCT`, `TAKE_PROFIT_PCT`) are stored in a dedicated 1Password item (`revolut-trader-strategy-{name}`) and loaded into `settings.strategy_configs`. Each strategy item also accepts optional internal calibration fields (absent = strategy uses its built-in defaults): `momentum` — `FAST_PERIOD`, `SLOW_PERIOD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `market_making` — `SPREAD_THRESHOLD`, `INVENTORY_TARGET`; `mean_reversion` — `LOOKBACK_PERIOD`, `NUM_STD_DEV`, `MIN_DEVIATION`; `breakout` — `LOOKBACK_PERIOD`, `BREAKOUT_THRESHOLD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `range_reversion` — `BUY_ZONE`, `SELL_ZONE`, `RSI_PERIOD`, `RSI_CONFIRMATION_OVERSOLD`, `RSI_CONFIRMATION_OVERBOUGHT`, `MIN_RANGE_PCT`; `multi_strategy` — `MIN_CONSENSUS`, `WEIGHT_MOMENTUM`, `WEIGHT_BREAKOUT`, `WEIGHT_MARKET_MAKING`, `WEIGHT_MEAN_REVERSION`, `WEIGHT_RANGE_REVERSION`. `make setup` creates all six items with defaults. Adding a strategy requires a new file implementing `BaseStrategy`.
 
-**Configuration** (`src/config.py`): Pydantic-based. All trading config comes from 1Password — no code-level defaults. Config fails fast with actionable errors if fields are missing. Optional config: `MAX_CAPITAL` caps the cash balance at startup; `SHUTDOWN_TRAILING_STOP_PCT` sets a trailing stop percentage for profitable positions on shutdown; `SHUTDOWN_MAX_WAIT_SECONDS` sets a hard timeout before force-closing.
+**Configuration** (`src/config.py`): Pydantic-based. All trading config comes from 1Password — no code-level defaults. Config fails fast with actionable errors if fields are missing. Optional config: `MAX_CAPITAL` caps the cash balance at startup; `SHUTDOWN_TRAILING_STOP_PCT` sets a trailing stop percentage for profitable positions on shutdown; `SHUTDOWN_MAX_WAIT_SECONDS` sets a hard timeout before force-closing; `LOG_LEVEL` sets logging verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`, default `INFO`); `INTERVAL` sets the trading loop interval in seconds, overriding the per-strategy default; `BACKTEST_DAYS` sets the default backtest look-back window (default `30`); `BACKTEST_INTERVAL` sets the default candle width in minutes for backtests (default `60`); `MAKER_FEE_PCT` and `TAKER_FEE_PCT` are optional fee rate overrides (defaults: 0.0 and 0.0009); `MAX_ORDER_VALUE` (default 10000) and `MIN_ORDER_VALUE` (default 10) are optional order safety limits in base currency. Risk level parameters are loaded from the environment-agnostic `revolut-trader-risk-{level}` items and stored in `settings.risk_configs: dict[str, RiskLevelConfig]`. All CLI flags (`--strategy`, `--risk`, `--pairs`, `--capital`, `--days`, `--interval`, `--log-level`) fall back to their corresponding 1Password keys when not supplied on the command line.
 
 **Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Per-environment DB files (`data/dev.db`, `data/int.db`, `data/prod.db`). All sensitive fields encrypted with Fernet before storage. WARNING+ logs are automatically persisted to the database via a loguru sink; view with `make logs`.
 
@@ -265,6 +265,16 @@ price: Decimal = Decimal("100.5")
 - Never cast financial values with `float()` before storing.
 
 ### Configuration — No Code Defaults
+
+**Any variable the user might want to control must live in 1Password — no exceptions.** If you are adding a constant a user could reasonably change without modifying source code, it belongs in a 1Password item. Hardcoding it in Python is forbidden.
+
+**Rule hierarchy:**
+
+1. **1Password is the single source of truth** for all user-controllable values. CLI flags may override per-run; the 1Password value is the standing default.
+1. **`make setup` must create every field** with a sensible default so a fresh install works immediately.
+1. **Idempotent "add if missing" checks** must be in `make setup` so re-running it backfills new fields on existing vaults.
+1. **`config.py` loads and validates** every field. Required fields raise `RuntimeError` with a `make opconfig-set` fix command. Optional fields fall back gracefully.
+1. **`make opshow` must display** every new field.
 
 Trading config must come from 1Password exclusively. Two exceptions:
 

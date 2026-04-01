@@ -12,6 +12,11 @@ class MeanReversionStrategy(BaseStrategy):
     """
     Mean Reversion Strategy: Buys when price is below average,
     sells when above average. Uses Bollinger Bands.
+
+    All tunable parameters (lookback period, standard deviation multiplier,
+    minimum deviation) are loaded from the ``revolut-trader-strategy-mean_reversion``
+    1Password item at startup so users can calibrate without changing code.
+    When a field is absent from 1Password the constructor default is used.
     """
 
     def __init__(
@@ -21,9 +26,21 @@ class MeanReversionStrategy(BaseStrategy):
         min_deviation: float = 0.01,  # 1% minimum deviation to trade
     ):
         super().__init__("Mean Reversion")
-        self.lookback_period = lookback_period
-        self.num_std_dev = Decimal(str(num_std_dev))
-        self.min_deviation = Decimal(str(min_deviation))
+
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("mean_reversion")
+
+        self.lookback_period = (
+            scfg.lookback_period if scfg and scfg.lookback_period is not None else lookback_period
+        )
+        self.num_std_dev = Decimal(
+            str(scfg.num_std_dev if scfg and scfg.num_std_dev is not None else num_std_dev)
+        )
+        self.min_deviation = Decimal(
+            str(scfg.min_deviation if scfg and scfg.min_deviation is not None else min_deviation)
+        )
 
         # Price history for calculations
         self.price_history: dict[str, deque[Decimal]] = {}

@@ -55,19 +55,6 @@ def _setup_database_logging(persistence: DatabasePersistence, session_id: int | 
     return logger.add(database_sink, level="WARNING", format="{message}")
 
 
-# Recommended polling interval per strategy — balances signal freshness against API cost.
-# Market-making and breakout react to order-book changes in seconds; mean-reversion and
-# range-reversion operate on slower statistical drift.  Override with --interval if needed.
-_STRATEGY_INTERVALS: dict[StrategyType, int] = {
-    StrategyType.MARKET_MAKING: 5,
-    StrategyType.BREAKOUT: 5,
-    StrategyType.MOMENTUM: 10,
-    StrategyType.MULTI_STRATEGY: 10,
-    StrategyType.MEAN_REVERSION: 15,
-    StrategyType.RANGE_REVERSION: 15,
-}
-
-
 class TradingBot:
     """Main trading bot orchestrating all components."""
 
@@ -526,7 +513,8 @@ class TradingBot:
         Returns:
             Recommended polling interval in seconds.
         """
-        return _STRATEGY_INTERVALS.get(self.strategy_type, 10)
+        cfg = settings.strategy_configs.get(self.strategy_type.value)
+        return cfg.interval if cfg else 10
 
     async def run_trading_loop(self, interval: int | None = None):
         """Main trading loop.

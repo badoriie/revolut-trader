@@ -136,8 +136,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     env = _resolve_env(args)
 
     print(f"\n  Environment : {_env_badge(env)}")
-    print(f"  Strategy    : {args.strategy}")
-    print(f"  Risk level  : {args.risk}")
+    print(f"  Strategy    : {args.strategy or '(from 1Password)'}")
+    print(f"  Risk level  : {args.risk or '(from 1Password)'}")
     print()
 
     if env == "prod":
@@ -163,7 +163,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             "<level>{level: <8}</level> | "
             "<level>{message}</level>"
         ),
-        level=args.log_level,
+        level=args.log_level or "INFO",
     )
 
     # Deferred import — ENVIRONMENT must be set before src.config is loaded.
@@ -197,7 +197,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     from loguru import logger
 
     logger.remove()
-    logger.add(sys.stderr, level=args.log_level)
+    logger.add(sys.stderr, level=args.log_level or "INFO")
 
     if args.matrix:
         print("\n  STRATEGY × RISK LEVEL MATRIX BACKTEST\n")
@@ -254,31 +254,33 @@ def _backtest_single(
 
 def _run_compare_cli(
     *,
-    days: int,
-    interval: int,
-    pairs: str,
-    capital: float,
+    days: int | None,
+    interval: int | None,
+    pairs: str | None,
+    capital: float | None,
     risk: str | None,
     risk_levels: str | None,
     strategies: str | None,
-    log_level: str,
+    log_level: str | None,
 ) -> None:
-    """Invoke ``backtest_compare.main()`` by patching sys.argv."""
+    """Invoke ``backtest_compare.main()`` by patching sys.argv.
+
+    Any None argument is omitted from argv so backtest_compare falls back to its
+    1Password-sourced defaults.
+    """
     from cli.backtest_compare import main as _compare_main
 
-    argv = [
-        "backtest_compare",
-        "--days",
-        str(days),
-        "--interval",
-        str(interval),
-        "--pairs",
-        pairs,
-        "--capital",
-        str(capital),
-        "--log-level",
-        log_level,
-    ]
+    argv = ["backtest_compare"]
+    if days is not None:
+        argv += ["--days", str(days)]
+    if interval is not None:
+        argv += ["--interval", str(interval)]
+    if pairs is not None:
+        argv += ["--pairs", pairs]
+    if capital is not None:
+        argv += ["--capital", str(capital)]
+    if log_level is not None:
+        argv += ["--log-level", log_level]
     if risk_levels:
         argv += ["--risk-levels", risk_levels]
     elif risk:
@@ -816,32 +818,33 @@ examples:
             "breakout",
             "range_reversion",
         ],
-        default="market_making",
-        help="Trading strategy (default: market_making)",
+        default=None,
+        help="Trading strategy (default: DEFAULT_STRATEGY from 1Password config)",
     )
     p_run.add_argument(
         "--risk",
         "-r",
         choices=["conservative", "moderate", "aggressive"],
-        default="conservative",
-        help="Risk level (default: conservative)",
+        default=None,
+        help="Risk level (default: RISK_LEVEL from 1Password config)",
     )
     p_run.add_argument(
         "--pairs",
         "-p",
-        help="Comma-separated pairs, e.g. BTC-EUR,ETH-EUR (default: from 1Password config)",
+        help="Comma-separated pairs, e.g. BTC-EUR,ETH-EUR (default: TRADING_PAIRS from 1Password config)",
     )
     p_run.add_argument(
         "--interval",
         "-i",
         type=int,
-        help="Polling interval in seconds (default: strategy-dependent)",
+        help="Polling interval in seconds (default: INTERVAL from 1Password config, or strategy-dependent)",
     )
     p_run.add_argument(
         "--log-level",
         "-l",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
+        default=None,
+        help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
     p_run.set_defaults(func=cmd_run)
 
@@ -868,46 +871,53 @@ examples:
             "breakout",
             "range_reversion",
         ],
-        default="market_making",
-        help="Strategy for single run (ignored with --compare / --matrix)",
+        default=None,
+        help="Strategy for single run (default: DEFAULT_STRATEGY from 1Password config)",
     )
     p_bt.add_argument(
         "--strategies",
         help="Comma-separated strategies for --compare (default: all)",
     )
-    p_bt.add_argument("--days", "-d", type=int, default=30, help=_DAYS_HELP)
+    p_bt.add_argument(
+        "--days",
+        "-d",
+        type=int,
+        default=None,
+        help="Days of historical data (default: BACKTEST_DAYS from 1Password config, or 30)",
+    )
     p_bt.add_argument(
         "--interval",
         "-i",
         type=int,
-        default=60,
-        choices=[1, 5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60)",
+        default=None,
+        choices=[1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320],
+        help="Candle interval in minutes (default: BACKTEST_INTERVAL from 1Password config, or 60)",
     )
     p_bt.add_argument(
         "--risk",
         "-r",
         choices=["conservative", "moderate", "aggressive"],
-        default="conservative",
-        help="Risk level (default: conservative)",
+        default=None,
+        help="Risk level (default: RISK_LEVEL from 1Password config)",
     )
     p_bt.add_argument(
         "--pairs",
         "-p",
-        default="BTC-EUR,ETH-EUR",
-        help="Comma-separated pairs (default: BTC-EUR,ETH-EUR)",
+        default=None,
+        help="Comma-separated pairs (default: TRADING_PAIRS from 1Password config)",
     )
     p_bt.add_argument(
         "--capital",
         "-c",
         type=float,
-        default=10000.0,
-        help="Initial capital in EUR (default: 10000)",
+        default=None,
+        help="Initial capital in EUR (default: INITIAL_CAPITAL from 1Password config)",
     )
     p_bt.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
+        default=None,
+        help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
     p_bt.set_defaults(func=cmd_backtest)
 

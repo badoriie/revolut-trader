@@ -34,6 +34,19 @@ VAULT = "revolut-trader"
 CREDENTIALS_ITEM = "revolut-trader-credentials"
 CONFIG_ITEM = "revolut-trader-config"
 
+# Strategy-specific config items (no env suffix — same constants across all environments).
+_STRATEGY_NAMES = [
+    "market_making",
+    "momentum",
+    "breakout",
+    "mean_reversion",
+    "range_reversion",
+    "multi_strategy",
+]
+
+# Risk level config items (no env suffix — same risk parameters across all environments).
+_RISK_LEVEL_NAMES = ["conservative", "moderate", "aggressive"]
+
 
 def get_credentials_item(env: str | None = None) -> str:
     """Return the environment-suffixed credentials item name.
@@ -48,6 +61,38 @@ def get_credentials_item(env: str | None = None) -> str:
     if env is None:
         env = os.environ.get("ENVIRONMENT", "dev")
     return f"revolut-trader-credentials-{env}"
+
+
+def get_risk_item(level: str) -> str:
+    """Return the 1Password item name for a risk level's parameters.
+
+    Risk items are NOT environment-suffixed because risk parameters
+    (position size, daily loss limits, SL/TP percentages) are the same
+    across dev, int, and prod.
+
+    Args:
+        level: Risk level name, e.g. ``"conservative"``.
+
+    Returns:
+        1Password item name, e.g. ``"revolut-trader-risk-conservative"``.
+    """
+    return f"revolut-trader-risk-{level}"
+
+
+def get_strategy_item(strategy: str) -> str:
+    """Return the 1Password item name for a strategy's tuning constants.
+
+    Strategy items are NOT environment-suffixed because strategy constants
+    (interval, signal thresholds, SL/TP percentages) are the same across
+    dev, int, and prod.
+
+    Args:
+        strategy: Strategy name, e.g. ``"momentum"``.
+
+    Returns:
+        1Password item name, e.g. ``"revolut-trader-strategy-momentum"``.
+    """
+    return f"revolut-trader-strategy-{strategy}"
 
 
 def get_config_item(env: str | None = None) -> str:
@@ -167,6 +212,24 @@ class _VaultCache:
         credentials = _fetch_item_fields(creds_item)
         config = _fetch_item_fields(conf_item)
         merged = {**credentials, **config}
+
+        # Load per-strategy tuning constants (no env suffix — shared across envs).
+        # Fields are namespaced: STRATEGY_{NAME_UPPER}_{FIELD}.
+        # Missing strategy items are silently skipped; config.py falls back to defaults.
+        for strategy in _STRATEGY_NAMES:
+            fields = _fetch_item_fields(get_strategy_item(strategy))
+            prefix = strategy.upper()
+            for field, value in fields.items():
+                merged[f"STRATEGY_{prefix}_{field}"] = value
+
+        # Load per-risk-level parameters (no env suffix — shared across envs).
+        # Fields are namespaced: RISK_{LEVEL_UPPER}_{FIELD}.
+        # Missing risk items are silently skipped; config.py falls back to defaults.
+        for level in _RISK_LEVEL_NAMES:
+            fields = _fetch_item_fields(get_risk_item(level))
+            prefix = level.upper()
+            for field, value in fields.items():
+                merged[f"RISK_{prefix}_{field}"] = value
 
         if not merged:
             env = os.environ.get("ENVIRONMENT", "dev")

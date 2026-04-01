@@ -14,6 +14,11 @@ class MomentumStrategy(BaseStrategy):
     and RSI indicator.
 
     Optimized with O(1) EMA calculations instead of O(n) SMA for 10-100x faster performance.
+
+    All tunable parameters (EMA periods, RSI period, overbought/oversold levels) are
+    loaded from the ``revolut-trader-strategy-momentum`` 1Password item at startup so
+    users can calibrate without changing code.  When a field is absent from 1Password
+    the constructor default is used.
     """
 
     def __init__(
@@ -25,11 +30,26 @@ class MomentumStrategy(BaseStrategy):
         rsi_oversold: float = 30.0,
     ):
         super().__init__("Momentum")
-        self.fast_period = fast_period
-        self.slow_period = slow_period
-        self.rsi_period = rsi_period
-        self.rsi_overbought = rsi_overbought
-        self.rsi_oversold = rsi_oversold
+
+        # Load calibration overrides from 1Password (via settings.strategy_configs).
+        # Falls back to constructor defaults when the vault field is absent.
+        from src.config import settings
+
+        scfg = settings.strategy_configs.get("momentum")
+
+        self.fast_period = (
+            scfg.fast_period if scfg and scfg.fast_period is not None else fast_period
+        )
+        self.slow_period = (
+            scfg.slow_period if scfg and scfg.slow_period is not None else slow_period
+        )
+        self.rsi_period = scfg.rsi_period if scfg and scfg.rsi_period is not None else rsi_period
+        self.rsi_overbought = (
+            scfg.rsi_overbought if scfg and scfg.rsi_overbought is not None else rsi_overbought
+        )
+        self.rsi_oversold = (
+            scfg.rsi_oversold if scfg and scfg.rsi_oversold is not None else rsi_oversold
+        )
 
         # Optimized indicators - O(1) updates instead of O(n) recalculation
         self.fast_ema: dict[str, EMA] = {}
