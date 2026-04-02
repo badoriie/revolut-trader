@@ -133,9 +133,10 @@ def create_mock_vault_prod() -> dict[str, str]:
 def create_valid_config() -> dict[str, str]:
     """Return the configuration subset of the mock vault (for backwards compatibility).
 
-    Returns paper-mode config (dev/int).
+    Returns paper-mode config.
     """
     return {
+        "TRADING_MODE": "paper",
         "RISK_LEVEL": "conservative",
         "BASE_CURRENCY": "EUR",
         "TRADING_PAIRS": "BTC-EUR,ETH-EUR",

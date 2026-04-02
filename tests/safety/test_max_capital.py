@@ -124,12 +124,14 @@ class TestMaxCapitalConfigLoading:
                 Settings()
 
     def test_max_capital_works_in_prod_mode(self) -> None:
-        """MAX_CAPITAL should be loadable in prod environment too."""
+        """MAX_CAPITAL should be loadable in prod environment with paper mode."""
         config = {
+            "TRADING_MODE": "paper",
             "RISK_LEVEL": "conservative",
             "BASE_CURRENCY": "EUR",
             "TRADING_PAIRS": "BTC-EUR",
             "DEFAULT_STRATEGY": "market_making",
+            "INITIAL_CAPITAL": "10000",
             "MAX_CAPITAL": "5000",
         }
 
@@ -140,7 +142,7 @@ class TestMaxCapitalConfigLoading:
             ):
                 s = Settings()
 
-        assert s.trading_mode == TradingMode.LIVE
+        assert s.trading_mode == TradingMode.PAPER
         assert s.max_capital == 5000.0
 
 

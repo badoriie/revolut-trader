@@ -23,8 +23,11 @@ graph TD
     Enc["DatabaseEncryption\nsrc/utils/db_encryption.py"]
     Cfg["Config\nsrc/config.py"]
     OP["1Password\nsrc/utils/onepassword.py"]
+    Telegram["TelegramNotifier\nsrc/utils/telegram.py"]
+    TelegramCtl["Telegram Control Plane\ncli/telegram_control.py"]
 
     CLI --> Bot
+    CLI --> TelegramCtl
     Bot --> API
     Bot --> MockAPI
     Bot --> Risk
@@ -32,6 +35,7 @@ graph TD
     Bot --> Strat
     Bot --> DB
     Bot --> Cfg
+    Bot --> Telegram
     API --> Rate
     MockAPI --> Rate
     Exec --> API
@@ -45,6 +49,23 @@ graph TD
     DB --> ORM
     DB --> Enc
     Cfg --> OP
+______________________________________________________________________
+
+## Telegram Integration
+
+The bot supports Telegram notifications and an always-on control plane for remote management and analytics report delivery. All Telegram credentials and configuration are stored in 1Password under the trading config item (`revolut-trader-config-{env}`):
+
+- `TELEGRAM_BOT_TOKEN` (concealed): Telegram bot token
+- `TELEGRAM_CHAT_ID` (text): Chat ID (user or group)
+- `TELEGRAM_REPORTS_ENABLED` (text): Set to `true` to enable analytics/report notifications
+
+**How it works:**
+- `src/utils/telegram.py` handles sending notifications, analytics reports (PDF/text), and command polling.
+- `cli/telegram_control.py` runs the always-on control plane, allowing you to start/stop the bot and request status/reports via Telegram commands.
+- Analytics reports are delivered as PDF (if `fpdf2` is installed) or as a text summary.
+- Only the configured chat receives notifications and can control the bot.
+
+See `docs/1PASSWORD.md` for setup instructions.
 ```
 
 ______________________________________________________________________
@@ -173,6 +194,42 @@ ______________________________________________________________________
 | Encryption   | `src/utils/db_encryption.py`          | Fernet encryption, key in 1Password                       |
 | Fees         | `src/utils/fees.py`                   | Fee constants + `calculate_fee()` — 0% maker, 0.09% taker |
 | Indicators   | `src/utils/indicators.py`             | SMA/EMA/RSI/BB — all O(1) incremental                     |
+| Telegram     | `src/utils/telegram.py`               | Telegram notifier, command listener, analytics delivery   |
+| TelegramCtl  | `cli/telegram_control.py`             | Always-on Telegram control plane                          |
+
+______________________________________________________________________
+
+## Trading Modes
+
+The bot supports two trading modes, controlled by the `TRADING_MODE` configuration field in 1Password:
+
+### Paper Trading (default)
+
+- Simulates all trades without placing real orders
+- Uses real market data from the API
+- Tracks P&L, positions, and fills locally
+- Safe for testing strategies and validating bot behavior
+- **All environments default to paper mode**
+
+### Live Trading (opt-in)
+
+- Places real orders on the Revolut X exchange
+- Uses real funds from your account
+- Requires explicit configuration: `TRADING_MODE=live` in 1Password
+- Triggers confirmation prompt: "Type 'I UNDERSTAND' to proceed"
+- Can be overridden per-run with `--mode live` CLI flag
+
+**Key safety principle**: Environment (dev/int/prod) determines *which* credentials and database to use. Trading mode is a *separate* safety setting that defaults to paper everywhere.
+
+### Mode Override
+
+CLI flags can override the 1Password setting:
+
+```bash
+revt run --mode paper       # force paper (safe override)
+revt run --mode live        # force live (requires confirmation)
+revt run --mode live --confirm-live  # skip confirmation (for automation)
+```
 
 ______________________________________________________________________
 
@@ -190,3 +247,4 @@ ______________________________________________________________________
 1. **Currency mismatch validation** — all trading pairs must end with `-{BASE_CURRENCY}`; bot refuses to start if there is a mismatch
 1. **Capital cap** — optional `MAX_CAPITAL` in 1Password limits how much the bot can trade with, regardless of account balance
 1. **Shutdown trailing stop** — optional `SHUTDOWN_TRAILING_STOP_PCT` and `SHUTDOWN_MAX_WAIT_SECONDS` in 1Password control how long the bot waits for the best exit on profitable positions before force-closing
+1. **Telegram notification safety** — only the configured chat can receive notifications and control the bot; credentials are never stored in code or plaintext files

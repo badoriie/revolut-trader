@@ -342,13 +342,37 @@ class Settings(BaseSettings):
                 f"Invalid ENVIRONMENT '{env_str}': must be 'dev', 'int', or 'prod'."
             ) from e
 
-        # TRADING_MODE is derived from environment — not stored in 1Password.
-        self.trading_mode = (
-            TradingMode.LIVE if self.environment == Environment.PROD else TradingMode.PAPER
-        )
-
     def _load_trading_config(self, op) -> None:
-        """Load strategy, pairs, and currency config from 1Password."""
+        """Load strategy, pairs, currency, and trading mode config from 1Password.
+
+        TRADING_MODE defaults to 'paper' for ALL environments (dev, int, prod) unless
+        explicitly set in 1Password. This ensures new users never accidentally trade
+        with real money. To enable live trading, set TRADING_MODE=live in 1Password
+        or use the --mode live CLI flag.
+        """
+        # Load trading mode — defaults to paper if not set (safest default for ALL environments)
+        trading_mode_str = op.get_optional("TRADING_MODE")
+        if trading_mode_str:
+            try:
+                self.trading_mode = TradingMode(trading_mode_str.lower())
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'.\n"
+                    f"Set it with: make opconfig-set KEY=TRADING_MODE VALUE=paper ENV={self.environment.value}"
+                ) from e
+        else:
+            # No TRADING_MODE set — default to paper (safe default for all environments)
+            self.trading_mode = TradingMode.PAPER
+
+        # Enforce: live trading only allowed in prod
+        if self.trading_mode == TradingMode.LIVE and self.environment != Environment.PROD:
+            raise RuntimeError(
+                f"LIVE trading is only allowed in 'prod' environment.\n"
+                f"Current environment: {self.environment.value}\n"
+                f"1Password has TRADING_MODE=live, but this is not permitted for {self.environment.value}.\n"
+                f"Change it to paper with: make opconfig-set KEY=TRADING_MODE VALUE=paper ENV={self.environment.value}"
+            )
+
         try:
             self.risk_level = RiskLevel(op.get("RISK_LEVEL").lower())
         except ValueError as e:
@@ -998,6 +1022,42 @@ class Settings(BaseSettings):
     #                          make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV=<env>
     telegram_bot_token: str | None = Field(default=None)
     telegram_chat_id: str | None = Field(default=None)
+
+    def override_trading_mode(self, mode: TradingMode) -> None:
+        """Override trading mode (used by CLI --mode flag).
+
+        This method allows the CLI to override the TRADING_MODE loaded from 1Password.
+        Typically used with --mode paper or --mode live flags.
+
+        Args:
+            mode: The trading mode to set (PAPER or LIVE).
+
+        Raises:
+            RuntimeError: If attempting to enable LIVE mode in non-prod environment.
+        """
+        if mode == TradingMode.LIVE and self.environment != Environment.PROD:
+            raise RuntimeError(
+                f"LIVE trading is only allowed in 'prod' environment.\n"
+                f"Current environment: {self.environment.value}\n"
+                f"To use live trading, run with ENV=prod or --env prod."
+            )
+        self.trading_mode = mode
+
+    def get_mode_warning(self) -> str | None:
+        """Return a warning message if LIVE mode is active, None otherwise.
+
+        Used by the bot and CLI to display safety warnings when real money is at risk.
+
+        Returns:
+            Warning message string if LIVE mode, None if PAPER mode.
+        """
+        if self.trading_mode == TradingMode.LIVE:
+            return (
+                "⚠️  LIVE TRADING MODE ENABLED — REAL MONEY AT RISK\n"
+                f"   Environment: {self.environment.value}\n"
+                "   All trades will use real funds from your Revolut account."
+            )
+        return None
 
 
 settings = Settings()

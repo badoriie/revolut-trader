@@ -8,13 +8,23 @@ authors = [{ name = "Amir Nasari", email = "amir@nasari.me" }]
 readme = "README.md"
 keywords = ["trading", "revolut", "crypto", "algorithmic-trading"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+    "Framework :: Pydantic :: 2",
+    "Environment :: Console",
+    "Natural Language :: English",
+    "Typing :: Typed",
 ]
 dependencies = [
     "httpx~=0.28",
@@ -45,7 +55,6 @@ dev = [
 ]
 
 [project.scripts]
-revolut-trader = "cli.run:main"
 revt = "cli.revt:main"
 
 [build-system]

@@ -305,8 +305,8 @@ The project uses three deployment environments with full isolation:
 ### Key rules
 
 - **`ENVIRONMENT` must be set** before any Python process that imports `src.config`. The Makefile sets it automatically; for manual runs use `--env` or `export ENVIRONMENT=dev`.
-- **`TRADING_MODE` is derived from the environment** — dev/int → paper, prod → live. Not stored in 1Password.
-- **`INITIAL_CAPITAL` is only for paper mode** (dev/int). Prod fetches real balance from the API.
+- **`TRADING_MODE` is stored in 1Password** and defaults to `paper` if not set. Must be explicitly set to `live` for real-money trading.
+- **`INITIAL_CAPITAL` is required for paper mode**, not required for live mode (fetches real balance from API).
 - **Separate API keys per environment** — if a dev key leaks, prod is unaffected.
 - **Tests always run with `ENVIRONMENT=dev`** — set in `conftest.py` before the `Settings` singleton is created.
 
@@ -350,7 +350,33 @@ ______________________________________________________________________
 1. Start in `dev` environment — validate with mock API
 1. Promote to `int` environment — paper trade with real market data
 1. Verify all safety limits work in `int` for at least 24 hours
-1. After thorough validation in int, go live with `make run ENV=prod` / `revt run`
+1. **Enable live mode explicitly:**
+   ```bash
+   revt config set TRADING_MODE live --env prod
+   ```
+1. Start with small capital: `revt config set MAX_CAPITAL 500 --env prod`
+1. Go live: `revt run --env prod` (prompts "I UNDERSTAND")
+
+### Environment Parity — Critical Rule
+
+All three environments execute **identical code paths**. Only the data source differs:
+
+- `dev` → Mock API (synthetic data)
+- `int` → Real API (live market data)
+- `prod` → Real API (live market data)
+
+**The rule:** If behavior X works in `dev` or `int`, it must work exactly the same in `prod`.
+
+**Never add environment-specific branches** that skip logic (e.g., fee calculation, position tracking). Paper mode simulates fills locally, but all accounting must use the same formulas as live mode.
+
+### Documentation Structure
+
+The project has two primary user-facing guides:
+
+- **docs/END_USER_GUIDE.md** — For binary users: download, configure, start trading (no source needed)
+- **docs/DEVELOPER_GUIDE.md** — For developers: source setup, make commands, advanced usage
+
+Update the appropriate guide when making user-facing changes.
 
 ______________________________________________________________________
 
