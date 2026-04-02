@@ -347,20 +347,15 @@ The bot supports two trading modes. Mode is a **separate safety setting from env
 
 ### Mode Configuration
 
-**1Password (standing default):**
+**Standing default (via 1Password):**
 
-```bash
-revt config set TRADING_MODE paper    # safe default
-revt config set TRADING_MODE live     # opt into live (prod only)
-```
+- Set `TRADING_MODE` to `paper` or `live` using `revt config set` (applies to future runs)
+- View current setting with `revt config show`
 
 **Per-run override:**
 
-```bash
-revt run --mode paper                 # force paper (always safe)
-revt run --mode live                  # force live (requires confirmation)
-revt run --mode live --confirm-live   # skip confirmation (automation)
-```
+- Use `--mode paper` or `--mode live` to override the 1Password setting for one run
+- Live mode requires confirmation (skip with `--confirm-live` for automation)
 
 **Key principle:** Environment selects *which* credentials and database. Trading mode selects *whether* to execute real orders.
 

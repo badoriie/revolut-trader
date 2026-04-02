@@ -144,13 +144,144 @@ Examples:
 
     args = parser.parse_args()
 
+    # Call the new function
+    run_api_command(args.command)
+
+
+def run_api_command(command: str) -> None:
+    """Run an API test command.
+
+    This function can be called directly from other modules without
+    needing to patch sys.argv.
+
+    Args:
+        command: The API command to run (test, trade-ready, etc.)
+    """
+    from types import SimpleNamespace
+
     # Reduce logging noise
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
+    # Create a namespace object with the command
+    args = SimpleNamespace(command=command)
+
     # Run command
     try:
         asyncio.run(run_command(args))
+    except KeyboardInterrupt:
+        print("\n\nCancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Command failed: {e!s}", exc_info=True)
+        print(f"\n❌ Error: {e}")
+        sys.exit(1)
+
+
+def run_api_endpoint(
+    *,
+    command: str,
+    symbol: str | None = None,
+    symbols: str | None = None,
+    order_id: str | None = None,
+    interval: int | None = None,
+    limit: int | None = None,
+    depth: int | None = None,
+) -> None:
+    """Run an API endpoint command with the given parameters.
+
+    This function provides a direct interface to API endpoints without
+    needing to patch sys.argv. It's a simple proxy to the API client.
+
+    Args:
+        command: The API command to run (balance, ticker, tickers, etc.)
+        symbol: Symbol for single-symbol commands
+        symbols: Comma-separated symbols for multi-symbol commands
+        order_id: Order ID for order-specific commands
+        interval: Candle interval in minutes
+        limit: Result limit
+        depth: Order book depth
+    """
+    import json
+
+    # Reduce logging noise
+    logger.remove()
+    logger.add(sys.stderr, level="WARNING")
+
+    async def _run_endpoint():
+        """Run the API endpoint and display results."""
+        api_client = RevolutAPIClient()
+        await api_client.initialize()
+
+        try:
+            result = None
+
+            # Route to the appropriate API method
+            if command == "balance":
+                result = await api_client.get_balance()
+            elif command == "ticker":
+                if not symbol:
+                    print("❌ Error: ticker command requires --symbol")
+                    sys.exit(1)
+                result = await api_client.get_ticker(symbol)
+            elif command == "tickers":
+                if symbols:
+                    symbol_list = [s.strip() for s in symbols.split(",")]
+                    result = await api_client.get_tickers(symbol_list)
+                else:
+                    # Get all tickers if no symbols specified
+                    result = await api_client.get_tickers()
+            elif command == "all-tickers":
+                result = await api_client.get_tickers()
+            elif command == "order-book":
+                if not symbol:
+                    print("❌ Error: order-book command requires --symbol")
+                    sys.exit(1)
+                result = await api_client.get_order_book(symbol, depth=depth or 10)
+            elif command == "candles":
+                if not symbol:
+                    print("❌ Error: candles command requires --symbol")
+                    sys.exit(1)
+                result = await api_client.get_candles(
+                    symbol, interval=interval or 60, limit=limit or 100
+                )
+            elif command == "open-orders":
+                result = await api_client.get_open_orders()
+            elif command == "orders":
+                result = await api_client.get_historical_orders()
+            elif command == "trades":
+                # Private trades require a symbol
+                if not symbol:
+                    print("❌ Error: trades command requires --symbol")
+                    sys.exit(1)
+                result = await api_client.get_trades(symbol=symbol, limit=limit or 100)
+            elif command == "public-trades":
+                if not symbol:
+                    print("❌ Error: public-trades command requires --symbol")
+                    sys.exit(1)
+                result = await api_client.get_public_trades(symbol, limit=limit or 100)
+            elif command == "order":
+                if not order_id:
+                    print("❌ Error: order command requires --order-id")
+                    sys.exit(1)
+                result = await api_client.get_order(order_id)
+            elif command == "currencies":
+                result = await api_client.get_currencies()
+            elif command == "currency-pairs":
+                result = await api_client.get_currency_pairs()
+            else:
+                print(f"❌ Unknown command: {command}")
+                sys.exit(1)
+
+            # Display results as formatted JSON
+            if result:
+                print(json.dumps(result, indent=2, default=str))
+
+        finally:
+            await api_client.close()
+
+    try:
+        asyncio.run(_run_endpoint())
     except KeyboardInterrupt:
         print("\n\nCancelled by user")
         sys.exit(1)
