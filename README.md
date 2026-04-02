@@ -151,11 +151,15 @@ make run ENV=prod    # prompts for "I UNDERSTAND" confirmation before starting
 ### API Testing
 
 ```bash
-make api-test                                          # connection check
-make api-balance                                       # account balances
-make api-ticker SYMBOL=BTC-EUR                         # single ticker
-make api-tickers SYMBOLS=BTC-EUR,ETH-EUR,SOL-EUR      # multiple tickers
-make api-candles SYMBOL=BTC-EUR INTERVAL=60 LIMIT=10   # historical candles
+make api-test            # authenticated connection test
+make api-ready           # check API permissions (view + trade)
+make telegram-test       # verify Telegram is configured
+
+# Via revt CLI (for additional endpoints):
+revt api balance                           # account balances
+revt api ticker --symbol BTC-EUR           # single ticker
+revt api tickers --symbols BTC-EUR,ETH-EUR # multiple tickers
+revt api candles --symbol BTC-EUR          # historical candles
 ```
 
 ## Strategies
@@ -244,7 +248,9 @@ revolut-trader/
 │   ├── backtest_compare.py   # Multi-strategy comparison + matrix
 │   ├── api_test.py           # API connectivity and endpoint testing
 │   ├── db_manage.py          # Database management and export
-│   └── analytics_report.py   # Comprehensive analytics report with charts
+│   ├── analytics_report.py   # Comprehensive analytics report with charts
+│   ├── telegram_control.py   # Telegram Control Plane (always-on bot commands)
+│   └── view_logs.py          # View decrypted logs from database
 ├── build/                    # Build configuration
 │   └── revt.spec             # PyInstaller spec for revt binary
 ├── tests/

@@ -111,6 +111,9 @@ Each strategy's tuning constants (`INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE
 - `tests/safety/test_config_required.py` — required config field validation tests (fail-fast on missing 1Password fields)
 - `tests/safety/test_max_capital.py` — MAX_CAPITAL cap enforcement tests
 - `tests/safety/test_order_limits.py` — order size and position limit safety tests
+- `tests/safety/test_fees_config.py` — fee configuration validation tests
+- `tests/safety/test_risk_config.py` — risk level configuration tests
+- `tests/safety/test_strategy_config.py` — strategy configuration tests
 - `tests/unit/` — component unit tests (calculations, indicators, risk manager, executor, strategies, backtest engine)
 - `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
 - Coverage must be ≥ 97% (enforced by CI and pre-commit)
@@ -136,6 +139,7 @@ Each strategy's tuning constants (`INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE
 | `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                                                                                                                                                    |
 | `src/utils/rate_limiter.py`           | API rate limiting                                                                                                                                                                                                                        |
 | `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — single source of truth for the Revolut X fee schedule (0% maker / 0.09% taker)                                                                                                             |
+| `src/utils/telegram.py`               | Telegram notifier: push notifications + `get_updates`/`start_polling`/`reply` for two-way bot command listener (`/status`, `/balance`, `/report`, `/help`)                                                                               |
 | `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, per-strategy order type (MARKET/LIMIT), intra-bar SL/TP via candle high/low, LIMIT fill verification, 0.1% spread, taker fees, Sharpe ratio |
 | `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                                                                                                                                                   |
 | `tests/test_config.py`                | Configuration loading and validation tests                                                                                                                                                                                               |
