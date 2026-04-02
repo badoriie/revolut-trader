@@ -51,12 +51,10 @@ help:
 	@echo "  make opconfig-delete   - Remove a config key (KEY=...)"
 	@echo ""
 	@echo "Trading & Analysis:"
-	@echo "  make run               - Run the bot (env auto-detected: tagged→prod, main→int, other→dev)"
-	@echo "                           STRATEGY=... RISK=... PAIRS=... INTERVAL=..."
-	@echo "                           Override env: make run ENV=dev|int|prod"
+	@echo "  make run               - Run the bot (env auto-detected)"
+	@echo "                           STRATEGY=... RISK=... PAIRS=... INTERVAL=... MODE=live"
 	@echo "  make backtest          - Backtest one strategy (env auto-detected from branch)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=..."
-	@echo "                           Override env: make backtest BACKTEST_ENV=dev|int"
 	@echo "  make backtest-hf       - High-frequency backtest (1-minute candles, closest to live 5s polling)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... PAIRS=..."
 	@echo "  make backtest-compare  - Compare all strategies side-by-side (DAYS=... RISK=...)"
@@ -584,15 +582,10 @@ run:
 	@STRATEGY=$${STRATEGY:-market_making}; \
 	RISK=$${RISK:-conservative}; \
 	echo "Starting bot (env: $(ENV) | strategy: $$STRATEGY | risk: $$RISK)"; \
-	if [ "$(ENV)" = "prod" ]; then \
-		echo ""; \
-		echo "LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK"; \
-		echo ""; \
-		read -p "Type 'I UNDERSTAND' to continue: " confirm && [ "$$confirm" = "I UNDERSTAND" ] || (echo "Cancelled" && exit 1); \
-	fi; \
 	CMD="ENVIRONMENT=$(ENV) uv run python cli/run.py --env $(ENV) --strategy $$STRATEGY --risk $$RISK"; \
 	[ -n "$${PAIRS:-}" ] && CMD="$$CMD --pairs $$PAIRS"; \
 	[ -n "$${INTERVAL:-}" ] && CMD="$$CMD --interval $$INTERVAL"; \
+	[ -n "$${MODE:-}" ] && CMD="$$CMD --mode $$MODE"; \
 	eval $$CMD
 
 telegram:

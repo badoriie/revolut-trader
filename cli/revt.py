@@ -88,7 +88,7 @@ def _env_badge(env: str) -> str:
     labels = {
         "dev": "dev  (mock API · paper mode)",
         "int": "int  (real API · paper mode)",
-        "prod": "prod (real API · LIVE mode — REAL MONEY)",
+        "prod": "prod (real API · paper mode by default)",
     }
     return labels.get(env, env)
 
@@ -298,23 +298,42 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     env = _resolve_env(args)
 
+    # Handle --mode override (must be done AFTER config is loaded, but we need to
+    # show the warning BEFORE importing config, so we'll defer the actual check)
+    mode_override = getattr(args, "mode", None)
+    confirm_live = getattr(args, "confirm_live", False)
+
     print(f"\n  Environment : {_env_badge(env)}")
     print(f"  Strategy    : {args.strategy or '(from 1Password)'}")
     print(f"  Risk level  : {args.risk or '(from 1Password)'}")
+    if mode_override:
+        print(f"  Trading mode: {mode_override} (override)")
+    else:
+        print("  Trading mode: (from 1Password config, defaults to paper)")
     print()
 
-    if env == "prod":
-        print("⚠️   LIVE TRADING — REAL MONEY AT RISK  ⚠️")
+    # Import config to check actual trading mode
+    from src.config import TradingMode, settings
+
+    # Apply mode override if provided
+    if mode_override:
+        settings.override_trading_mode(TradingMode(mode_override))
+
+    # Show warning and require confirmation for LIVE mode
+    warning = settings.get_mode_warning()
+    if warning:
+        print(warning)
         print()
-        try:
-            confirm = input("Type 'I UNDERSTAND' to continue: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print(_CANCELLED)
-            sys.exit(0)
-        if confirm != "I UNDERSTAND":
-            print("Cancelled.")
-            sys.exit(0)
-        print()
+        if not confirm_live:
+            try:
+                confirm = input("Type 'I UNDERSTAND' to continue: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print(_CANCELLED)
+                sys.exit(0)
+            if confirm != "I UNDERSTAND":
+                print("Cancelled.")
+                sys.exit(0)
+            print()
 
     from loguru import logger
 
@@ -1341,11 +1360,16 @@ examples:
         help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
     p_run.add_argument(
-        "--trading-mode",
-        "-t",
+        "--mode",
+        "-m",
         choices=["paper", "live"],
         default=None,
         help="Trading mode (default: TRADING_MODE from 1Password config, or paper if not set)",
+    )
+    p_run.add_argument(
+        "--confirm-live",
+        action="store_true",
+        help="Skip confirmation prompt for live mode (use with --mode live in scripts)",
     )
     p_run.set_defaults(func=cmd_run)
 

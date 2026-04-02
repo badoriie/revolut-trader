@@ -1,14 +1,14 @@
 # Documentation
 
-| Document                                                 | Description                                                                |
-| -------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [USER_GUIDE.md](USER_GUIDE.md)                           | End-to-end user guide: setup, configuration, running, monitoring           |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                       | Component hierarchy, data flow, key files, safety layers                   |
-| [DEVELOPMENT_GUIDELINES.md](DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, testing, performance, pre-commit checklist |
-| [1PASSWORD.md](1PASSWORD.md)                             | Credential & configuration setup, commands, troubleshooting                |
-| [BACKTESTING.md](BACKTESTING.md)                         | Backtest engine usage, metrics, interpreting results                       |
-| [RASPBERRY_PI_DEPLOYMENT.md](RASPBERRY_PI_DEPLOYMENT.md) | Hardware compatibility, ARM64 setup, systemd service                       |
-| [revolut-x-api-docs.md](revolut-x-api-docs.md)           | **Single source of truth** for all Revolut X API behaviour                 |
+| Document                                               | Description                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| [END_USER_GUIDE.md](END_USER_GUIDE.md)                 | Quick start for end users: download binary, configure, start trading       |
+| [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)               | Developer guide: source setup, make commands, advanced usage               |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                     | Component hierarchy, data flow, key files, safety layers                   |
+| [DEVELOPMENT_GUIDELINES.md](DEVELOPMENT_GUIDELINES.md) | TDD workflow, coding standards, testing, performance, pre-commit checklist |
+| [1PASSWORD.md](1PASSWORD.md)                           | Credential & configuration setup, commands, troubleshooting                |
+| [BACKTESTING.md](BACKTESTING.md)                       | Backtest engine usage, metrics, interpreting results                       |
+| [revolut-x-api-docs.md](revolut-x-api-docs.md)         | **Single source of truth** for all Revolut X API behaviour                 |
 
 ## Other References
 

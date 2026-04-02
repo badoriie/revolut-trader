@@ -172,6 +172,11 @@ class TradingBot:
         """
         logger.info("Starting trading bot...")
 
+        # Show LIVE mode warning if active
+        warning = settings.get_mode_warning()
+        if warning:
+            logger.warning(warning)
+
         # Validate 1Password configuration for production
         self._validate_security_settings()
 

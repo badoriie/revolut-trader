@@ -19,12 +19,32 @@ See [Architecture Overview](docs/ARCHITECTURE.md) for component hierarchy, tradi
 
 - **6 Strategies**: Market Making, Momentum, Mean Reversion, Multi-Strategy, Breakout, Range Reversion
 - **3 Risk Levels**: Conservative, Moderate, Aggressive — with position limits, stop-loss, daily loss limits
-- **3 Environments**: Dev (mock API, paper), Int (real API, paper), Prod (real API, live)
+- **Safe by Default**: Paper trading mode for all environments unless explicitly enabled to LIVE
+- **3 Environments**: Dev (mock API), Int (real API), Prod (real API) — separate credentials & DBs
 - **Backtesting**: Strategy comparison with real historical data, configurable via Actions console
 - **Secure**: Separate API keys per environment in 1Password — zero disk footprint for secrets
 - **Encrypted DB**: Separate DB per environment, sensitive fields encrypted with Fernet, key in 1Password
 - **Graceful Shutdown**: Cancels pending orders, closes losing positions immediately, and closes profitable positions via trailing stop (or immediately); guarantee: all bot-opened positions are closed before exit
 - **Monitoring**: Database analytics, CSV export, optional Telegram notifications (analytics report)
+
+## Trading Modes
+
+The bot supports two trading modes:
+
+- **Paper Trading** (default) — simulates trades without real money; safe for testing
+- **Live Trading** — uses real funds from your Revolut account
+
+**All environments default to paper mode.** To enable live trading:
+
+```bash
+# Option 1: Set in 1Password config (permanent)
+revt config set TRADING_MODE live
+
+# Option 2: Override per-run (temporary)
+revt run --mode live
+```
+
+Both methods require confirmation before proceeding. See [Enabling Live Trading](#enabling-live-trading) for safety checklist.
 
 ## Quick Start
 
@@ -52,7 +72,7 @@ Then:
 ```bash
 revt ops                  # store your Revolut API key in 1Password
 revt config show          # verify your trading configuration
-revt run                  # start live trading
+revt run                  # start paper trading (safe default)
 ```
 
 See [1Password Setup](docs/1PASSWORD.md) for credential configuration.
@@ -75,8 +95,8 @@ The `update` command:
 
 ```bash
 uv sync --extra dev
-make run              # env auto-detected from git context (feature branch → dev/mock API)
-make run ENV=int      # paper trading with real API
+make run              # paper trading (env auto-detected from git context)
+make run MODE=live    # live trading (requires confirmation)
 ```
 
 ## Usage
@@ -94,58 +114,70 @@ make db-export-csv                         # export to CSV
 
 See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and best practices.
 
-## Environments & Branches
+## Environments
 
-The project uses three environments with a single `main` branch:
+The project uses three environments, each with separate credentials and databases:
 
-| Environment | Checks                   | API                  | Trading Mode | DB File        | Make Target         |
-| ----------- | ------------------------ | -------------------- | ------------ | -------------- | ------------------- |
-| **dev**     | Pre-commit hooks (local) | Mock (no real calls) | Paper only   | `data/dev.db`  | `make run ENV=dev`  |
-| **int**     | CI on PR to `main`       | Real Revolut X API   | Paper only   | `data/int.db`  | `make run ENV=int`  |
-| **prod**    | Manual release workflow  | Real Revolut X API   | Live only    | `data/prod.db` | `make run ENV=prod` |
-
-### Branch Flow
-
-```
-feature branches → PR to main
-```
-
-- **Feature branches** — all development happens here, pre-commit hooks run lint, typecheck, security, and tests locally
-- **PR to `main`** — CI runs all checks with `ENVIRONMENT=dev`, merge blocked until all pass
-- **Manual release** — production validation via Actions console (requires semver version + "I UNDERSTAND" confirmation)
+| Environment | API                  | Default Mode | DB File        | Purpose                          |
+| ----------- | -------------------- | ------------ | -------------- | -------------------------------- |
+| **dev**     | Mock (no real calls) | Paper        | `data/dev.db`  | Development & testing            |
+| **int**     | Real Revolut X API   | Paper        | `data/int.db`  | Pre-production validation        |
+| **prod**    | Real Revolut X API   | Paper        | `data/prod.db` | Production (live opt-in allowed) |
 
 Each environment has its own 1Password items:
 
-- `revolut-trader-credentials-{env}` — API keys
+- `revolut-trader-credentials-{env}` — API keys, encryption key
 - `revolut-trader-config-{env}` — trading configuration
 
-**Trading mode** is derived from the environment (not configurable separately):
+**Environment is auto-detected** from git context:
 
-- dev/int → paper (simulated trading)
-- prod → live (real money)
+- Tagged commit → `prod`
+- `main` branch → `int`
+- Other branches → `dev`
+- Binary → `prod` (always)
+
+Override with `--env dev|int|prod` or `ENV=...` make variable when needed.
 
 ### Mock Trading (dev)
 
 ```bash
 make run             # on a feature branch, env auto-detects to dev — mock API, no credentials needed
-make run ENV=dev     # or force dev explicitly
 ```
 
 ### Paper Trading (int)
 
 ```bash
-make run ENV=int     # real API, paper mode (no real trades)
-
-# With options
-make run ENV=int STRATEGY=momentum RISK=moderate
+make run             # on main branch, env auto-detects to int — real API, simulated trades
 ```
 
-### Live Trading (prod)
+### Enabling Live Trading
 
-**WARNING**: Uses real money. Only available in prod environment. Test thoroughly in paper mode first!
+**CRITICAL**: Live mode uses real money from your Revolut account. Only enable after thorough paper trading.
+
+**Safety Checklist:**
+
+- [ ] Paper-traded successfully for at least 7 days
+- [ ] Reviewed all trades and verified strategy performance
+- [ ] Set `MAX_CAPITAL` to limit exposure (e.g., 5000 EUR)
+- [ ] Use conservative risk level initially
+- [ ] Understand you can lose your entire investment
+
+**Enable live trading:**
 
 ```bash
-make run ENV=prod    # prompts for "I UNDERSTAND" confirmation before starting
+# Option 1: Set permanently in 1Password
+revt config set TRADING_MODE live
+
+# Option 2: Override per-run (for testing)
+revt run --mode live
+
+# Both require confirmation: Type "I UNDERSTAND" to proceed
+```
+
+**Disable live trading:**
+
+```bash
+revt config set TRADING_MODE paper   # back to safe default
 ```
 
 ### API Testing
@@ -368,15 +400,15 @@ make api-test   # test API connectivity
 
 ## Documentation
 
-| Document                                                   | Purpose                                                     |
-| ---------------------------------------------------------- | ----------------------------------------------------------- |
-| [User Guide](docs/USER_GUIDE.md)                           | End-to-end guide: setup, configuration, running, monitoring |
-| [Architecture](docs/ARCHITECTURE.md)                       | Component details and data flow                             |
-| [Backtesting Guide](docs/BACKTESTING.md)                   | Metrics, interpretation, best practices                     |
-| [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md)   | TDD workflow, coding standards, contribution rules          |
-| [1Password Setup](docs/1PASSWORD.md)                       | Credential and configuration management                     |
-| [Raspberry Pi Deployment](docs/RASPBERRY_PI_DEPLOYMENT.md) | Running on Raspberry Pi                                     |
-| [Revolut X API Docs](docs/revolut-x-api-docs.md)           | API reference (source of truth for all API code)            |
+| Document                                                 | Purpose                                                |
+| -------------------------------------------------------- | ------------------------------------------------------ |
+| [End User Guide](docs/END_USER_GUIDE.md)                 | Quick start: download binary, configure, start trading |
+| [Developer Guide](docs/DEVELOPER_GUIDE.md)               | Development setup, advanced usage, make commands       |
+| [Architecture](docs/ARCHITECTURE.md)                     | Component details and data flow                        |
+| [Backtesting Guide](docs/BACKTESTING.md)                 | Metrics, interpretation, best practices                |
+| [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) | TDD workflow, coding standards, contribution rules     |
+| [1Password Setup](docs/1PASSWORD.md)                     | Credential and configuration management                |
+| [Revolut X API Docs](docs/revolut-x-api-docs.md)         | API reference (source of truth for all API code)       |
 
 ## Warnings
 

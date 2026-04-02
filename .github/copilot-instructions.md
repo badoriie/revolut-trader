@@ -31,10 +31,12 @@ make check                   # all of the above + tests
 make pre-commit
 
 # Run the bot (env auto-detected: tagged commit→prod, main→int, other branch→dev)
+# All environments default to paper mode; live trading requires explicit opt-in
 make run                     # env auto-detected; STRATEGY=... RISK=... PAIRS=... INTERVAL=...
 make run ENV=dev             # force dev (mock API, no credentials needed)
-make run ENV=int             # force int (paper trading, real API, no real trades)
-make run ENV=prod            # force prod (REAL MONEY — requires confirmation)
+make run ENV=int             # force int (paper trading by default)
+make run ENV=prod            # force prod (paper trading by default)
+make run ENV=prod MODE=live  # LIVE TRADING with real money — requires confirmation
 
 # Backtesting (results saved to encrypted DB, not files)
 make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
@@ -74,11 +76,12 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Environments**: Three environments — `dev`, `int`, `prod`.
 
-- `dev` → mock API (no credentials), paper trading
-- `int` → real API, paper trading
-- `prod` → real API, live trading (REAL MONEY)
+- `dev` → mock API (no credentials needed)
+- `int` → real API, paper trading by default (live opt-in allowed)
+- `prod` → real API, paper trading by default (live opt-in allowed)
 - `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use.
-- `TRADING_MODE` is derived from environment (dev/int → paper, prod → live).
+
+**Trading Mode — Paper by Default**: All environments default to **paper mode**. `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`). To enable live trading: (1) set `TRADING_MODE=live` in 1Password via `make opconfig-set KEY=TRADING_MODE VALUE=live ENV=prod`, or (2) override per-run with `MODE=live` (Makefile) or `--mode live` (CLI). When `TRADING_MODE=live`, the bot requires explicit confirmation (`"Type 'I UNDERSTAND' to proceed"`) before starting; bypass with `--confirm-live` for automation. Live mode is typically used only in the `prod` environment, but the system does not prevent it elsewhere — the confirmation prompt is the safety gate. `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. Environment selects **which** credentials/DB to use; trading mode selects **whether** orders execute as simulated or real.
 
 **Component hierarchy:**
 
@@ -91,7 +94,7 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy`, `BreakoutStrategy`, `RangeReversionStrategy`.
 Each strategy's tuning constants (`INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE`, `STOP_LOSS_PCT`, `TAKE_PROFIT_PCT`) are stored in a dedicated 1Password item (`revolut-trader-strategy-{name}`) and loaded into `settings.strategy_configs`. Each strategy item also accepts optional internal calibration fields (absent = strategy uses its built-in defaults): `momentum` — `FAST_PERIOD`, `SLOW_PERIOD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `market_making` — `SPREAD_THRESHOLD`, `INVENTORY_TARGET`; `mean_reversion` — `LOOKBACK_PERIOD`, `NUM_STD_DEV`, `MIN_DEVIATION`; `breakout` — `LOOKBACK_PERIOD`, `BREAKOUT_THRESHOLD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `range_reversion` — `BUY_ZONE`, `SELL_ZONE`, `RSI_PERIOD`, `RSI_CONFIRMATION_OVERSOLD`, `RSI_CONFIRMATION_OVERBOUGHT`, `MIN_RANGE_PCT`; `multi_strategy` — `MIN_CONSENSUS`, `WEIGHT_MOMENTUM`, `WEIGHT_BREAKOUT`, `WEIGHT_MARKET_MAKING`, `WEIGHT_MEAN_REVERSION`, `WEIGHT_RANGE_REVERSION`. `make setup` creates all six items with defaults. Adding a strategy requires a new file implementing `BaseStrategy`.
 
-**Configuration** (`src/config.py`): Pydantic-based. All trading config comes from 1Password — no code-level defaults. Config fails fast with actionable errors if fields are missing. Optional config: `MAX_CAPITAL` caps the cash balance at startup; `SHUTDOWN_TRAILING_STOP_PCT` sets a trailing stop percentage for profitable positions on shutdown; `SHUTDOWN_MAX_WAIT_SECONDS` sets a hard timeout before force-closing; `LOG_LEVEL` sets logging verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`, default `INFO`); `INTERVAL` sets the trading loop interval in seconds, overriding the per-strategy default; `BACKTEST_DAYS` sets the default backtest look-back window (default `30`); `BACKTEST_INTERVAL` sets the default candle width in minutes for backtests (default `60`); `MAKER_FEE_PCT` and `TAKER_FEE_PCT` are optional fee rate overrides (defaults: 0.0 and 0.0009); `MAX_ORDER_VALUE` (default 10000) and `MIN_ORDER_VALUE` (default 10) are optional order safety limits in base currency. Risk level parameters are loaded from the environment-agnostic `revolut-trader-risk-{level}` items and stored in `settings.risk_configs: dict[str, RiskLevelConfig]`. All CLI flags (`--strategy`, `--risk`, `--pairs`, `--capital`, `--days`, `--interval`, `--log-level`) fall back to their corresponding 1Password keys when not supplied on the command line.
+**Configuration** (`src/config.py`): Pydantic-based. All trading config comes from 1Password — no code-level defaults. Config fails fast with actionable errors if fields are missing. `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`); the `MODE` env var (Makefile) or `--mode` CLI flag overrides it per-run. When `TRADING_MODE=live`, the bot requires confirmation before starting (bypass with `--confirm-live`). `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. Optional config: `MAX_CAPITAL` caps the cash balance at startup; `SHUTDOWN_TRAILING_STOP_PCT` sets a trailing stop percentage for profitable positions on shutdown; `SHUTDOWN_MAX_WAIT_SECONDS` sets a hard timeout before force-closing; `LOG_LEVEL` sets logging verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`, default `INFO`); `INTERVAL` sets the trading loop interval in seconds, overriding the per-strategy default; `BACKTEST_DAYS` sets the default backtest look-back window (default `30`); `BACKTEST_INTERVAL` sets the default candle width in minutes for backtests (default `60`); `MAKER_FEE_PCT` and `TAKER_FEE_PCT` are optional fee rate overrides (defaults: 0.0 and 0.0009); `MAX_ORDER_VALUE` (default 10000) and `MIN_ORDER_VALUE` (default 10) are optional order safety limits in base currency. Risk level parameters are loaded from the environment-agnostic `revolut-trader-risk-{level}` items and stored in `settings.risk_configs: dict[str, RiskLevelConfig]`. All CLI flags (`--strategy`, `--risk`, `--pairs`, `--capital`, `--days`, `--interval`, `--log-level`, `--mode`) fall back to their corresponding 1Password keys when not supplied on the command line.
 
 **Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Per-environment DB files (`data/dev.db`, `data/int.db`, `data/prod.db`). All sensitive fields encrypted with Fernet before storage. WARNING+ logs are automatically persisted to the database via a loguru sink; view with `make logs`.
 
@@ -149,8 +152,8 @@ Each strategy's tuning constants (`INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
-| `docs/1PASSWORD.md`                   | Credential and configuration setup via 1Password CLI                                                                                                                                                                                     |
-| `docs/RASPBERRY_PI_DEPLOYMENT.md`     | Running the bot unattended on Raspberry Pi / ARM64 servers                                                                                                                                                                               |
+| `docs/END_USER_GUIDE.md`              | Quick start for end users: download binary, configure, trade                                                                                                                                                                             |
+| `docs/DEVELOPER_GUIDE.md`             | Developer guide: setup, configuration, advanced usage, make commands                                                                                                                                                                     |
 | `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
 | `src/utils/telegram.py`               | Telegram notifier: push notifications + `get_updates`/`start_polling`/`reply` for two-way bot command listener (`/status`, `/balance`, `/report`, `/help`)                                                                               |
 | `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
@@ -196,22 +199,22 @@ feat!: replace REST polling with WebSocket feed
 
 All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
 
-| Environment | Data source                               | Trading |
-| ----------- | ----------------------------------------- | ------- |
-| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper   |
-| `int`       | Real Revolut X API (live market data)     | Paper   |
-| `prod`      | Real Revolut X API (live market data)     | Live    |
+| Environment | Data source                               | Default Trading Mode |
+| ----------- | ----------------------------------------- | -------------------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper (only)         |
+| `int`       | Real Revolut X API (live market data)     | Paper (live allowed) |
+| `prod`      | Real Revolut X API (live market data)     | Paper (live allowed) |
 
-**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa.
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Trading mode (paper vs. live) is a separate safety setting controlled by `TRADING_MODE` in 1Password or the `MODE` env var / `--mode` CLI flag — **not hardcoded per environment**. All environments default to paper mode; live mode requires explicit opt-in and confirmation. Any code path that is only exercised in one environment or one trading mode is a hidden bug waiting to surface in production with real money.
 
 **Concrete implications:**
 
-- Never add `if environment == "dev"` or `if trading_mode == "paper"` branches that skip logic (e.g. fee calculation, position tracking, commission accounting).
+- Never add `if environment == "dev"` branches that skip logic. Paper mode simulates fills locally, but all accounting — `filled_quantity`, `commission`, `realized_pnl` — must be computed by the same formulas as live mode. `if trading_mode == "paper"` checks are allowed **only** for order execution (paper vs. live API calls) — never for business logic, fee calculation, position tracking, or commission accounting.
 - `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated (`filled_quantity`, `commission`, `realized_pnl`).
 - SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
 - When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
 
-**Why this matters:** bugs that only appear in `prod` involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
+**Why this matters:** bugs that only appear in `prod` or only in `live` mode involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` and in `paper` mode is only meaningful if those environments and modes exercise the same logic.
 
 ### Revolut X API Docs — The Single Source of Truth
 
@@ -280,12 +283,11 @@ price: Decimal = Decimal("100.5")
 1. **`config.py` loads and validates** every field. Required fields raise `RuntimeError` with a `make opconfig-set` fix command. Optional fields fall back gracefully.
 1. **`make opshow` must display** every new field.
 
-Trading config must come from 1Password exclusively. Two exceptions:
+Trading config must come from 1Password exclusively. One exception:
 
 - `ENVIRONMENT` — from `os.environ` (infrastructure-level).
-- `TRADING_MODE` — derived from environment, not stored in 1Password.
 
-If a required field is missing, raise a `RuntimeError` with instructions. Never silently fall back to a hardcoded default.
+`TRADING_MODE` is stored in the environment-specific 1Password config item (optional, defaults to `"paper"`). If a required field is missing, raise a `RuntimeError` with instructions. Never silently fall back to a hardcoded default.
 
 ### Database Encryption — Always On
 

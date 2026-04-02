@@ -83,24 +83,94 @@ The bot uses two 1Password items per environment plus shared risk-level items in
 
 ### Trading Configuration (`revolut-trader-config-{env}`)
 
-| Field                        | Type | Default              | dev / int | prod       | Valid Values                                                                                           |
-| ---------------------------- | ---- | -------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------ |
-| `DEFAULT_STRATEGY`           | text | `market_making`      | Required  | Required   | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion`         |
-| `RISK_LEVEL`                 | text | `conservative`       | Required  | Required   | `conservative`, `moderate`, `aggressive`                                                               |
-| `BASE_CURRENCY`              | text | `EUR`                | Required  | Required   | `EUR`, `USD`, `GBP`                                                                                    |
-| `TRADING_PAIRS`              | text | `BTC-EUR,ETH-EUR`    | Required  | Required   | Comma-separated symbols                                                                                |
-| `INITIAL_CAPITAL`            | text | `10000`              | Required  | Not needed | Any positive number                                                                                    |
-| `MAX_CAPITAL`                | text | _(not set)_          | Optional  | Optional   | Any positive number — caps how much cash the bot can use regardless of account balance                 |
-| `SHUTDOWN_TRAILING_STOP_PCT` | text | _(not set)_          | Optional  | Optional   | e.g. `0.5` for 0.5% — trailing stop % for profitable positions on shutdown; omit to close immediately  |
-| `SHUTDOWN_MAX_WAIT_SECONDS`  | text | `120`                | Optional  | Optional   | Hard timeout before force-closing a profitable position whose trailing stop has not triggered          |
-| `LOG_LEVEL`                  | text | `INFO`               | Optional  | Optional   | `DEBUG`, `INFO`, `WARNING`, or `ERROR` — CLI `--log-level` overrides this per-run                      |
-| `INTERVAL`                   | text | _(strategy default)_ | Optional  | Optional   | Trading loop interval in seconds — overrides the per-strategy default; CLI `--interval` overrides this |
-| `BACKTEST_DAYS`              | text | `30`                 | Optional  | Optional   | Default look-back window in days for all backtest commands; CLI `--days` overrides this                |
-| `BACKTEST_INTERVAL`          | text | `60`                 | Optional  | Optional   | Default candle width in minutes for backtests (must be a valid choice); CLI `--interval` overrides     |
-| `MAKER_FEE_PCT`              | text | `0.0`                | Optional  | Optional   | Maker fee rate applied to LIMIT orders — update when Revolut changes its fee schedule                  |
-| `TAKER_FEE_PCT`              | text | `0.0009`             | Optional  | Optional   | Taker fee rate applied to MARKET orders (0.09% default) — update when Revolut changes its fee schedule |
-| `MAX_ORDER_VALUE`            | text | `10000`              | Optional  | Optional   | Absolute max order value in base currency (EUR) — prevents accidental oversized orders                 |
-| `MIN_ORDER_VALUE`            | text | `10`                 | Optional  | Optional   | Minimum order value in base currency (EUR) — filters out dust trades                                   |
+| | Field | Type | Default | dev / int | prod | Valid Values |
+| | \---------------------------- | ---- | -------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| | `DEFAULT_STRATEGY` | text | `market_making` | Required | Required | `market_making`, `momentum`, `mean_reversion`, `multi_strategy`, `breakout`, `range_reversion` |
+| | `RISK_LEVEL` | text | `conservative` | Required | Required | `conservative`, `moderate`, `aggressive` |
+| | `BASE_CURRENCY` | text | `EUR` | Required | Required | `EUR`, `USD`, `GBP` |
+| | `TRADING_PAIRS` | text | `BTC-EUR,ETH-EUR` | Required | Required | Comma-separated symbols |
+| | `INITIAL_CAPITAL` | text | `10000` | Required | Not needed | Any positive number |
+| | `MAX_CAPITAL` | text | _(not set)_ | Optional | Optional | Any positive number — caps how much cash the bot can use regardless of account balance |
+| | `SHUTDOWN_TRAILING_STOP_PCT` | text | _(not set)_ | Optional | Optional | e.g. `0.5` for 0.5% — trailing stop % for profitable positions on shutdown; omit to close immediately |
+| | `SHUTDOWN_MAX_WAIT_SECONDS` | text | `120` | Optional | Optional | Hard timeout before force-closing a profitable position whose trailing stop has not triggered |
+| | `LOG_LEVEL` | text | `INFO` | Optional | Optional | `DEBUG`, `INFO`, `WARNING`, or `ERROR` — CLI `--log-level` overrides this per-run |
+| | `INTERVAL` | text | _(strategy default)_ | Optional | Optional | Trading loop interval in seconds — overrides the per-strategy default; CLI `--interval` overrides this |
+| | `BACKTEST_DAYS` | text | `30` | Optional | Optional | Default look-back window in days for all backtest commands; CLI `--days` overrides this |
+| | `BACKTEST_INTERVAL` | text | `60` | Optional | Optional | Default candle width in minutes for backtests (must be a valid choice); CLI `--interval` overrides |
+| | `MAKER_FEE_PCT` | text | `0.0` | Optional | Optional | Maker fee rate applied to LIMIT orders — update when Revolut changes its fee schedule |
+| | `TAKER_FEE_PCT` | text | `0.0009` | Optional | Optional | Taker fee rate applied to MARKET orders (0.09% default) — update when Revolut changes its fee schedule |
+| | `MAX_ORDER_VALUE` | text | `10000` | Optional | Optional | Absolute max order value in base currency (EUR) — prevents accidental oversized orders |
+| | `MIN_ORDER_VALUE` | text | `10` | Optional | Optional | Minimum order value in base currency (EUR) — filters out dust trades |
+| | `TELEGRAM_BOT_TOKEN` | concealed | _(not set)_ | Optional | Optional | Telegram bot token for notifications and control plane |
+| | `TELEGRAM_CHAT_ID` | text | _(not set)_ | Optional | Optional | Telegram chat ID (user or group) to receive notifications and reports |
+| | `TELEGRAM_REPORTS_ENABLED` | text | `true` | Optional | Optional | Set to `true` to enable analytics/report notifications via Telegram |
+
+______________________________________________________________________
+
+## Telegram Integration
+
+The bot supports Telegram notifications and a control plane for remote management and analytics report delivery. All Telegram credentials and configuration are stored in 1Password under the trading config item (`revolut-trader-config-{env}`).
+
+### Required Fields
+
+| Field                      | Type      | Description                                                  |
+| -------------------------- | --------- | ------------------------------------------------------------ |
+| `TELEGRAM_BOT_TOKEN`       | concealed | Telegram bot token (from @BotFather)                         |
+| `TELEGRAM_CHAT_ID`         | text      | Chat ID (user or group) to receive notifications and reports |
+| `TELEGRAM_REPORTS_ENABLED` | text      | Set to `true` to enable analytics/report notifications       |
+
+### How to Set Up
+
+1. **Create a Telegram Bot:**
+
+   - Open Telegram and search for [@BotFather](https://t.me/BotFather)
+   - Run `/newbot` and follow the instructions
+   - Copy the bot token (starts with `6xxxxxx:...`)
+
+1. **Get Your Chat ID:**
+
+   - Add your bot to the desired group or start a chat with it
+   - Send a message to the bot
+   - Use a tool like [@userinfobot](https://t.me/userinfobot) or [@getidsbot](https://t.me/getidsbot) to get your chat ID, or check the logs after running the bot (it will log unknown chat IDs)
+
+1. **Store in 1Password:**
+
+   - Store the bot token as a concealed field and chat ID as text:
+
+```bash
+op item edit revolut-trader-config-int \
+  --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="6xxxxxx:yourbottoken" \
+  TELEGRAM_CHAT_ID[text]="123456789" \
+  TELEGRAM_REPORTS_ENABLED[text]="true"
+```
+
+4. **Verify:**
+   - Run `make telegram ENV=int` to start the Telegram control plane
+   - Run `make run` or `make run ENV=int` and check for Telegram notifications
+   - Use `/status`, `/balance`, `/report` commands in your Telegram chat
+
+### How the Bot Uses Telegram Config
+
+- Sends trade notifications, analytics reports, and error alerts to the configured chat
+- Enables the always-on Telegram Control Plane (`make telegram` / `revt telegram start`)
+- Delivers analytics reports as PDF (if `fpdf2` is installed) or as a text summary
+- Only sends messages if `TELEGRAM_REPORTS_ENABLED` is `true`
+
+### Troubleshooting
+
+- **No notifications received:**
+  - Check that the bot is running and `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set correctly
+  - Ensure `TELEGRAM_REPORTS_ENABLED` is `true`
+  - Check logs for errors related to Telegram
+- **Bot not responding to commands:**
+  - Make sure the bot is added to the group and is not blocked
+  - Verify the chat ID matches the group or user
+- **Field not found:**
+  - Run `make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=...`
+  - Run `make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=...`
+
+For more details, see [`END_USER_GUIDE.md`](END_USER_GUIDE.md) and [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
 
 > **TRADING_MODE is not stored in 1Password.** It is derived from the environment: dev/int → paper, prod → live. This is intentionally non-configurable.
 >

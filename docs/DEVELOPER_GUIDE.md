@@ -1,3 +1,5 @@
+# For end-user instructions, see [docs/END_USER_GUIDE.md](END_USER_GUIDE.md).
+
 # User Guide
 
 This guide explains how to install, configure, and run the Revolut Trader bot — from a first-time setup through live trading and ongoing monitoring.
@@ -608,7 +610,7 @@ ______________________________________________________________________
 
 ## 12. Deploying Unattended (Raspberry Pi / Server)
 
-See [Raspberry Pi Deployment](RASPBERRY_PI_DEPLOYMENT.md) for the complete guide.
+For deploying on servers or Raspberry Pi, see [section 12](#12-telegram-notifications) for the Telegram control plane setup.
 
 ### Quick summary
 

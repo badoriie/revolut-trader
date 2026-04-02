@@ -334,10 +334,20 @@ WARNING | Retrieved only 50 candles
 
 After backtesting:
 
-1. **Review results**: `make db-backtests`
-1. **Export for analysis**: `make db-export-csv`
-1. **Paper trade**: Test with live data in paper mode — `make run ENV=int` / `revt run --env int`
-1. **Live trade**: Only after consistent positive results — `make run ENV=prod` / `revt run`
+1. **Review results**: `revt db backtests --limit 20`
+1. **Export for analysis**: `revt db export`
+1. **Generate report**: `revt db report --days 60` (creates charts and analytics)
+1. **Paper trade**: Test with live data in paper mode:
+   ```bash
+   # Paper mode is the default
+   revt run --env prod
+   ```
+1. **Live trade**: Only after consistent positive results:
+   ```bash
+   # Explicit opt-in required
+   revt config set TRADING_MODE live --env prod
+   revt run --env prod  # prompts "I UNDERSTAND"
+   ```
 
 ______________________________________________________________________
 
