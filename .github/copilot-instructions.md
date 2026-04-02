@@ -76,12 +76,12 @@ make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
 
 **Environments**: Three environments — `dev`, `int`, `prod`.
 
-- `dev` → mock API (no credentials needed)
-- `int` → real API, paper trading by default (live opt-in allowed)
+- `dev` → mock API (no credentials needed), paper mode only
+- `int` → real API, paper mode only
 - `prod` → real API, paper trading by default (live opt-in allowed)
 - `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use.
 
-**Trading Mode — Paper by Default**: All environments default to **paper mode**. `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`). To enable live trading: (1) set `TRADING_MODE=live` in 1Password via `make opconfig-set KEY=TRADING_MODE VALUE=live ENV=prod`, or (2) override per-run with `MODE=live` (Makefile) or `--mode live` (CLI). When `TRADING_MODE=live`, the bot requires explicit confirmation (`"Type 'I UNDERSTAND' to proceed"`) before starting; bypass with `--confirm-live` for automation. Live mode is typically used only in the `prod` environment, but the system does not prevent it elsewhere — the confirmation prompt is the safety gate. `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. Environment selects **which** credentials/DB to use; trading mode selects **whether** orders execute as simulated or real.
+**Trading Mode — Paper by Default**: All environments default to **paper mode**. `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`). **CRITICAL SAFETY: Live trading is ONLY allowed in the `prod` environment.** Attempting to enable live mode in `dev` or `int` (via 1Password or `MODE=live` / `--mode live`) will fail with a clear error. To enable live trading in prod: (1) set `TRADING_MODE=live` in 1Password via `make opconfig-set KEY=TRADING_MODE VALUE=live ENV=prod`, or (2) override per-run with `MODE=live` (Makefile) or `--mode live` (CLI). When `TRADING_MODE=live`, the bot requires explicit confirmation (`"Type 'I UNDERSTAND' to proceed"`) before starting; bypass with `--confirm-live` for automation. `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. Environment selects **which** credentials/DB to use; trading mode selects **whether** orders execute as simulated or real.
 
 **Component hierarchy:**
 
@@ -199,13 +199,13 @@ feat!: replace REST polling with WebSocket feed
 
 All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
 
-| Environment | Data source                               | Default Trading Mode |
-| ----------- | ----------------------------------------- | -------------------- |
-| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper (only)         |
-| `int`       | Real Revolut X API (live market data)     | Paper (live allowed) |
-| `prod`      | Real Revolut X API (live market data)     | Paper (live allowed) |
+| Environment | Data source                               | Trading Mode Allowed    |
+| ----------- | ----------------------------------------- | ----------------------- |
+| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper only              |
+| `int`       | Real Revolut X API (live market data)     | Paper only              |
+| `prod`      | Real Revolut X API (live market data)     | Paper (default) or Live |
 
-**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Trading mode (paper vs. live) is a separate safety setting controlled by `TRADING_MODE` in 1Password or the `MODE` env var / `--mode` CLI flag — **not hardcoded per environment**. All environments default to paper mode; live mode requires explicit opt-in and confirmation. Any code path that is only exercised in one environment or one trading mode is a hidden bug waiting to surface in production with real money.
+**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Trading mode (paper vs. live) is a separate safety setting controlled by `TRADING_MODE` in 1Password or the `MODE` env var / `--mode` CLI flag — **not hardcoded per environment**. All environments default to paper mode; live mode is restricted to `prod` only and requires explicit opt-in and confirmation. Any code path that is only exercised in one environment or one trading mode is a hidden bug waiting to surface in production with real money.
 
 **Concrete implications:**
 

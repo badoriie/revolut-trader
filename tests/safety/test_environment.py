@@ -196,6 +196,111 @@ class TestInitialCapitalByTradingMode:
                         Settings()
 
 
+class TestLiveTradingRestrictions:
+    """Tests that LIVE trading is only allowed in prod environment.
+
+    CRITICAL: This prevents accidental real money trading in dev/int environments.
+    """
+
+    def test_live_mode_blocked_in_dev_from_1password(self):
+        """CRITICAL: LIVE mode in 1Password must be blocked in dev environment."""
+        config_with_live = {**VALID_LIVE_CONFIG}
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_with_live)):
+                with patch(PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config_with_live)):
+                    with pytest.raises(
+                        RuntimeError, match=r"LIVE trading is only allowed in 'prod'"
+                    ):
+                        Settings()
+
+    def test_live_mode_blocked_in_int_from_1password(self):
+        """CRITICAL: LIVE mode in 1Password must be blocked in int environment."""
+        config_with_live = {**VALID_LIVE_CONFIG}
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "int"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_with_live)):
+                with patch(PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config_with_live)):
+                    with pytest.raises(
+                        RuntimeError, match=r"LIVE trading is only allowed in 'prod'"
+                    ):
+                        Settings()
+
+    def test_live_mode_allowed_in_prod(self):
+        """LIVE mode in 1Password is allowed in prod environment."""
+        config_with_live = {**VALID_LIVE_CONFIG}
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_with_live)):
+                with patch(PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config_with_live)):
+                    settings = Settings()
+                    assert settings.trading_mode == TradingMode.LIVE
+                    assert settings.environment == Environment.PROD
+
+    def test_override_to_live_blocked_in_dev(self):
+        """CRITICAL: CLI override to LIVE mode must be blocked in dev."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "dev"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
+                with patch(
+                    PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(VALID_PAPER_CONFIG)
+                ):
+                    settings = Settings()
+                    assert settings.trading_mode == TradingMode.PAPER
+
+                    with pytest.raises(
+                        RuntimeError, match=r"LIVE trading is only allowed in 'prod'"
+                    ):
+                        settings.override_trading_mode(TradingMode.LIVE)
+
+    def test_override_to_live_blocked_in_int(self):
+        """CRITICAL: CLI override to LIVE mode must be blocked in int."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "int"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
+                with patch(
+                    PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(VALID_PAPER_CONFIG)
+                ):
+                    settings = Settings()
+                    assert settings.trading_mode == TradingMode.PAPER
+
+                    with pytest.raises(
+                        RuntimeError, match=r"LIVE trading is only allowed in 'prod'"
+                    ):
+                        settings.override_trading_mode(TradingMode.LIVE)
+
+    def test_override_to_live_allowed_in_prod(self):
+        """CLI override to LIVE mode is allowed in prod."""
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(VALID_PAPER_CONFIG)):
+                with patch(
+                    PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(VALID_PAPER_CONFIG)
+                ):
+                    settings = Settings()
+                    assert settings.trading_mode == TradingMode.PAPER
+
+                    settings.override_trading_mode(TradingMode.LIVE)
+                    assert settings.trading_mode == TradingMode.LIVE
+
+    def test_override_to_paper_allowed_in_all_environments(self):
+        """Overriding to PAPER mode should be allowed in all environments."""
+        for env in ["dev", "int", "prod"]:
+            with patch.dict(os.environ, {"ENVIRONMENT": env}):
+                with patch(
+                    PATCH_TARGET,
+                    side_effect=mock_get(
+                        VALID_LIVE_CONFIG if env == "prod" else VALID_PAPER_CONFIG
+                    ),
+                ):
+                    with patch(
+                        PATCH_TARGET_OPTIONAL,
+                        side_effect=mock_get_optional(
+                            VALID_LIVE_CONFIG if env == "prod" else VALID_PAPER_CONFIG
+                        ),
+                    ):
+                        settings = Settings()
+                        settings.override_trading_mode(TradingMode.PAPER)
+                        assert settings.trading_mode == TradingMode.PAPER
+
+
 class TestEnvironmentEnum:
     """Tests for the Environment enum values."""
 

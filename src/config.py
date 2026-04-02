@@ -364,6 +364,15 @@ class Settings(BaseSettings):
             # No TRADING_MODE set — default to paper (safe default for all environments)
             self.trading_mode = TradingMode.PAPER
 
+        # Enforce: live trading only allowed in prod
+        if self.trading_mode == TradingMode.LIVE and self.environment != Environment.PROD:
+            raise RuntimeError(
+                f"LIVE trading is only allowed in 'prod' environment.\n"
+                f"Current environment: {self.environment.value}\n"
+                f"1Password has TRADING_MODE=live, but this is not permitted for {self.environment.value}.\n"
+                f"Change it to paper with: make opconfig-set KEY=TRADING_MODE VALUE=paper ENV={self.environment.value}"
+            )
+
         try:
             self.risk_level = RiskLevel(op.get("RISK_LEVEL").lower())
         except ValueError as e:
@@ -1022,7 +1031,16 @@ class Settings(BaseSettings):
 
         Args:
             mode: The trading mode to set (PAPER or LIVE).
+
+        Raises:
+            RuntimeError: If attempting to enable LIVE mode in non-prod environment.
         """
+        if mode == TradingMode.LIVE and self.environment != Environment.PROD:
+            raise RuntimeError(
+                f"LIVE trading is only allowed in 'prod' environment.\n"
+                f"Current environment: {self.environment.value}\n"
+                f"To use live trading, run with ENV=prod or --env prod."
+            )
         self.trading_mode = mode
 
     def get_mode_warning(self) -> str | None:

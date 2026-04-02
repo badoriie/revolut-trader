@@ -287,22 +287,8 @@ def _show_update_notification() -> None:
 # ---------------------------------------------------------------------------
 
 
-def cmd_run(args: argparse.Namespace) -> None:
-    """Start the trading bot.
-
-    Sets ENVIRONMENT early (before any ``src.config`` import) then delegates to
-    ``cli.run.run_bot`` via a compatible argument namespace.
-    """
-    # Check for updates (non-blocking, cached)
-    _show_update_notification()
-
-    env = _resolve_env(args)
-
-    # Handle --mode override (must be done AFTER config is loaded, but we need to
-    # show the warning BEFORE importing config, so we'll defer the actual check)
-    mode_override = getattr(args, "mode", None)
-    confirm_live = getattr(args, "confirm_live", False)
-
+def _print_run_config(args: argparse.Namespace, env: str, mode_override: str | None) -> None:
+    """Print the run configuration banner."""
     print(f"\n  Environment : {_env_badge(env)}")
     print(f"  Strategy    : {args.strategy or '(from 1Password)'}")
     print(f"  Risk level  : {args.risk or '(from 1Password)'}")
@@ -312,29 +298,38 @@ def cmd_run(args: argparse.Namespace) -> None:
         print("  Trading mode: (from 1Password config, defaults to paper)")
     print()
 
-    # Import config to check actual trading mode
-    from src.config import TradingMode, settings
 
-    # Apply mode override if provided
-    if mode_override:
-        settings.override_trading_mode(TradingMode(mode_override))
+def _handle_live_mode_confirmation(confirm_live: bool) -> None:
+    """Handle live mode confirmation prompt.
 
-    # Show warning and require confirmation for LIVE mode
+    Args:
+        confirm_live: If True, skip confirmation prompt.
+
+    Raises:
+        SystemExit: If user cancels or doesn't confirm.
+    """
+    from src.config import settings
+
     warning = settings.get_mode_warning()
-    if warning:
-        print(warning)
-        print()
-        if not confirm_live:
-            try:
-                confirm = input("Type 'I UNDERSTAND' to continue: ").strip()
-            except (KeyboardInterrupt, EOFError):
-                print(_CANCELLED)
-                sys.exit(0)
-            if confirm != "I UNDERSTAND":
-                print("Cancelled.")
-                sys.exit(0)
-            print()
+    if not warning:
+        return
 
+    print(warning)
+    print()
+    if not confirm_live:
+        try:
+            confirm = input("Type 'I UNDERSTAND' to continue: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print(_CANCELLED)
+            sys.exit(0)
+        if confirm != "I UNDERSTAND":
+            print("Cancelled.")
+            sys.exit(0)
+        print()
+
+
+def _setup_logger(log_level: str | None) -> None:
+    """Configure loguru logger for the bot."""
     from loguru import logger
 
     logger.remove()
@@ -345,8 +340,34 @@ def cmd_run(args: argparse.Namespace) -> None:
             "<level>{level: <8}</level> | "
             "<level>{message}</level>"
         ),
-        level=args.log_level or "INFO",
+        level=log_level or "INFO",
     )
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """Start the trading bot.
+
+    Sets ENVIRONMENT early (before any ``src.config`` import) then delegates to
+    ``cli.run.run_bot`` via a compatible argument namespace.
+    """
+    # Check for updates (non-blocking, cached)
+    _show_update_notification()
+
+    env = _resolve_env(args)
+    mode_override = getattr(args, "mode", None)
+    confirm_live = getattr(args, "confirm_live", False)
+
+    _print_run_config(args, env, mode_override)
+
+    # Import config to check actual trading mode
+    from src.config import TradingMode, settings
+
+    # Apply mode override if provided
+    if mode_override:
+        settings.override_trading_mode(TradingMode(mode_override))
+
+    _handle_live_mode_confirmation(confirm_live)
+    _setup_logger(args.log_level)
 
     # Deferred import — ENVIRONMENT must be set before src.config is loaded.
     from cli.run import run_bot
