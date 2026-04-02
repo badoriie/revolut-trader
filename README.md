@@ -293,12 +293,12 @@ revolut-trader/
 │   ├── unit/                 # Component unit tests
 │   └── mocks/                # Mock 1Password for testing
 ├── docs/                     # Documentation
-│   ├── USER_GUIDE.md             # End-to-end user guide
+│   ├── END_USER_GUIDE.md         # Quick start: download binary, configure, trade
+│   ├── DEVELOPER_GUIDE.md        # Development setup, advanced usage, make commands
 │   ├── ARCHITECTURE.md           # Component details and data flow
 │   ├── BACKTESTING.md            # Backtesting guide
 │   ├── DEVELOPMENT_GUIDELINES.md # TDD, coding standards, contribution rules
 │   ├── 1PASSWORD.md              # Credential and config setup
-│   ├── RASPBERRY_PI_DEPLOYMENT.md # Deployment on Raspberry Pi
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
 │   └── README.md                 # Documentation index
 └── Makefile                  # All project commands
