@@ -7,6 +7,7 @@ Essential commands to test API connectivity and permissions
 import argparse
 import asyncio
 import sys
+from typing import Any
 
 from loguru import logger
 
@@ -178,6 +179,76 @@ def run_api_command(command: str) -> None:
         sys.exit(1)
 
 
+async def _execute_api_command(
+    api_client: RevolutAPIClient,
+    command: str,
+    symbol: str | None,
+    symbols: str | None,
+    order_id: str | None,
+    interval: int | None,
+    limit: int | None,
+    depth: int | None,
+) -> dict[str, Any] | list[dict[str, Any]] | None:
+    """Execute the API command and return the result.
+
+    Extracted to reduce cognitive complexity of run_api_endpoint.
+    """
+    # Commands requiring symbol
+    if command in ("ticker", "order-book", "candles", "trades", "public-trades") and not symbol:
+        print(f"❌ Error: {command} command requires --symbol")
+        sys.exit(1)
+
+    # Command requiring order_id
+    if command == "order" and not order_id:
+        print("❌ Error: order command requires --order-id")
+        sys.exit(1)
+
+    # Route to API method
+    if command == "balance":
+        return await api_client.get_balance()
+    if command == "ticker":
+        assert symbol is not None  # Validated above
+        return await api_client.get_ticker(symbol)
+    if command == "tickers":
+        if symbols:
+            symbol_list = [s.strip() for s in symbols.split(",")]
+            return await api_client.get_tickers(symbol_list)
+        return await api_client.get_tickers()
+    if command == "all-tickers":
+        return await api_client.get_tickers()
+    if command == "order-book":
+        assert symbol is not None  # Validated above
+        return await api_client.get_order_book(symbol, depth=depth or 10)
+    if command == "candles":
+        assert symbol is not None  # Validated above
+        return await api_client.get_candles(
+            symbol,
+            interval=interval or 60,
+            limit=limit or 100,
+        )
+    if command == "open-orders":
+        return await api_client.get_open_orders()
+    if command == "orders":
+        return await api_client.get_historical_orders()
+    if command == "trades":
+        assert symbol is not None  # Validated above
+        return await api_client.get_trades(symbol=symbol, limit=limit or 100)
+    if command == "public-trades":
+        assert symbol is not None  # Validated above
+        return await api_client.get_public_trades(symbol, limit=limit or 100)
+    if command == "order":
+        assert order_id is not None  # Validated above
+        return await api_client.get_order(order_id)
+    if command == "currencies":
+        return await api_client.get_currencies()
+    if command == "currency-pairs":
+        return await api_client.get_currency_pairs()
+    print(f"❌ Unknown command: {command}")
+    sys.exit(1)
+
+    return None
+
+
 def run_api_endpoint(
     *,
     command: str,
@@ -214,64 +285,9 @@ def run_api_endpoint(
         await api_client.initialize()
 
         try:
-            result = None
-
-            # Route to the appropriate API method
-            if command == "balance":
-                result = await api_client.get_balance()
-            elif command == "ticker":
-                if not symbol:
-                    print("❌ Error: ticker command requires --symbol")
-                    sys.exit(1)
-                result = await api_client.get_ticker(symbol)
-            elif command == "tickers":
-                if symbols:
-                    symbol_list = [s.strip() for s in symbols.split(",")]
-                    result = await api_client.get_tickers(symbol_list)
-                else:
-                    # Get all tickers if no symbols specified
-                    result = await api_client.get_tickers()
-            elif command == "all-tickers":
-                result = await api_client.get_tickers()
-            elif command == "order-book":
-                if not symbol:
-                    print("❌ Error: order-book command requires --symbol")
-                    sys.exit(1)
-                result = await api_client.get_order_book(symbol, depth=depth or 10)
-            elif command == "candles":
-                if not symbol:
-                    print("❌ Error: candles command requires --symbol")
-                    sys.exit(1)
-                result = await api_client.get_candles(
-                    symbol, interval=interval or 60, limit=limit or 100
-                )
-            elif command == "open-orders":
-                result = await api_client.get_open_orders()
-            elif command == "orders":
-                result = await api_client.get_historical_orders()
-            elif command == "trades":
-                # Private trades require a symbol
-                if not symbol:
-                    print("❌ Error: trades command requires --symbol")
-                    sys.exit(1)
-                result = await api_client.get_trades(symbol=symbol, limit=limit or 100)
-            elif command == "public-trades":
-                if not symbol:
-                    print("❌ Error: public-trades command requires --symbol")
-                    sys.exit(1)
-                result = await api_client.get_public_trades(symbol, limit=limit or 100)
-            elif command == "order":
-                if not order_id:
-                    print("❌ Error: order command requires --order-id")
-                    sys.exit(1)
-                result = await api_client.get_order(order_id)
-            elif command == "currencies":
-                result = await api_client.get_currencies()
-            elif command == "currency-pairs":
-                result = await api_client.get_currency_pairs()
-            else:
-                print(f"❌ Unknown command: {command}")
-                sys.exit(1)
+            result = await _execute_api_command(
+                api_client, command, symbol, symbols, order_id, interval, limit, depth
+            )
 
             # Display results as formatted JSON
             if result:

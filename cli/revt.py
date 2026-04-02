@@ -80,8 +80,9 @@ def _detect_env() -> str:
     except subprocess.TimeoutExpired:
         # Git command timed out - likely repo issues
         return "prod"  # safe fallback
-    except (FileNotFoundError, OSError):
-        # Git not installed or not a git repo
+    except OSError:
+        # Git not installed, not a git repo, or other OS-level error
+        # (FileNotFoundError is a subclass of OSError, so this catches both)
         return "prod"  # safe fallback
     except Exception:
         # Unexpected error
@@ -1181,12 +1182,8 @@ def _update_from_binary() -> None:
     _download_and_install_binary(url, latest_tag)
 
 
-def _update_from_source() -> None:
-    """Update when running from source (git repository)."""
-    print("🔄 Checking for updates...")
-    print()
-
-    # Check if in git repository
+def _verify_git_repository() -> None:
+    """Verify we're in a git repository, exit if not."""
     try:
         subprocess.run(
             ["git", "rev-parse", "--git-dir"],
@@ -1198,6 +1195,70 @@ def _update_from_source() -> None:
         print("❌ Not in a git repository")
         print("   Clone from: https://github.com/badoriie/revolut-trader")
         sys.exit(1)
+
+
+def _get_git_commits(local_ref: str, remote_ref: str) -> tuple[str, str]:
+    """Get local and remote commit SHAs."""
+    local_commit = subprocess.run(
+        ["git", "rev-parse", local_ref],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    remote_commit = subprocess.run(
+        ["git", "rev-parse", remote_ref],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    return local_commit, remote_commit
+
+
+def _stash_local_changes() -> bool:
+    """Stash local changes if any exist.
+
+    Returns:
+        True if changes were stashed, False otherwise.
+    """
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+    )
+
+    if status.stdout.strip():
+        print("📦 Stashing local changes...")
+        stash_result = subprocess.run(
+            ["git", "stash", "push", "-m", "revt update"],
+            capture_output=True,
+            text=True,
+            cwd=_ROOT,
+        )
+        if stash_result.returncode != 0:
+            print(f"❌ Failed to stash changes:\n{stash_result.stderr.strip()}")
+            print("\n💡 Suggestions:")
+            print("   - Commit your changes: git commit -am 'WIP'")
+            print("   - Discard changes: git reset --hard")
+            print("   - Resolve conflicts and try again")
+            sys.exit(1)
+        print("✓ Changes stashed")
+        print()
+        return True
+
+    return False
+
+
+def _update_from_source() -> None:
+    """Update when running from source (git repository)."""
+    print("🔄 Checking for updates...")
+    print()
+
+    _verify_git_repository()
 
     # Get current branch
     current_branch = subprocess.run(
@@ -1213,21 +1274,7 @@ def _update_from_source() -> None:
     subprocess.run(["git", "fetch", "origin"], check=True, cwd=_ROOT)
 
     # Check if behind
-    local_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=_ROOT,
-    ).stdout.strip()
-
-    remote_commit = subprocess.run(
-        ["git", "rev-parse", f"origin/{current_branch}"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=_ROOT,
-    ).stdout.strip()
+    local_commit, remote_commit = _get_git_commits("HEAD", f"origin/{current_branch}")
 
     print(f"Current branch: {current_branch}")
     print()
@@ -1249,33 +1296,7 @@ def _update_from_source() -> None:
     print(f"📥 {commits_behind} new commit(s) available")
     print()
 
-    # Check for uncommitted changes
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        capture_output=True,
-        text=True,
-        cwd=_ROOT,
-    )
-
-    has_changes = bool(status.stdout.strip())
-
-    if has_changes:
-        print("📦 Stashing local changes...")
-        stash_result = subprocess.run(
-            ["git", "stash", "push", "-m", "revt update"],
-            capture_output=True,
-            text=True,
-            cwd=_ROOT,
-        )
-        if stash_result.returncode != 0:
-            print(f"❌ Failed to stash changes:\n{stash_result.stderr.strip()}")
-            print("\n💡 Suggestions:")
-            print("   - Commit your changes: git commit -am 'WIP'")
-            print("   - Discard changes: git reset --hard")
-            print("   - Resolve conflicts and try again")
-            sys.exit(1)
-        print("✓ Changes stashed")
-        print()
+    had_stashed_changes = _stash_local_changes()
 
     # Pull latest changes
     print(f"📥 Pulling origin/{current_branch}...")
@@ -1288,7 +1309,7 @@ def _update_from_source() -> None:
 
     if result.returncode != 0:
         print(f"❌ Pull failed:\n{result.stderr}")
-        if has_changes:
+        if had_stashed_changes:
             print("\n🔄 Re-applying stashed changes...")
             pop_result = subprocess.run(
                 ["git", "stash", "pop"],
@@ -1306,7 +1327,7 @@ def _update_from_source() -> None:
         print(result.stdout)
 
     # Re-apply stashed changes if any
-    if has_changes:
+    if had_stashed_changes:
         print("🔄 Re-applying local changes...")
         pop_result = subprocess.run(
             ["git", "stash", "pop"],

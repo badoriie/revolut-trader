@@ -72,6 +72,24 @@ except ImportError:  # pragma: no cover
 _PNL_LABEL_EUR = "P&L (EUR)"
 _TOTAL_PNL_LABEL_EUR = "Total P&L (EUR)"
 
+# Default output directory for reports
+_DEFAULT_REPORT_DIR = Path("data/reports")
+
+# Professional color scheme for charts and PDF
+_COLOR_PRIMARY = "#2196F3"  # Blue
+_COLOR_SUCCESS = "#4CAF50"  # Green
+_COLOR_WARNING = "#FF9800"  # Orange
+_COLOR_DANGER = "#F44336"  # Red
+_COLOR_NEUTRAL = "#9E9E9E"  # Gray
+_COLOR_DARK = "#212121"  # Near black for text
+_COLOR_LIGHT = "#F5F5F5"  # Light gray for backgrounds
+
+# Chart styling
+_CHART_DPI = 150  # Higher quality for PDF embedding
+_CHART_TITLE_SIZE = 14
+_CHART_LABEL_SIZE = 11
+_CHART_GRID_ALPHA = 0.2  # Subtle grid lines
+
 # ---------------------------------------------------------------------------
 # Pure financial math helpers
 # ---------------------------------------------------------------------------
@@ -212,6 +230,67 @@ def compute_profit_factor(pnl_values: list[float]) -> float:
     if not gross_losses or not gross_wins:
         return 0.0
     return gross_wins / gross_losses
+
+
+def compute_win_loss_streaks(pnl_values: list[float]) -> dict[str, int]:
+    """Calculate longest winning and losing streaks.
+
+    Args:
+        pnl_values: Per-trade P&L values (positive = win, negative = loss).
+
+    Returns:
+        Dict with 'longest_win_streak' and 'longest_loss_streak'.
+    """
+    if not pnl_values:
+        return {"longest_win_streak": 0, "longest_loss_streak": 0}
+
+    max_win_streak = 0
+    max_loss_streak = 0
+    current_win_streak = 0
+    current_loss_streak = 0
+
+    for pnl in pnl_values:
+        if pnl > 0:
+            current_win_streak += 1
+            current_loss_streak = 0
+            max_win_streak = max(max_win_streak, current_win_streak)
+        else:
+            current_loss_streak += 1
+            current_win_streak = 0
+            max_loss_streak = max(max_loss_streak, current_loss_streak)
+
+    return {
+        "longest_win_streak": max_win_streak,
+        "longest_loss_streak": max_loss_streak,
+    }
+
+
+def compute_rolling_volatility(values: list[float], window: int = 20) -> list[float]:
+    """Calculate rolling standard deviation of returns.
+
+    Args:
+        values: Portfolio value series.
+        window: Rolling window size (default 20).
+
+    Returns:
+        List of volatility values (annualized percentage).
+    """
+    if len(values) < window + 1:
+        return []
+
+    returns = compute_daily_returns(values)
+    volatilities = []
+
+    for i in range(window, len(returns)):
+        window_returns = returns[i - window : i]
+        mean_return = sum(window_returns) / len(window_returns)
+        variance = sum((r - mean_return) ** 2 for r in window_returns) / len(window_returns)
+        std_dev = math.sqrt(variance)
+        # Annualize assuming 365 trading days
+        annualized_vol = std_dev * math.sqrt(365) * 100
+        volatilities.append(annualized_vol)
+
+    return volatilities
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +467,7 @@ def generate_suggestions(
 def _chart_equity_curve(
     series: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
-    """Save equity curve PNG to *output_dir*."""
+    """Save equity curve PNG to *output_dir* with professional styling."""
     if not _HAS_MATPLOTLIB or not series:
         return None
     values = [s["total_value"] for s in series]
@@ -400,20 +479,41 @@ def _chart_equity_curve(
         use_dates = False
 
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(timestamps, values, linewidth=1.5, color="#2196F3")
-    ax.fill_between(timestamps, min(values), values, alpha=0.1, color="#2196F3")
-    ax.set_title("Portfolio Equity Curve", fontsize=14, fontweight="bold")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Portfolio Value (EUR)")
+    ax.plot(timestamps, values, linewidth=2.0, color=_COLOR_PRIMARY, label="Portfolio Value")
+    ax.fill_between(timestamps, min(values), values, alpha=0.15, color=_COLOR_PRIMARY)
+
+    # Add peak marker
+    peak_idx = values.index(max(values))
+    ax.plot(
+        timestamps[peak_idx],
+        values[peak_idx],
+        "o",
+        color=_COLOR_SUCCESS,
+        markersize=8,
+        label=f"Peak: €{values[peak_idx]:,.0f}",
+    )
+
+    ax.set_title(
+        "Portfolio Equity Curve",
+        fontsize=_CHART_TITLE_SIZE,
+        fontweight="bold",
+        color=_COLOR_DARK,
+        pad=15,
+    )
+    ax.set_xlabel("Time", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+    ax.set_ylabel("Portfolio Value (EUR)", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("€%.0f"))
     if use_dates:
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
-    ax.grid(True, alpha=0.3)
+    ax.grid(True, alpha=_CHART_GRID_ALPHA, linestyle="--")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     path = output_dir / "equity_curve.png"
-    fig.savefig(path, dpi=120)
+    fig.savefig(path, dpi=_CHART_DPI, bbox_inches="tight")
     plt.close(fig)
     return path
 
@@ -545,6 +645,201 @@ def _chart_backtest_comparison(
     return path
 
 
+def _chart_win_loss_streaks(
+    trade_history: list[dict[str, Any]], output_dir: Path
+) -> Path | None:  # pragma: no cover
+    """Save win/loss streak analysis chart to *output_dir*."""
+    if not _HAS_MATPLOTLIB or not trade_history:
+        return None
+
+    pnl_values = [float(t["pnl"]) for t in trade_history if t.get("pnl") is not None]
+    if not pnl_values:
+        return None
+
+    streaks = compute_win_loss_streaks(pnl_values)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    categories = ["Longest\nWin Streak", "Longest\nLoss Streak"]
+    values = [streaks["longest_win_streak"], streaks["longest_loss_streak"]]
+    colors = [_COLOR_SUCCESS, _COLOR_DANGER]
+
+    bars = ax.bar(categories, values, color=colors, edgecolor="white", linewidth=2, width=0.6)
+
+    # Add value labels on bars
+    for bar, val in zip(bars, values, strict=True):
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height,
+            f"{int(val)} trades",
+            ha="center",
+            va="bottom",
+            fontsize=12,
+            fontweight="bold",
+        )
+
+    ax.set_title(
+        "Win/Loss Streak Analysis",
+        fontsize=_CHART_TITLE_SIZE,
+        fontweight="bold",
+        color=_COLOR_DARK,
+        pad=15,
+    )
+    ax.set_ylabel("Number of Consecutive Trades", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+    ax.grid(True, alpha=_CHART_GRID_ALPHA, axis="y", linestyle="--")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.tight_layout()
+    path = output_dir / "win_loss_streaks.png"
+    fig.savefig(path, dpi=_CHART_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _chart_volatility(
+    series: list[dict[str, Any]], output_dir: Path
+) -> Path | None:  # pragma: no cover
+    """Save rolling volatility chart to *output_dir*."""
+    if not _HAS_MATPLOTLIB or not series:
+        return None
+
+    values = [s["total_value"] for s in series]
+    volatilities = compute_rolling_volatility(values, window=20)
+
+    if not volatilities:
+        return None
+
+    try:
+        # Skip first 20 timestamps to align with volatility values
+        timestamps = [
+            datetime.fromisoformat(str(s["timestamp"])) for s in series[20 : 20 + len(volatilities)]
+        ]
+        use_dates = True
+    except (ValueError, TypeError):
+        timestamps = list(range(len(volatilities)))
+        use_dates = False
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(
+        timestamps, volatilities, linewidth=2.0, color=_COLOR_WARNING, label="20-Period Volatility"
+    )
+    ax.fill_between(timestamps, volatilities, alpha=0.2, color=_COLOR_WARNING)
+
+    # Add mean line
+    mean_vol = sum(volatilities) / len(volatilities)
+    ax.axhline(
+        mean_vol,
+        color=_COLOR_NEUTRAL,
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Average: {mean_vol:.1f}%",
+    )
+
+    ax.set_title(
+        "Rolling Volatility (Annualized %)",
+        fontsize=_CHART_TITLE_SIZE,
+        fontweight="bold",
+        color=_COLOR_DARK,
+        pad=15,
+    )
+    ax.set_xlabel("Time", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+    ax.set_ylabel("Volatility (%)", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+
+    if use_dates:
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+
+    ax.grid(True, alpha=_CHART_GRID_ALPHA, linestyle="--")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    plt.xticks(rotation=30, ha="right")
+    plt.tight_layout()
+    path = output_dir / "volatility.png"
+    fig.savefig(path, dpi=_CHART_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+def _chart_performance_heatmap(
+    trade_history: list[dict[str, Any]], output_dir: Path
+) -> Path | None:  # pragma: no cover
+    """Save performance heatmap (hour x day of week) to *output_dir*."""
+    if not _HAS_MATPLOTLIB or not trade_history:
+        return None
+
+    # Create 24x7 grid for performance data
+    performance_grid = [[0.0 for _ in range(24)] for _ in range(7)]
+    trade_count_grid = [[0 for _ in range(24)] for _ in range(7)]
+
+    for trade in trade_history:
+        if trade.get("pnl") is None or trade.get("timestamp") is None:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(trade["timestamp"]))
+            day_of_week = ts.weekday()  # 0=Monday, 6=Sunday
+            hour = ts.hour
+            pnl = float(trade["pnl"])
+
+            performance_grid[day_of_week][hour] += pnl
+            trade_count_grid[day_of_week][hour] += 1
+        except (ValueError, TypeError):
+            continue
+
+    # Average P&L per trade in each cell
+    for day in range(7):
+        for hour in range(24):
+            if trade_count_grid[day][hour] > 0:
+                performance_grid[day][hour] /= trade_count_grid[day][hour]
+
+    # Check if we have enough data
+    total_trades = sum(sum(row) for row in trade_count_grid)
+    if total_trades < 10:
+        return None
+
+    fig, ax = plt.subplots(figsize=(16, 6))
+
+    # Plot heatmap
+    import numpy as np
+
+    data = np.array(performance_grid)
+
+    # Use a diverging colormap centered at zero
+    max_abs = max(abs(data.min()), abs(data.max()))
+    if max_abs == 0:
+        max_abs = 1
+
+    im = ax.imshow(data, cmap="RdYlGn", aspect="auto", vmin=-max_abs, vmax=max_abs)
+
+    # Set ticks and labels
+    ax.set_xticks(range(24))
+    ax.set_xticklabels([f"{h:02d}:00" for h in range(24)], rotation=45, ha="right")
+    ax.set_yticks(range(7))
+    ax.set_yticklabels(
+        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    )
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("Avg P&L per Trade (EUR)", rotation=270, labelpad=20, fontsize=_CHART_LABEL_SIZE)
+
+    ax.set_title(
+        "Performance Heatmap - Day of Week × Hour of Day",
+        fontsize=_CHART_TITLE_SIZE,
+        fontweight="bold",
+        color=_COLOR_DARK,
+        pad=15,
+    )
+    ax.set_xlabel("Hour of Day", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+    ax.set_ylabel("Day of Week", fontsize=_CHART_LABEL_SIZE, color=_COLOR_DARK)
+
+    plt.tight_layout()
+    path = output_dir / "performance_heatmap.png"
+    fig.savefig(path, dpi=_CHART_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Report assembly
 # ---------------------------------------------------------------------------
@@ -621,12 +916,15 @@ def _generate_report_charts(
     symbol_analytics: list[dict[str, Any]],
     backtest_runs: list[dict[str, Any]],
 ) -> list[Path]:
-    """Generate PNG charts and return their paths (no-op when matplotlib is absent)."""
+    """Generate PNG charts (including new Phase 1 charts) and return their paths."""
     chart_paths: list[Path] = []
     if _HAS_MATPLOTLIB:  # pragma: no cover
         for fn, arg in [
             (_chart_equity_curve, portfolio_series),
             (_chart_drawdown, portfolio_series),
+            (_chart_win_loss_streaks, trade_history),
+            (_chart_volatility, portfolio_series),
+            (_chart_performance_heatmap, trade_history),
             (_chart_pnl_distribution, trade_history),
             (_chart_symbol_performance, symbol_analytics),
             (_chart_backtest_comparison, backtest_runs),
@@ -876,9 +1174,12 @@ def _pdf_suggestions_section(pdf: Any, suggestions: list[str]) -> None:  # pragm
     _pdf_section_header(pdf, "Improvement Suggestions")
     for i, suggestion in enumerate(suggestions, 1):
         pdf.set_font("Helvetica", "B", 9)
+        pdf.set_x(pdf.l_margin)
         pdf.cell(8, 5, f"{i}.")
         pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5, _pdf_safe_text(suggestion))
+        # Calculate available width for multi_cell (total width - margins - number width)
+        available_width = pdf.w - pdf.l_margin - pdf.r_margin - 8
+        pdf.multi_cell(available_width, 5, _pdf_safe_text(suggestion))
         pdf.ln(1)
 
 
@@ -898,6 +1199,178 @@ def _pdf_charts_section(pdf: Any, chart_paths: list[Path]) -> None:  # pragma: n
             pdf.ln(4)
         except Exception:
             logger.debug(f"Could not embed chart {chart_path.name} in PDF — skipping")
+
+
+def _pdf_executive_summary(
+    pdf: Any, metrics: dict[str, Any], days: int
+) -> None:  # pragma: no cover
+    """Add executive summary page with KPI dashboard and quick insights."""
+    # Title
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(33, 33, 33)  # Dark gray
+    pdf.cell(
+        0,
+        12,
+        _pdf_safe_text(f"Executive Summary - Last {days} Days"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+        align="C",
+    )
+    pdf.ln(5)
+
+    # Get key metrics
+    total_pnl = metrics.get("total_pnl", 0.0)
+    return_pct = metrics.get("return_pct", 0.0)
+    win_rate = metrics.get("win_rate", 0.0)
+    sharpe = metrics.get("sharpe_ratio", 0.0)
+    max_dd = metrics.get("max_drawdown_pct", 0.0)
+    profit_factor = metrics.get("profit_factor", 0.0)
+    total_trades = metrics.get("total_trades", 0)
+
+    # Determine overall health status
+    health_indicator = "[OK]"  # Good by default
+    health_status = "GOOD"
+    if sharpe and sharpe < 0:
+        health_indicator = "[!!]"
+        health_status = "NEEDS ATTENTION"
+    elif sharpe and sharpe < 0.5:
+        health_indicator = "[!]"
+        health_status = "CAUTIONARY"
+    elif max_dd > 20:
+        health_indicator = "[!!]"
+        health_status = "HIGH RISK"
+    elif max_dd > 10:
+        health_indicator = "[!]"
+        health_status = "MODERATE RISK"
+
+    # Overall status card
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_fill_color(245, 245, 245)  # Light gray background
+    pdf.cell(
+        0,
+        10,
+        _pdf_safe_text(f"{health_indicator} Overall Status: {health_status}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+        fill=True,
+        align="C",
+    )
+    pdf.ln(3)
+
+    # Key metrics in a 2x3 grid
+    pdf.set_font("Helvetica", "", 10)
+    col_width = (pdf.w - 30) / 2
+
+    # Row 1: P&L and Return
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text("Total P&L"), border=1)
+    pdf.cell(col_width, 8, _pdf_safe_text("Return %"), border=1, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 14)
+    pnl_indicator = "+" if total_pnl >= 0 else "-"
+    ret_indicator = "+" if return_pct >= 0 else "-"
+    pdf.cell(
+        col_width, 10, _pdf_safe_text(f"{pnl_indicator} {_fmt_eur(total_pnl)}"), border=1, align="C"
+    )
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{ret_indicator} {_fmt_pct(return_pct)}"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+    # Row 2: Win Rate and Sharpe
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text("Win Rate"), border=1)
+    pdf.cell(col_width, 8, _pdf_safe_text("Sharpe Ratio"), border=1, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 14)
+    wr_indicator = "[OK]" if win_rate >= 50 else "[!]"
+    sharpe_indicator = "*" if sharpe and sharpe >= 1.0 else ""
+    sharpe_str = f"{sharpe:.2f}" if sharpe else "N/A"
+    pdf.cell(col_width, 10, _pdf_safe_text(f"{wr_indicator} {win_rate:.1f}%"), border=1, align="C")
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{sharpe_indicator}{sharpe_str}"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+    # Row 3: Max Drawdown and Trades
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text("Max Drawdown"), border=1)
+    pdf.cell(col_width, 8, _pdf_safe_text("Total Trades"), border=1, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 14)
+    dd_indicator = "[!!]" if max_dd > 20 else ("[!]" if max_dd > 10 else "[OK]")
+    pdf.cell(col_width, 10, _pdf_safe_text(f"{dd_indicator} {max_dd:.1f}%"), border=1, align="C")
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{total_trades} trades"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+    pdf.ln(5)
+
+    # Quick insights
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, _pdf_safe_text("Key Insights:"), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 10)
+    insights = []
+
+    if total_pnl > 0:
+        insights.append(f"[+] Profitable period with {_fmt_eur(total_pnl)} total P&L")
+    else:
+        insights.append(f"[-] Loss period with {_fmt_eur(total_pnl)} total P&L - review strategy")
+
+    if win_rate >= 55:
+        insights.append(f"[+] Strong win rate at {win_rate:.1f}%")
+    elif win_rate < 40:
+        insights.append(f"[-] Low win rate at {win_rate:.1f}% - needs improvement")
+
+    if sharpe and sharpe >= 1.0:
+        insights.append(f"[+] Excellent risk-adjusted returns (Sharpe: {sharpe:.2f})")
+    elif sharpe and sharpe < 0:
+        insights.append(f"[-] Negative Sharpe ratio ({sharpe:.2f}) - losses outweigh gains")
+
+    if max_dd > 20:
+        insights.append(f"[!] High drawdown of {max_dd:.1f}% - consider reducing risk")
+    elif max_dd < 5:
+        insights.append(f"[+] Low drawdown of {max_dd:.1f}% - good risk control")
+
+    if profit_factor and profit_factor >= 1.5:
+        insights.append(f"[+] Strong profit factor of {profit_factor:.2f}")
+
+    for insight in insights:
+        pdf.set_x(pdf.l_margin + 10)  # Indent 10mm from left margin
+        pdf.multi_cell(0, 6, _pdf_safe_text(insight))
+
+    pdf.ln(3)
+
+    # Verdict
+    pdf.set_font("Helvetica", "BI", 11)
+    if health_status == "GOOD":
+        verdict = "Strategy is performing well. Continue monitoring and maintain discipline."
+    elif health_status == "CAUTIONARY":
+        verdict = "Strategy shows mixed results. Review parameters and risk management."
+    else:
+        verdict = "Strategy needs attention. Consider backtesting alternatives or adjusting risk."
+
+    pdf.set_fill_color(245, 245, 245)
+    pdf.multi_cell(0, 6, _pdf_safe_text(f"Verdict: {verdict}"), fill=True)
+
+    pdf.add_page()  # Start new page for detailed metrics
 
 
 def _generate_pdf(
@@ -941,11 +1414,14 @@ def _generate_pdf(
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
+    # Add Executive Summary first
+    _pdf_executive_summary(pdf, metrics, days)
+
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(
         0,
         10,
-        _pdf_safe_text(f"Trading Analytics Report - Last {days} Days"),
+        _pdf_safe_text(f"Detailed Analytics - Last {days} Days"),
         new_x="LMARGIN",
         new_y="NEXT",
     )
@@ -977,7 +1453,7 @@ def _generate_pdf(
 
 def generate_report(
     days: int = 30,
-    output_dir: Path = Path("data/reports"),
+    output_dir: Path = _DEFAULT_REPORT_DIR,
     quiet: bool = False,
     send_telegram: bool = True,
 ) -> dict[str, Any]:
@@ -1076,7 +1552,7 @@ def generate_report(
 
 def generate_report_data(
     days: int = 30,
-    output_dir: Path = Path("data/reports"),
+    output_dir: Path = _DEFAULT_REPORT_DIR,
 ) -> dict[str, Any]:
     """Generate report data and PDF without sending Telegram notification.
 
@@ -1435,7 +1911,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("data/reports"),
+        default=_DEFAULT_REPORT_DIR,
         help="Directory to write charts and report.md into (default: data/reports)",
     )
     args = parser.parse_args()
