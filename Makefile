@@ -212,6 +212,21 @@ setup:
 		op item get $$CONFIG --vault $(OP_VAULT) --fields TRADING_MODE >/dev/null 2>&1 \
 			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TRADING_MODE[text]=paper" >/dev/null \
 			     && echo "  TRADING_MODE: set to paper (safe default)"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields RISK_LEVEL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "RISK_LEVEL[text]=conservative" >/dev/null \
+			     && echo "  RISK_LEVEL: added (required, default conservative)"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields BASE_CURRENCY >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "BASE_CURRENCY[text]=EUR" >/dev/null \
+			     && echo "  BASE_CURRENCY: added (required, default EUR)"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields TRADING_PAIRS >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" >/dev/null \
+			     && echo "  TRADING_PAIRS: added (required, default BTC-EUR,ETH-EUR)"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields DEFAULT_STRATEGY >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "DEFAULT_STRATEGY[text]=market_making" >/dev/null \
+			     && echo "  DEFAULT_STRATEGY: added (required, default market_making)"; }; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields INITIAL_CAPITAL >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "INITIAL_CAPITAL[text]=10000" >/dev/null \
+			     && echo "  INITIAL_CAPITAL: added (required for paper mode, default 10000)"; }; \
 		op item get $$CONFIG --vault $(OP_VAULT) --fields MAX_CAPITAL >/dev/null 2>&1 \
 			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAX_CAPITAL[text]=<optional-max-capital-eur>" >/dev/null \
 			     && echo "  MAX_CAPITAL: placeholder added"; }; \

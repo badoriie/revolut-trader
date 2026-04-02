@@ -1,5 +1,6 @@
 # Revolut Trader: Algorithmic Trading Bot
 
+![Beta](https://img.shields.io/badge/status-beta-orange)
 [![CI](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml/badge.svg)](https://github.com/badoriie/revolut-trader/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=badoriie_revolut-trader&metric=alert_status&token=88e993a3010057e454d15b0ab129bdf4f710e675)](https://sonarcloud.io/summary/new_code?id=badoriie_revolut-trader)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=badoriie_revolut-trader&metric=coverage&token=88e993a3010057e454d15b0ab129bdf4f710e675)](https://sonarcloud.io/summary/new_code?id=badoriie_revolut-trader)

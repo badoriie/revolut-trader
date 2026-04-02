@@ -195,6 +195,39 @@ class TestInitialCapitalByTradingMode:
                     with pytest.raises(RuntimeError, match="INITIAL_CAPITAL"):
                         Settings()
 
+    def test_prod_paper_mode_requires_initial_capital(self):
+        """CRITICAL: Prod environment in paper mode (default) requires INITIAL_CAPITAL.
+
+        Context: Safety requirement ENV-03
+        Critical because: Prod defaults to paper mode, which needs INITIAL_CAPITAL.
+        The bot must fail fast if this is missing rather than starting with undefined state.
+        """
+        config_without_capital = {
+            k: v for k, v in VALID_DEFAULT_CONFIG.items() if k != "INITIAL_CAPITAL"
+        }
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_without_capital)):
+                with patch(
+                    PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config_without_capital)
+                ):
+                    with pytest.raises(RuntimeError, match="INITIAL_CAPITAL"):
+                        Settings()
+
+    def test_prod_explicit_paper_mode_requires_initial_capital(self):
+        """Prod with explicit TRADING_MODE=paper requires INITIAL_CAPITAL."""
+        config_without_capital = {
+            k: v for k, v in VALID_PAPER_CONFIG.items() if k != "INITIAL_CAPITAL"
+        }
+
+        with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
+            with patch(PATCH_TARGET, side_effect=mock_get(config_without_capital)):
+                with patch(
+                    PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config_without_capital)
+                ):
+                    with pytest.raises(RuntimeError, match="INITIAL_CAPITAL"):
+                        Settings()
+
 
 class TestLiveTradingRestrictions:
     """Tests that LIVE trading is only allowed in prod environment.
