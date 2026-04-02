@@ -348,7 +348,20 @@ class Settings(BaseSettings):
         )
 
     def _load_trading_config(self, op) -> None:
-        """Load strategy, pairs, and currency config from 1Password."""
+        """Load strategy, pairs, currency, and trading mode config from 1Password."""
+        # Load trading mode — defaults to paper if not set (safest default)
+        trading_mode_str = op.get_optional("TRADING_MODE")
+        if trading_mode_str:
+            try:
+                self.trading_mode = TradingMode(trading_mode_str.lower())
+            except ValueError as e:
+                raise ValueError(
+                    "Invalid TRADING_MODE in 1Password: must be 'paper' or 'live'."
+                ) from e
+        else:
+            # No TRADING_MODE set — default to paper (safe default for all environments)
+            self.trading_mode = TradingMode.PAPER
+
         try:
             self.risk_level = RiskLevel(op.get("RISK_LEVEL").lower())
         except ValueError as e:

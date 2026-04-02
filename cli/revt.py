@@ -1340,6 +1340,13 @@ examples:
         default=None,
         help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
     )
+    p_run.add_argument(
+        "--trading-mode",
+        "-t",
+        choices=["paper", "live"],
+        default=None,
+        help="Trading mode (default: TRADING_MODE from 1Password config, or paper if not set)",
+    )
     p_run.set_defaults(func=cmd_run)
 
     # ── backtest ──────────────────────────────────────────────────────────────

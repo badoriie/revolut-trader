@@ -23,6 +23,7 @@ from src.config import RiskLevel, Settings, StrategyType, TradingMode
 
 # Patch target — op.get is called inside model_post_init via `import src.utils.onepassword as op`
 PATCH_TARGET = "src.utils.onepassword.get"
+PATCH_TARGET_OPTIONAL = "src.utils.onepassword.get_optional"
 
 
 def mock_get(config_dict):
@@ -46,11 +47,20 @@ def mock_get(config_dict):
     return get_impl
 
 
+def mock_get_optional(config_dict):
+    """Create a mock for op.get_optional() that returns None for missing keys."""
+
+    def get_optional_impl(key: str) -> str | None:
+        return config_dict.get(key)
+
+    return get_optional_impl
+
+
 class TestConfigurationRequired:
     """Tests that verify configuration MUST be in 1Password.
 
-    TRADING_MODE is no longer in 1Password — it is derived from the environment.
-    INITIAL_CAPITAL is only required for paper mode (dev/int).
+    TRADING_MODE is optional in 1Password and defaults to 'paper' (safest default).
+    INITIAL_CAPITAL is only required for paper mode.
     """
 
     def test_risk_level_required_from_1password(self):
@@ -135,8 +145,9 @@ class TestConfigurationRequired:
             assert "INITIAL_CAPITAL" in str(exc_info.value)
 
     def test_initial_capital_not_required_for_prod(self):
-        """Prod does NOT require INITIAL_CAPITAL — live mode gets balance from API."""
+        """Live mode does NOT require INITIAL_CAPITAL — balance fetched from API."""
         config = {
+            "TRADING_MODE": "live",
             "RISK_LEVEL": "conservative",
             "BASE_CURRENCY": "EUR",
             "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
@@ -145,8 +156,9 @@ class TestConfigurationRequired:
 
         with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
             with patch(PATCH_TARGET, side_effect=mock_get(config)):
-                settings = Settings()
-                assert settings.trading_mode == TradingMode.LIVE
+                with patch(PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config)):
+                    settings = Settings()
+                    assert settings.trading_mode == TradingMode.LIVE
 
 
 class TestConfigurationValidation:
@@ -202,8 +214,9 @@ class TestValidConfiguration:
     """Tests that verify valid configuration is accepted."""
 
     def test_valid_paper_mode_config_accepted(self):
-        """Valid paper mode configuration should be accepted (dev/int)."""
+        """Valid paper mode configuration should be accepted."""
         config = {
+            "TRADING_MODE": "paper",
             "RISK_LEVEL": "conservative",
             "BASE_CURRENCY": "EUR",
             "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
@@ -221,9 +234,10 @@ class TestValidConfiguration:
             assert settings.default_strategy == StrategyType.MARKET_MAKING
             assert settings.paper_initial_capital == 10000.0
 
-    def test_valid_prod_config_accepted(self):
-        """Valid prod configuration should be accepted (no INITIAL_CAPITAL needed)."""
+    def test_valid_live_mode_config_accepted(self):
+        """Valid live mode configuration should be accepted (no INITIAL_CAPITAL needed)."""
         config = {
+            "TRADING_MODE": "live",
             "RISK_LEVEL": "conservative",
             "BASE_CURRENCY": "EUR",
             "TRADING_PAIRS": "BTC-EUR,ETH-EUR",
@@ -232,10 +246,11 @@ class TestValidConfiguration:
 
         with patch.dict(os.environ, {"ENVIRONMENT": "prod"}):
             with patch(PATCH_TARGET, side_effect=mock_get(config)):
-                settings = Settings()
+                with patch(PATCH_TARGET_OPTIONAL, side_effect=mock_get_optional(config)):
+                    settings = Settings()
 
-                assert settings.trading_mode == TradingMode.LIVE
-                assert settings.risk_level == RiskLevel.CONSERVATIVE
+                    assert settings.trading_mode == TradingMode.LIVE
+                    assert settings.risk_level == RiskLevel.CONSERVATIVE
 
     def test_valid_moderate_risk_config_accepted(self):
         """Valid moderate risk configuration should be accepted."""

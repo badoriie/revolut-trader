@@ -165,10 +165,12 @@ setup:
 					--category "Secure Note" \
 					--vault $(OP_VAULT) \
 					--title $$CONFIG \
+					"TRADING_MODE[text]=paper" \
 					"RISK_LEVEL[text]=conservative" \
 					"BASE_CURRENCY[text]=EUR" \
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
 					"DEFAULT_STRATEGY[text]=market_making" \
+					"INITIAL_CAPITAL[text]=10000" \
 					"MAX_CAPITAL[text]=<optional-max-capital-eur>" \
 					"SHUTDOWN_TRAILING_STOP_PCT[text]=<optional-e.g-0.5>" \
 					"SHUTDOWN_MAX_WAIT_SECONDS[text]=<optional-e.g-120>" \
@@ -181,13 +183,14 @@ setup:
 					"MAX_ORDER_VALUE[text]=<optional-e.g-10000>" \
 					"MIN_ORDER_VALUE[text]=<optional-e.g-10>" \
 					"TELEGRAM_CHAT_ID[text]=<add-telegram-chat-id>" \
-					>/dev/null && echo "  $$CONFIG: created (prod — no INITIAL_CAPITAL needed)"; \
-				echo "  Tip: limit trading capital with: make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod"; \
+					>/dev/null && echo "  $$CONFIG: created (prod defaults to paper mode)"; \
+				echo "  Note: TRADING_MODE=paper (safe default). Set 'live' only when ready."; \
 			else \
 				op item create \
 					--category "Secure Note" \
 					--vault $(OP_VAULT) \
 					--title $$CONFIG \
+					"TRADING_MODE[text]=paper" \
 					"RISK_LEVEL[text]=conservative" \
 					"BASE_CURRENCY[text]=EUR" \
 					"TRADING_PAIRS[text]=BTC-EUR,ETH-EUR" \
@@ -208,6 +211,9 @@ setup:
 					>/dev/null && echo "  $$CONFIG: created with safe defaults"; \
 			fi; \
 		fi; \
+		op item get $$CONFIG --vault $(OP_VAULT) --fields TRADING_MODE >/dev/null 2>&1 \
+			|| { op item edit $$CONFIG --vault $(OP_VAULT) "TRADING_MODE[text]=paper" >/dev/null \
+			     && echo "  TRADING_MODE: set to paper (safe default)"; }; \
 		op item get $$CONFIG --vault $(OP_VAULT) --fields MAX_CAPITAL >/dev/null 2>&1 \
 			|| { op item edit $$CONFIG --vault $(OP_VAULT) "MAX_CAPITAL[text]=<optional-max-capital-eur>" >/dev/null \
 			     && echo "  MAX_CAPITAL: placeholder added"; }; \
@@ -446,7 +452,7 @@ opshow:
 	else \
 		for field in REVOLUT_API_KEY REVOLUT_PRIVATE_KEY REVOLUT_PUBLIC_KEY TELEGRAM_BOT_TOKEN; do \
 			value=$$(op item get $(OP_CREDS) --vault $(OP_VAULT) --fields $$field --reveal 2>/dev/null) || continue; \
-			len=$${#value}; \
+			len=$$(expr length "$$value"); \
 			if [ $$len -gt 100 ]; then masked="<set, $$len chars>"; \
 			elif [ $$len -gt 8 ]; then masked="$${value:0:8}..."; \
 			else masked="$${value:0:4}..."; fi; \
