@@ -374,7 +374,8 @@ Every code change **must** include corresponding documentation updates. This is 
 - Inline docstrings — logic changes, new functions, modified behavior
 - `CLAUDE.md` — architectural changes, new components, workflow changes
 - `.github/copilot-instructions.md` — keep in sync with `CLAUDE.md` (tool-agnostic sections)
-- `docs/USER_GUIDE.md` — user-facing changes: new config keys, new commands, changed behavior
+- `docs/END_USER_GUIDE.md` — user-facing changes: new config keys, new commands, changed behavior
+- `docs/DEVELOPER_GUIDE.md` — developer-facing changes: new make commands, setup instructions
 - `docs/` files — API changes, strategy changes, development guidelines
 
 Claude Code must handle this proactively without being asked.
@@ -403,12 +404,12 @@ Claude Code must handle this proactively without being asked.
 | `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                                                                                                                                                   |
 | `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                                                                                                                                                              |
 | `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)                                                                                                                                                                               |
-| `docs/USER_GUIDE.md`                  | End-to-end user guide: setup, configuration, running, monitoring                                                                                                                                                                         |
 | `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
 | `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
 | `docs/END_USER_GUIDE.md`              | Quick start for end users: download binary, configure, trade                                                                                                                                                                             |
 | `docs/DEVELOPER_GUIDE.md`             | Developer guide: setup, configuration, advanced usage, make commands                                                                                                                                                                     |
+| `docs/1PASSWORD.md`                   | Credential and configuration setup, commands, troubleshooting                                                                                                                                                                            |
 | `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
 | `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
 | `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
