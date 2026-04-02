@@ -833,34 +833,71 @@ class TradingBot:
         await self.notifier.reply("\n".join(lines))
 
     async def _cmd_report(self, days: int) -> None:
-        """Reply with an analytics summary for the last *days* calendar days.
+        """Reply with a comprehensive analytics report as PDF.
 
-        Queries the database directly and calls :meth:`notify_report_ready` so
-        the message format matches the scheduled report notification.
+        Generates a full PDF report with charts and suggestions using the same
+        logic as ``make db-report``.  Falls back to text summary if PDF generation
+        fails or fpdf2 is not installed.
 
         Args:
             days: Look-back window in calendar days.
         """
         assert self.notifier is not None
+
+        from pathlib import Path
+
+        from cli.analytics_report import generate_report_data
+
         try:
-            analytics = self.persistence.get_analytics(days=days)
-            if not analytics or analytics.get("total_trades", 0) == 0:
-                await self.notifier.reply(f"📊 No trading data for the last {days} days.")
-                return
-            total_pnl = Decimal(str(analytics.get("total_pnl", 0)))
-            await self.notifier.notify_report_ready(
+            await self.notifier.reply(f"📊 Generating {days}-day analytics report...")
+
+            # Generate report data and PDF (safe to call from async context)
+            result = generate_report_data(
                 days=days,
-                total_trades=int(analytics.get("total_trades", 0)),
-                total_pnl=total_pnl,
-                return_pct=float(analytics.get("return_pct", 0.0)),
-                win_rate=float(analytics.get("win_rate", 0.0)),
-                sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
-                max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
-                report_path="(run `revt db report` for full PDF)",
-                currency_symbol=self.currency_symbol,
+                output_dir=Path("data/reports"),
             )
+
+            if not result.get("pdf_bytes"):
+                # Fall back to text summary if PDF generation failed
+                analytics = self.persistence.get_analytics(days=days)
+                if not analytics or analytics.get("total_trades", 0) == 0:
+                    await self.notifier.reply(f"📊 No trading data for the last {days} days.")
+                    return
+
+                total_pnl = Decimal(str(analytics.get("total_pnl", 0)))
+                await self.notifier.notify_report_ready(
+                    days=days,
+                    total_trades=int(analytics.get("total_trades", 0)),
+                    total_pnl=total_pnl,
+                    return_pct=float(analytics.get("return_pct", 0.0)),
+                    win_rate=float(analytics.get("win_rate", 0.0)),
+                    sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
+                    max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
+                    report_path="(fpdf2 not installed - run `revt db report` for full PDF)",
+                    currency_symbol=self.currency_symbol,
+                )
+                return
+
+            # Send PDF via Telegram
+            total_pnl = result["metrics"]["total_pnl"]
+            pnl_sign = "+" if total_pnl >= 0 else ""
+            caption = (
+                f"📊 **Analytics Report - Last {days} Days**\n\n"
+                f"📈 Total P&L: {pnl_sign}€{total_pnl:,.2f}\n"
+                f"📉 Return: {result['metrics']['return_pct']:.2f}%\n"
+                f"✅ Win Rate: {result['metrics']['win_rate']:.1f}%\n"
+                f"📊 Sharpe Ratio: {result['metrics']['sharpe_ratio']:.2f}\n"
+                f"📉 Max Drawdown: {result['metrics']['max_drawdown_pct']:.1f}%"
+            )
+
+            await self.notifier.send_document(
+                document=result["pdf_bytes"],
+                filename="analytics_report.pdf",
+                caption=caption,
+            )
+
         except Exception as exc:
-            logger.warning(f"Failed to generate /report response: {exc}")
+            logger.warning(f"Failed to generate /report response: {exc}", exc_info=True)
             await self.notifier.reply("⚠️ Failed to generate report. Try `revt db report`.")
 
     async def _cmd_help(self) -> None:

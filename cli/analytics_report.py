@@ -1023,6 +1023,23 @@ def generate_report(
     )
     md_path = output_dir / "report.md"
     md_path.write_text(md)
+
+    # Generate PDF (for programmatic access and Telegram)
+    pdf_bytes: bytes | None = None
+    try:
+        pdf_bytes = _generate_pdf(
+            md_path,
+            metrics,
+            days,
+            symbol_analytics=symbol_analytics,
+            strategy_analytics=strategy_analytics,
+            backtest_analytics=backtest_analytics,
+            suggestions=suggestions,
+            chart_paths=chart_paths,
+        )
+    except Exception as pdf_err:
+        logger.warning(f"PDF generation failed: {pdf_err!r}")
+
     asyncio.run(
         _send_telegram_report(
             send_telegram,
@@ -1053,6 +1070,80 @@ def generate_report(
         "suggestions": suggestions,
         "chart_paths": [str(p) for p in chart_paths],
         "report_path": str(md_path),
+        "pdf_bytes": pdf_bytes,
+    }
+
+
+def generate_report_data(
+    days: int = 30,
+    output_dir: Path = Path("data/reports"),
+) -> dict[str, Any]:
+    """Generate report data and PDF without sending Telegram notification.
+
+    This function is safe to call from async contexts (unlike generate_report).
+    It performs all the heavy lifting of data fetching, metric computation,
+    chart generation, and PDF creation, but skips the Telegram notification.
+
+    Args:
+        days: Look-back window in calendar days for live-trading metrics.
+        output_dir: Directory to write charts and the markdown report into.
+
+    Returns:
+        Dict containing metrics, analytics, PDF bytes, and file paths.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    db = DatabasePersistence()
+    (
+        analytics,
+        symbol_analytics,
+        strategy_analytics,
+        portfolio_series,
+        backtest_analytics,
+        backtest_runs,
+        trade_history,
+    ) = _fetch_report_data(db, days)
+    metrics = _compute_report_metrics(analytics, portfolio_series, trade_history)
+    suggestions = generate_suggestions(metrics, symbol_analytics, backtest_analytics)
+    chart_paths = _generate_report_charts(
+        output_dir, portfolio_series, trade_history, symbol_analytics, backtest_runs
+    )
+    md = _build_markdown(
+        metrics,
+        symbol_analytics,
+        strategy_analytics,
+        backtest_analytics,
+        suggestions,
+        chart_paths,
+        days,
+    )
+    md_path = output_dir / "report.md"
+    md_path.write_text(md)
+
+    # Generate PDF
+    pdf_bytes: bytes | None = None
+    try:
+        pdf_bytes = _generate_pdf(
+            md_path,
+            metrics,
+            days,
+            symbol_analytics=symbol_analytics,
+            strategy_analytics=strategy_analytics,
+            backtest_analytics=backtest_analytics,
+            suggestions=suggestions,
+            chart_paths=chart_paths,
+        )
+    except Exception as pdf_err:
+        logger.warning(f"PDF generation failed: {pdf_err!r}")
+
+    return {
+        "metrics": metrics,
+        "symbol_analytics": symbol_analytics,
+        "strategy_analytics": strategy_analytics,
+        "backtest_analytics": backtest_analytics,
+        "suggestions": suggestions,
+        "chart_paths": [str(p) for p in chart_paths],
+        "report_path": str(md_path),
+        "pdf_bytes": pdf_bytes,
     }
 
 
