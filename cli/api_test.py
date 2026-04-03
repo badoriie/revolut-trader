@@ -68,7 +68,7 @@ async def check_trade_ready(api_client: RevolutAPIClient) -> None:
         sys.exit(1)
 
 
-async def test_connection(api_client: RevolutAPIClient) -> None:
+async def check_connection(api_client: RevolutAPIClient) -> None:
     """Test API connection using a truly authenticated endpoint (/balances).
 
     The public order-book endpoint ignores auth headers and will succeed even
@@ -117,7 +117,7 @@ async def run_command(args) -> None:
         if args.command == "trade-ready":
             await check_trade_ready(api_client)
         elif args.command == "test":
-            await test_connection(api_client)
+            await check_connection(api_client)
         else:
             print(f"Unknown command: {args.command}")
             sys.exit(1)
@@ -234,18 +234,18 @@ async def _execute_api_command(
         return await _handle_ticker_commands(api_client, command, symbol, symbols)
 
     # Symbol-based data commands - dispatch table
-    assert symbol is not None  # Validated above for remaining symbol commands
+    if command in ("order-book", "candles", "trades", "public-trades"):
+        assert symbol is not None  # Validated above for remaining symbol commands
 
-    symbol_commands = {
-        "order-book": lambda: api_client.get_order_book(symbol, depth=depth or 10),
-        "candles": lambda: api_client.get_candles(
-            symbol, interval=interval or 60, limit=limit or 100
-        ),
-        "trades": lambda: api_client.get_trades(symbol=symbol, limit=limit or 100),
-        "public-trades": lambda: api_client.get_public_trades(symbol, limit=limit or 100),
-    }
+        symbol_commands = {
+            "order-book": lambda: api_client.get_order_book(symbol, depth=depth or 10),
+            "candles": lambda: api_client.get_candles(
+                symbol, interval=interval or 60, limit=limit or 100
+            ),
+            "trades": lambda: api_client.get_trades(symbol=symbol, limit=limit or 100),
+            "public-trades": lambda: api_client.get_public_trades(symbol, limit=limit or 100),
+        }
 
-    if command in symbol_commands:
         return await symbol_commands[command]()
 
     # Order lookup
@@ -253,10 +253,9 @@ async def _execute_api_command(
         assert order_id is not None  # Validated above
         return await api_client.get_order(order_id)
 
+    # Unknown command
     print(f"❌ Unknown command: {command}")
     sys.exit(1)
-
-    return None
 
 
 def run_api_endpoint(

@@ -130,8 +130,6 @@ omit = [
     "cli/db_manage.py",
     "cli/view_logs.py",
     "cli/revt.py",
-    "cli/api_test.py",
-    "cli/validators.py",
     "cli/analytics_report.py",
     "cli/telegram_control.py",
 ]
