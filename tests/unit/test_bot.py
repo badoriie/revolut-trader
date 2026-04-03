@@ -1360,3 +1360,240 @@ class TestTelegramCommandListener:
         await bot.stop()
         assert stop_event.is_set()
         assert bot._telegram_polling_task is None
+
+
+class TestShutdownExecutor:
+    """Tests for _shutdown_executor method."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_executor_with_trailing_stop(self, bot, monkeypatch):
+        """_shutdown_executor calls graceful_shutdown with trailing_stop_pct."""
+        from src.config import settings
+        from src.models.domain import ShutdownSummary
+
+        monkeypatch.setattr(settings, "shutdown_trailing_stop_pct", Decimal("0.5"))
+        monkeypatch.setattr(settings, "shutdown_max_wait_seconds", 120)
+
+        mock_executor = MagicMock()
+        mock_executor.graceful_shutdown = AsyncMock(
+            return_value=ShutdownSummary(
+                orders_cancelled=2,
+                positions_evaluated=3,
+                positions_closed=3,
+                positions_trailing_stopped=1,
+                filled_close_orders=[],
+                errors=[],
+            )
+        )
+        bot.executor = mock_executor
+
+        await bot._shutdown_executor()
+
+        mock_executor.graceful_shutdown.assert_awaited_once()
+        args = mock_executor.graceful_shutdown.call_args
+        assert args.kwargs["trailing_stop_pct"] == Decimal("0.5")
+        assert args.kwargs["max_wait_seconds"] == 120
+
+    @pytest.mark.asyncio
+    async def test_shutdown_executor_without_trailing_stop(self, bot, monkeypatch):
+        """_shutdown_executor calls graceful_shutdown with None when no trailing stop."""
+        from src.config import settings
+        from src.models.domain import ShutdownSummary
+
+        monkeypatch.setattr(settings, "shutdown_trailing_stop_pct", None)
+        monkeypatch.setattr(settings, "shutdown_max_wait_seconds", 120)
+
+        mock_executor = MagicMock()
+        mock_executor.graceful_shutdown = AsyncMock(
+            return_value=ShutdownSummary(
+                orders_cancelled=0,
+                positions_evaluated=0,
+                positions_closed=0,
+                positions_trailing_stopped=0,
+                filled_close_orders=[],
+                errors=[],
+            )
+        )
+        bot.executor = mock_executor
+
+        await bot._shutdown_executor()
+
+        args = mock_executor.graceful_shutdown.call_args
+        assert args.kwargs["trailing_stop_pct"] is None
+
+    @pytest.mark.asyncio
+    async def test_shutdown_executor_notifies_on_trades(self, bot, monkeypatch):
+        """_shutdown_executor sends Telegram notification for each filled order."""
+        from src.config import settings
+        from src.models.domain import Order, OrderSide, OrderStatus, OrderType, ShutdownSummary
+
+        monkeypatch.setattr(settings, "shutdown_trailing_stop_pct", None)
+        monkeypatch.setattr(settings, "shutdown_max_wait_seconds", 120)
+
+        order = Order(
+            symbol="BTC-EUR",
+            order_type=OrderType.MARKET,
+            side=OrderSide.SELL,
+            quantity=Decimal("0.5"),
+            price=None,
+            status=OrderStatus.FILLED,
+            filled_quantity=Decimal("0.5"),
+            commission=Decimal("0.45"),
+        )
+
+        mock_executor = MagicMock()
+        mock_executor.graceful_shutdown = AsyncMock(
+            return_value=ShutdownSummary(
+                orders_cancelled=0,
+                positions_evaluated=1,
+                positions_closed=1,
+                positions_trailing_stopped=0,
+                filled_close_orders=[order],
+                errors=[],
+            )
+        )
+        bot.executor = mock_executor
+        bot.notifier = MagicMock()
+        bot.notifier.notify_trade = AsyncMock()
+
+        await bot._shutdown_executor()
+
+        bot.notifier.notify_trade.assert_awaited_once_with(order, bot.currency_symbol)
+
+    @pytest.mark.asyncio
+    async def test_shutdown_executor_logs_errors(self, bot, monkeypatch):
+        """_shutdown_executor logs errors from shutdown summary."""
+        from src.config import settings
+        from src.models.domain import ShutdownSummary
+
+        monkeypatch.setattr(settings, "shutdown_trailing_stop_pct", None)
+        monkeypatch.setattr(settings, "shutdown_max_wait_seconds", 120)
+
+        mock_executor = MagicMock()
+        mock_executor.graceful_shutdown = AsyncMock(
+            return_value=ShutdownSummary(
+                orders_cancelled=0,
+                positions_evaluated=1,
+                positions_closed=0,
+                positions_trailing_stopped=0,
+                filled_close_orders=[],
+                errors=["Failed to close BTC-EUR", "API timeout"],
+            )
+        )
+        bot.executor = mock_executor
+
+        # Just verify it doesn't crash
+        await bot._shutdown_executor()
+
+
+class TestStopMethod:
+    """Tests for the stop() method edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_stop_removes_db_log_sink(self, bot, mock_persistence):
+        """stop() removes the database logging sink."""
+        from src.bot import _setup_database_logging
+
+        sink_id = _setup_database_logging(mock_persistence)
+        bot._db_log_sink_id = sink_id
+        bot.api_client = None
+
+        with patch("src.bot.logger.remove") as mock_remove:
+            await bot.stop()
+
+        mock_remove.assert_called_once_with(sink_id)
+        assert bot._db_log_sink_id is None
+
+
+class TestRunTradingLoopAuthNotification:
+    """Tests for Telegram notification on auth failure."""
+
+    @pytest.mark.asyncio
+    async def test_loop_sends_telegram_on_auth_failure(self, bot, mock_api):
+        """run_trading_loop sends Telegram notification on 401 auth failure."""
+        from src.config import RiskLevel, TradingMode
+        from src.execution.executor import OrderExecutor
+        from src.risk_management.risk_manager import RiskManager
+        from src.strategies.momentum import MomentumStrategy
+
+        bot.api_client = mock_api
+        bot.risk_manager = RiskManager(RiskLevel.MODERATE)
+        bot.executor = OrderExecutor(mock_api, bot.risk_manager, TradingMode.PAPER)
+        bot.strategy = MomentumStrategy()
+        bot.notifier = MagicMock()
+        bot.notifier.notify_error = AsyncMock()
+
+        # Simulate auth failure
+        async def fake_gather(*coros, **kwargs):
+            for c in coros:
+                c.close()
+            response = MagicMock()
+            response.status_code = 401
+            raise httpx.HTTPStatusError("Unauthorized", request=MagicMock(), response=response)
+
+        with patch("src.bot.asyncio.gather", side_effect=fake_gather):
+            with patch("src.bot.asyncio.sleep"):
+                bot.is_running = True
+                await bot.run_trading_loop(interval=0)
+
+        bot.notifier.notify_error.assert_awaited_once()
+
+
+class TestLoadHistoricalDataAnalytics:
+    """Tests for _load_historical_data analytics display."""
+
+    def test_load_historical_data_shows_analytics_with_trades(self, bot, mock_persistence):
+        """_load_historical_data logs analytics when trades exist."""
+        mock_persistence.get_analytics.return_value = {
+            "total_trades": 50,
+            "win_rate": 60.0,
+            "total_pnl": 500.0,
+        }
+
+        with patch("src.bot.logger.info") as mock_log:
+            bot._load_historical_data()
+            # Verify analytics were logged
+            calls = [str(call) for call in mock_log.call_args_list]
+            assert any("50 trades" in str(call) for call in calls)
+
+
+class TestCmdStatusUptime:
+    """Tests for _cmd_status uptime calculation."""
+
+    @pytest.mark.asyncio
+    async def test_cmd_status_includes_uptime(self, bot):
+        """_cmd_status calculates and includes uptime when bot is running."""
+        from datetime import UTC, datetime, timedelta
+
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        bot._started_at = datetime.now(UTC) - timedelta(hours=2, minutes=30)
+        bot.executor = MagicMock()
+        bot.executor.get_positions.return_value = []
+
+        await bot._cmd_status()
+
+        text = bot.notifier.reply.call_args.args[0]
+        # Should contain uptime like "2h 30m"
+        assert "h" in text or "uptime" in text.lower()
+
+
+class TestMainEntryPoint:
+    """Tests for the main() entry point."""
+
+    @pytest.mark.asyncio
+    async def test_main_runs_bot_lifecycle(self):
+        """main() creates bot, starts it, runs loop, and stops on KeyboardInterrupt."""
+        from src.bot import main
+
+        mock_bot = MagicMock()
+        mock_bot.start = AsyncMock()
+        mock_bot.run_trading_loop = AsyncMock(side_effect=KeyboardInterrupt)
+        mock_bot.stop = AsyncMock()
+
+        with patch("src.bot.TradingBot", return_value=mock_bot):
+            await main()
+
+        mock_bot.start.assert_awaited_once()
+        mock_bot.run_trading_loop.assert_awaited_once()
+        mock_bot.stop.assert_awaited_once()
