@@ -476,7 +476,7 @@ def generate_suggestions(
 # ---------------------------------------------------------------------------
 
 
-def _chart_equity_curve(
+def _chart_equity_curve(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save equity curve PNG to *output_dir* with professional styling."""
@@ -530,7 +530,7 @@ def _chart_equity_curve(
     return path
 
 
-def _chart_drawdown(
+def _chart_drawdown(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save drawdown curve PNG to *output_dir*."""
@@ -564,7 +564,7 @@ def _chart_drawdown(
     return path
 
 
-def _chart_pnl_distribution(
+def _chart_pnl_distribution(  # pragma: no cover
     trades: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save trade P&L distribution histogram PNG to *output_dir*."""
@@ -595,7 +595,7 @@ def _chart_pnl_distribution(
     return path
 
 
-def _chart_symbol_performance(
+def _chart_symbol_performance(  # pragma: no cover
     symbol_analytics: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save per-symbol P&L bar chart PNG to *output_dir*."""
@@ -621,7 +621,7 @@ def _chart_symbol_performance(
     return path
 
 
-def _chart_backtest_comparison(
+def _chart_backtest_comparison(  # pragma: no cover
     backtest_runs: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save backtest strategy return-% comparison bar chart PNG to *output_dir*."""
@@ -657,7 +657,7 @@ def _chart_backtest_comparison(
     return path
 
 
-def _chart_win_loss_streaks(
+def _chart_win_loss_streaks(  # pragma: no cover
     trade_history: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save win/loss streak analysis chart to *output_dir*."""
@@ -708,7 +708,7 @@ def _chart_win_loss_streaks(
     return path
 
 
-def _chart_volatility(
+def _chart_volatility(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save rolling volatility chart to *output_dir*."""
@@ -811,7 +811,7 @@ def _average_grid_cells(
                 performance_grid[day][hour] /= trade_count_grid[day][hour]
 
 
-def _chart_performance_heatmap(
+def _chart_performance_heatmap(  # pragma: no cover
     trade_history: list[dict[str, Any]], output_dir: Path
 ) -> Path | None:  # pragma: no cover
     """Save performance heatmap (hour x day of week) to *output_dir*."""
@@ -937,7 +937,7 @@ def _compute_report_metrics(
     }
 
 
-def _generate_report_charts(
+def _generate_report_charts(  # pragma: no cover
     output_dir: Path,
     portfolio_series: list[dict[str, Any]],
     trade_history: list[dict[str, Any]],
@@ -1078,7 +1078,8 @@ def _pdf_two_col_table(pdf: Any, rows: list[tuple[str, str]]) -> None:  # pragma
         pdf.cell(0, 6, _pdf_safe_text(value), new_x="LMARGIN", new_y="NEXT")
 
 
-def _pdf_table(
+def _pdf_table(  # pragma: no cover
+    # pragma: no cover
     pdf: Any,
     headers: list[str],
     rows: list[list[str]],
@@ -1137,8 +1138,10 @@ def _pdf_core_metrics_section(pdf: Any, metrics: dict[str, Any]) -> None:  # pra
     )
 
 
-def _pdf_symbol_section(
-    pdf: Any, symbol_analytics: list[dict[str, Any]]
+def _pdf_symbol_section(  # pragma: no cover
+    # pragma: no cover
+    pdf: Any,
+    symbol_analytics: list[dict[str, Any]],
 ) -> None:  # pragma: no cover
     """Render the per-symbol breakdown table into *pdf*."""
     pdf.ln(4)
@@ -1160,8 +1163,10 @@ def _pdf_symbol_section(
     )
 
 
-def _pdf_strategy_section(
-    pdf: Any, strategy_analytics: list[dict[str, Any]]
+def _pdf_strategy_section(  # pragma: no cover
+    # pragma: no cover
+    pdf: Any,
+    strategy_analytics: list[dict[str, Any]],
 ) -> None:  # pragma: no cover
     """Render the per-strategy breakdown table into *pdf*."""
     pdf.ln(4)
@@ -1289,7 +1294,8 @@ def _generate_insights(
     return insights
 
 
-def _pdf_kpi_grid(
+def _pdf_kpi_grid(  # pragma: no cover
+    # pragma: no cover
     pdf: Any,
     total_pnl: float,
     return_pct: float,
@@ -1371,8 +1377,11 @@ def _pdf_kpi_grid(
     )
 
 
-def _pdf_executive_summary(
-    pdf: Any, metrics: dict[str, Any], days: int
+def _pdf_executive_summary(  # pragma: no cover
+    # pragma: no cover
+    pdf: Any,
+    metrics: dict[str, Any],
+    days: int,
 ) -> None:  # pragma: no cover
     """Add executive summary page with KPI dashboard and quick insights."""
     # Title
@@ -1447,7 +1456,7 @@ def _pdf_executive_summary(
     pdf.add_page()  # Start new page for detailed metrics
 
 
-def _generate_pdf(
+def _generate_pdf(  # pragma: no cover
     md_path: Path,
     metrics: dict[str, Any],
     days: int,

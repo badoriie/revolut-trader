@@ -308,7 +308,7 @@ class TestTelegramIntegration:
 
         from cli.analytics_report import generate_report
 
-        generate_report(days=30, output_dir=tmp_path, quiet=True)
+        generate_report(days=30, output_dir=tmp_path)
 
         mock_notifier_cls.assert_called_once_with(token="test_token", chat_id="test_chat_id")
         mock_notifier.notify_report_ready.assert_awaited_once()
@@ -337,7 +337,7 @@ class TestTelegramIntegration:
 
         from cli.analytics_report import generate_report
 
-        generate_report(days=30, output_dir=tmp_path, quiet=True)
+        generate_report(days=30, output_dir=tmp_path)
 
         mock_notifier.send_document.assert_awaited_once()
         call_args = mock_notifier.send_document.call_args
@@ -365,7 +365,7 @@ class TestTelegramIntegration:
 
         from cli.analytics_report import generate_report
 
-        generate_report(days=30, output_dir=tmp_path, quiet=True)
+        generate_report(days=30, output_dir=tmp_path)
 
         mock_notifier_cls.assert_called_once_with(token="test_token", chat_id="test_chat_id")
         # One of the two methods must have been called
@@ -408,7 +408,7 @@ class TestTelegramIntegration:
         from cli.analytics_report import generate_report
 
         # Run report
-        generate_report(days=30, output_dir=tmp_path, quiet=True)
+        generate_report(days=30, output_dir=tmp_path)
 
         # Verify notifier was never created
         mock_notifier_cls.assert_not_called()
@@ -452,7 +452,7 @@ class TestTelegramIntegration:
         from cli.analytics_report import generate_report
 
         # Run report - should not raise
-        result = generate_report(days=30, output_dir=tmp_path, quiet=True)
+        result = generate_report(days=30, output_dir=tmp_path)
 
         # Verify report was still generated
         assert result["report_path"]
@@ -478,7 +478,7 @@ class TestTelegramIntegration:
         from cli.analytics_report import generate_report
 
         # Must not raise — report generation must succeed even when PDF fails
-        result = generate_report(days=30, output_dir=tmp_path, quiet=True)
+        result = generate_report(days=30, output_dir=tmp_path)
         assert result["report_path"]
 
         # PDF was NOT sent (generation failed)
@@ -520,7 +520,150 @@ class TestTelegramIntegration:
         from cli.analytics_report import generate_report
 
         # Run report with send_telegram=False
-        generate_report(days=30, output_dir=tmp_path, quiet=True, send_telegram=False)
+        generate_report(days=30, output_dir=tmp_path, send_telegram=False)
 
         # Verify notifier was never created
         mock_notifier_cls.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 PDF Functions
+# ---------------------------------------------------------------------------
+
+
+class TestComputeWinLossStreaks:
+    """Test win/loss streak calculation."""
+
+    def test_empty_list(self):
+        from cli.analytics_report import compute_win_loss_streaks
+
+        result = compute_win_loss_streaks([])
+        assert result["longest_win_streak"] == 0
+        assert result["longest_loss_streak"] == 0
+
+    def test_all_wins(self):
+        from cli.analytics_report import compute_win_loss_streaks
+
+        result = compute_win_loss_streaks([10.0, 5.0, 20.0, 1.0])
+        assert result["longest_win_streak"] == 4
+        assert result["longest_loss_streak"] == 0
+
+    def test_all_losses(self):
+        from cli.analytics_report import compute_win_loss_streaks
+
+        result = compute_win_loss_streaks([-10.0, -5.0, -1.0])
+        assert result["longest_win_streak"] == 0
+        assert result["longest_loss_streak"] == 3
+
+    def test_mixed_streaks(self):
+        from cli.analytics_report import compute_win_loss_streaks
+
+        # Pattern: +++ -- ++++ -
+        pnl = [10.0, 5.0, 3.0, -2.0, -1.0, 8.0, 12.0, 15.0, 4.0, -3.0]
+        result = compute_win_loss_streaks(pnl)
+        assert result["longest_win_streak"] == 4  # positions 5-8
+        assert result["longest_loss_streak"] == 2  # positions 3-4
+
+    def test_alternating(self):
+        from cli.analytics_report import compute_win_loss_streaks
+
+        pnl = [10.0, -5.0, 8.0, -3.0, 12.0]
+        result = compute_win_loss_streaks(pnl)
+        assert result["longest_win_streak"] == 1
+        assert result["longest_loss_streak"] == 1
+
+
+class TestComputeRollingVolatility:
+    """Test rolling volatility calculation."""
+
+    def test_empty_list(self):
+        from cli.analytics_report import compute_rolling_volatility
+
+        result = compute_rolling_volatility([])
+        assert result == []
+
+    def test_insufficient_data(self):
+        from cli.analytics_report import compute_rolling_volatility
+
+        # Window=20 but only 10 values
+        values = [100.0 + i for i in range(10)]
+        result = compute_rolling_volatility(values, window=20)
+        assert result == []
+
+    def test_flat_values_zero_volatility(self):
+        from cli.analytics_report import compute_rolling_volatility
+
+        values = [100.0] * 25
+        result = compute_rolling_volatility(values, window=20)
+        assert len(result) == 4  # 25-20-1 = 4 (window+1 needed)
+        assert all(v == 0.0 for v in result)
+
+    def test_returns_correct_length(self):
+        from cli.analytics_report import compute_rolling_volatility
+
+        values = [100.0 + i * 0.1 for i in range(50)]
+        result = compute_rolling_volatility(values, window=20)
+        assert len(result) == 29  # 50 - 20 - 1
+
+    def test_volatile_period_has_higher_values(self):
+        from cli.analytics_report import compute_rolling_volatility
+
+        # Stable then volatile
+        stable = [100.0 + i * 0.01 for i in range(25)]  # gentle upward trend
+        volatile = [stable[-1] + i * (-1) ** i * 10 for i in range(25)]  # zigzag
+        values = stable + volatile
+        result = compute_rolling_volatility(values, window=20)
+        # Later values should be higher
+        if len(result) >= 2:
+            assert result[-1] > result[0]
+
+
+class TestGenerateInsights:
+    """Test rule-based insights generation."""
+
+    def test_excellent_performance(self):
+        from cli.analytics_report import _generate_insights
+
+        insights = _generate_insights(
+            total_pnl=5000.0,
+            win_rate=65.0,
+            sharpe=2.5,
+            max_dd=5.0,
+            profit_factor=3.0,
+        )
+        text = " ".join(insights).lower()
+        # Should have positive insights
+        assert any(
+            word in text for word in ["strong", "excellent", "good", "positive", "profitable"]
+        )
+
+    def test_poor_performance_warnings(self):
+        from cli.analytics_report import _generate_insights
+
+        insights = _generate_insights(
+            total_pnl=-500.0,
+            win_rate=35.0,
+            sharpe=-0.5,
+            max_dd=25.0,
+            profit_factor=0.6,
+        )
+        text = " ".join(insights).lower()
+        # Should have warnings
+        assert any(
+            word in text
+            for word in ["low", "high", "poor", "negative", "warning", "weak", "loss", "review"]
+        )
+
+    def test_high_fee_drag_indirect(self):
+        from cli.analytics_report import _generate_insights
+
+        # Test with mediocre performance (fees would eat into profits)
+        insights = _generate_insights(
+            total_pnl=400.0,  # After 600 in fees from 1000
+            win_rate=50.0,
+            sharpe=1.0,
+            max_dd=10.0,
+            profit_factor=1.5,
+        )
+        # Should have some insights
+        assert len(insights) > 0
