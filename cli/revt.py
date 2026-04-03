@@ -111,24 +111,6 @@ def _env_badge(env: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Error messaging helpers
-# ---------------------------------------------------------------------------
-
-
-def _error(message: str, suggestion: str | None = None) -> None:
-    """Print a standardized error message and exit.
-
-    Args:
-        message: The error message.
-        suggestion: Optional helpful suggestion or example.
-    """
-    print(f"❌  {message}")
-    if suggestion:
-        print(f"    💡 {suggestion}")
-    sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
 # 1Password helpers
 # ---------------------------------------------------------------------------
 
@@ -872,19 +854,7 @@ def cmd_api(args: argparse.Namespace) -> None:
     raw_cmd: str = args.api_cmd
     api_cmd: str = _API_CMD_MAP.get(raw_cmd, raw_cmd)
 
-    # Validate required arguments for specific commands
-    commands_requiring_symbol = {"ticker", "order-book", "candles", "trades", "public-trades"}
-    if raw_cmd in commands_requiring_symbol and not getattr(args, "symbol", None):
-        print(f"❌  Error: '{raw_cmd}' command requires --symbol")
-        print(f"    Example: revt api {raw_cmd} --symbol BTC-EUR")
-        sys.exit(1)
-
-    if raw_cmd == "order" and not getattr(args, "order_id", None):
-        print("❌  Error: 'order' command requires --order-id")
-        print("    Example: revt api order --order-id <uuid>")
-        sys.exit(1)
-
-    # Call api_test functions directly (no more sys.argv patching!)
+    # Delegate to api_test — validation of required args happens there
     if raw_cmd in {"test", "ready"}:
         from cli.api_test import run_api_command
 

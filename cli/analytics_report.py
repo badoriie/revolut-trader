@@ -478,7 +478,7 @@ def generate_suggestions(
 
 def _chart_equity_curve(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save equity curve PNG to *output_dir* with professional styling."""
     if not _HAS_MATPLOTLIB or not series:
         return None
@@ -532,7 +532,7 @@ def _chart_equity_curve(  # pragma: no cover
 
 def _chart_drawdown(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save drawdown curve PNG to *output_dir*."""
     if not _HAS_MATPLOTLIB or not series:
         return None
@@ -566,7 +566,7 @@ def _chart_drawdown(  # pragma: no cover
 
 def _chart_pnl_distribution(  # pragma: no cover
     trades: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save trade P&L distribution histogram PNG to *output_dir*."""
     if not _HAS_MATPLOTLIB or not trades:
         return None
@@ -597,7 +597,7 @@ def _chart_pnl_distribution(  # pragma: no cover
 
 def _chart_symbol_performance(  # pragma: no cover
     symbol_analytics: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save per-symbol P&L bar chart PNG to *output_dir*."""
     if not _HAS_MATPLOTLIB or not symbol_analytics:
         return None
@@ -623,7 +623,7 @@ def _chart_symbol_performance(  # pragma: no cover
 
 def _chart_backtest_comparison(  # pragma: no cover
     backtest_runs: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save backtest strategy return-% comparison bar chart PNG to *output_dir*."""
     if not _HAS_MATPLOTLIB or not backtest_runs:
         return None
@@ -659,7 +659,7 @@ def _chart_backtest_comparison(  # pragma: no cover
 
 def _chart_win_loss_streaks(  # pragma: no cover
     trade_history: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save win/loss streak analysis chart to *output_dir*."""
     if not _HAS_MATPLOTLIB or not trade_history:
         return None
@@ -710,7 +710,7 @@ def _chart_win_loss_streaks(  # pragma: no cover
 
 def _chart_volatility(  # pragma: no cover
     series: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save rolling volatility chart to *output_dir*."""
     if not _HAS_MATPLOTLIB or not series:
         return None
@@ -775,7 +775,7 @@ def _chart_volatility(  # pragma: no cover
 
 def _build_performance_grid(
     trade_history: list[dict[str, Any]],
-) -> tuple[list[list[float]], list[list[int]]]:  # pragma: no cover
+) -> tuple[list[list[float]], list[list[int]]]:
     """Build 24x7 grids for performance data and trade counts.
 
     Returns:
@@ -803,7 +803,7 @@ def _build_performance_grid(
 
 def _average_grid_cells(
     performance_grid: list[list[float]], trade_count_grid: list[list[int]]
-) -> None:  # pragma: no cover
+) -> None:
     """Average P&L per trade in each grid cell (in-place modification)."""
     for day in range(7):
         for hour in range(24):
@@ -813,7 +813,7 @@ def _average_grid_cells(
 
 def _chart_performance_heatmap(  # pragma: no cover
     trade_history: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
+) -> Path | None:
     """Save performance heatmap (hour x day of week) to *output_dir*."""
     if not _HAS_MATPLOTLIB or not trade_history:
         return None
@@ -975,13 +975,17 @@ async def _send_telegram_report(
     days: int,
     metrics: dict[str, Any],
     md_path: Path,
-    symbol_analytics: list[dict[str, Any]] | None = None,
-    strategy_analytics: list[dict[str, Any]] | None = None,
-    backtest_analytics: dict[str, Any] | None = None,
-    suggestions: list[str] | None = None,
-    chart_paths: list[Path] | None = None,
+    pdf_bytes: bytes | None = None,
 ) -> None:
-    """Send a Telegram notification summarising the analytics report if configured."""
+    """Send a Telegram notification summarising the analytics report if configured.
+
+    Args:
+        send_telegram: Whether to send the notification.
+        days: Look-back window in calendar days.
+        metrics: Computed report metrics.
+        md_path: Path to the generated markdown report.
+        pdf_bytes: Pre-generated PDF bytes (None falls back to text summary).
+    """
     if not send_telegram:
         return
     if not settings.telegram_bot_token or not settings.telegram_chat_id:
@@ -992,22 +996,6 @@ async def _send_telegram_report(
             token=settings.telegram_bot_token,
             chat_id=settings.telegram_chat_id,
         )
-        # Try PDF first; any failure falls back to the text summary so the user
-        # always receives *some* notification even when fpdf2 or chart loading fails.
-        pdf_bytes: bytes | None = None
-        try:
-            pdf_bytes = _generate_pdf(
-                md_path,
-                metrics,
-                days,
-                symbol_analytics=symbol_analytics,
-                strategy_analytics=strategy_analytics,
-                backtest_analytics=backtest_analytics,
-                suggestions=suggestions,
-                chart_paths=chart_paths,
-            )
-        except Exception as pdf_err:
-            logger.warning(f"PDF generation failed, falling back to text notification: {pdf_err!r}")
 
         if pdf_bytes is not None:
             total_pnl = metrics.get("total_pnl", 0.0)
@@ -1079,12 +1067,11 @@ def _pdf_two_col_table(pdf: Any, rows: list[tuple[str, str]]) -> None:  # pragma
 
 
 def _pdf_table(  # pragma: no cover
-    # pragma: no cover
     pdf: Any,
     headers: list[str],
     rows: list[list[str]],
     col_widths: list[int],
-) -> None:  # pragma: no cover
+) -> None:
     """Print a bordered multi-column table with a header row in the PDF."""
     pdf.set_font("Helvetica", "B", 9)
     for header, w in zip(headers, col_widths, strict=False):
@@ -1139,10 +1126,9 @@ def _pdf_core_metrics_section(pdf: Any, metrics: dict[str, Any]) -> None:  # pra
 
 
 def _pdf_symbol_section(  # pragma: no cover
-    # pragma: no cover
     pdf: Any,
     symbol_analytics: list[dict[str, Any]],
-) -> None:  # pragma: no cover
+) -> None:
     """Render the per-symbol breakdown table into *pdf*."""
     pdf.ln(4)
     _pdf_section_header(pdf, "Per-Symbol Breakdown")
@@ -1164,10 +1150,9 @@ def _pdf_symbol_section(  # pragma: no cover
 
 
 def _pdf_strategy_section(  # pragma: no cover
-    # pragma: no cover
     pdf: Any,
     strategy_analytics: list[dict[str, Any]],
-) -> None:  # pragma: no cover
+) -> None:
     """Render the per-strategy breakdown table into *pdf*."""
     pdf.ln(4)
     _pdf_section_header(pdf, "Per-Strategy Breakdown (Live Trades)")
@@ -1295,7 +1280,6 @@ def _generate_insights(
 
 
 def _pdf_kpi_grid(  # pragma: no cover
-    # pragma: no cover
     pdf: Any,
     total_pnl: float,
     return_pct: float,
@@ -1303,7 +1287,7 @@ def _pdf_kpi_grid(  # pragma: no cover
     sharpe: float,
     max_dd: float,
     total_trades: int,
-) -> None:  # pragma: no cover
+) -> None:
     """Render the 2x3 KPI grid into the PDF."""
     col_width = (pdf.w - 30) / 2
 
@@ -1378,11 +1362,10 @@ def _pdf_kpi_grid(  # pragma: no cover
 
 
 def _pdf_executive_summary(  # pragma: no cover
-    # pragma: no cover
     pdf: Any,
     metrics: dict[str, Any],
     days: int,
-) -> None:  # pragma: no cover
+) -> None:
     """Add executive summary page with KPI dashboard and quick insights."""
     # Title
     pdf.set_font("Helvetica", "B", 18)
@@ -1465,7 +1448,7 @@ def _generate_pdf(  # pragma: no cover
     backtest_analytics: dict[str, Any] | None = None,
     suggestions: list[str] | None = None,
     chart_paths: list[Path] | None = None,
-) -> bytes | None:  # pragma: no cover
+) -> bytes | None:
     """Generate a comprehensive PDF analytics report using fpdf2.
 
     Mirrors the full content of ``report.md``: core metrics, per-symbol and
@@ -1545,9 +1528,9 @@ def generate_report(
 ) -> dict[str, Any]:
     """Run the full analytics pipeline and write output files.
 
-    Fetches data from the encrypted database, computes metrics, generates
-    charts (if matplotlib is available), prints a terminal report, and
-    writes a ``report.md`` to *output_dir*.
+    Delegates to :func:`generate_report_data` for the heavy lifting (data
+    fetching, metric computation, chart generation, PDF creation), then adds
+    terminal output and Telegram notification on top.
 
     Args:
         days: Look-back window in calendar days for live-trading metrics.
@@ -1558,49 +1541,11 @@ def generate_report(
     Returns:
         Dict containing all computed metrics, suggestions, and file paths.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    db = DatabasePersistence()
-    (
-        analytics,
-        symbol_analytics,
-        strategy_analytics,
-        portfolio_series,
-        backtest_analytics,
-        backtest_runs,
-        trade_history,
-    ) = _fetch_report_data(db, days)
-    metrics = _compute_report_metrics(analytics, portfolio_series, trade_history)
-    suggestions = generate_suggestions(metrics, symbol_analytics, backtest_analytics)
-    chart_paths = _generate_report_charts(
-        output_dir, portfolio_series, trade_history, symbol_analytics, backtest_runs
-    )
-    md = _build_markdown(
-        metrics,
-        symbol_analytics,
-        strategy_analytics,
-        backtest_analytics,
-        suggestions,
-        chart_paths,
-        days,
-    )
-    md_path = output_dir / "report.md"
-    md_path.write_text(md)
+    result = generate_report_data(days=days, output_dir=output_dir)
 
-    # Generate PDF (for programmatic access and Telegram)
-    pdf_bytes: bytes | None = None
-    try:
-        pdf_bytes = _generate_pdf(
-            md_path,
-            metrics,
-            days,
-            symbol_analytics=symbol_analytics,
-            strategy_analytics=strategy_analytics,
-            backtest_analytics=backtest_analytics,
-            suggestions=suggestions,
-            chart_paths=chart_paths,
-        )
-    except Exception as pdf_err:
-        logger.warning(f"PDF generation failed: {pdf_err!r}")
+    md_path = Path(result["report_path"])
+    metrics = result["metrics"]
+    chart_paths = result["chart_paths"]
 
     asyncio.run(
         _send_telegram_report(
@@ -1608,32 +1553,24 @@ def generate_report(
             days,
             metrics,
             md_path,
-            symbol_analytics=symbol_analytics,
-            strategy_analytics=strategy_analytics,
-            backtest_analytics=backtest_analytics,
-            suggestions=suggestions,
-            chart_paths=chart_paths,
+            pdf_bytes=result.get("pdf_bytes"),
         )
     )
     if not quiet:
         _print_report(
-            metrics, symbol_analytics, strategy_analytics, backtest_analytics, suggestions, days
+            metrics,
+            result["symbol_analytics"],
+            result["strategy_analytics"],
+            result["backtest_analytics"],
+            result["suggestions"],
+            days,
         )
         print(f"\nReport written to: {md_path}")
         if chart_paths:
-            print(f"Charts saved: {', '.join(p.name for p in chart_paths)}")
+            print(f"Charts saved: {', '.join(Path(p).name for p in chart_paths)}")
         if not _HAS_MATPLOTLIB:
             print("\nNote: Install analytics extras for charts: uv sync --extra analytics")
-    return {
-        "metrics": metrics,
-        "symbol_analytics": symbol_analytics,
-        "strategy_analytics": strategy_analytics,
-        "backtest_analytics": backtest_analytics,
-        "suggestions": suggestions,
-        "chart_paths": [str(p) for p in chart_paths],
-        "report_path": str(md_path),
-        "pdf_bytes": pdf_bytes,
-    }
+    return result
 
 
 def generate_report_data(

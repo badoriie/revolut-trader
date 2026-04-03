@@ -1231,8 +1231,37 @@ class TestTelegramCommandListener:
         assert "BTC-EUR" in text
 
     @pytest.mark.asyncio
-    async def test_report_command_calls_notify_report_ready(self, bot, mock_persistence):
-        """_cmd_report generates PDF report or falls back to text summary."""
+    @patch("cli.analytics_report.generate_report_data")
+    async def test_report_command_sends_pdf_when_available(
+        self, mock_gen_report, bot, mock_persistence
+    ):
+        """_cmd_report sends PDF via send_document when generate_report_data returns pdf_bytes."""
+        mock_gen_report.return_value = {
+            "pdf_bytes": b"%PDF-1.4 test content",
+            "metrics": {
+                "total_pnl": 500.0,
+                "return_pct": 5.0,
+                "win_rate": 60.0,
+                "sharpe_ratio": 1.2,
+                "max_drawdown_pct": 3.5,
+            },
+        }
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        bot.notifier.send_document = AsyncMock()
+        await bot._cmd_report(30)
+        bot.notifier.send_document.assert_awaited_once()
+        call_kwargs = bot.notifier.send_document.call_args.kwargs
+        assert call_kwargs["document"] == b"%PDF-1.4 test content"
+        assert call_kwargs["filename"] == "analytics_report.pdf"
+
+    @pytest.mark.asyncio
+    @patch("cli.analytics_report.generate_report_data")
+    async def test_report_command_falls_back_to_text_when_no_pdf(
+        self, mock_gen_report, bot, mock_persistence
+    ):
+        """_cmd_report falls back to notify_report_ready when pdf_bytes is None."""
+        mock_gen_report.return_value = {"pdf_bytes": None, "metrics": {}}
         mock_persistence.get_analytics.return_value = {
             "total_trades": 50,
             "win_rate": 60.0,
@@ -1246,39 +1275,59 @@ class TestTelegramCommandListener:
         bot.notifier.notify_report_ready = AsyncMock()
         bot.notifier.send_document = AsyncMock()
         await bot._cmd_report(30)
-        # Should call reply to notify it's generating
-        assert bot.notifier.reply.await_count >= 1
+        bot.notifier.notify_report_ready.assert_awaited_once()
+        bot.notifier.send_document.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_report_command_replies_when_no_data(self, bot, mock_persistence):
-        """_cmd_report sends a no-data message when the DB has no trades."""
+    @patch("cli.analytics_report.generate_report_data")
+    async def test_report_command_no_data_message(self, mock_gen_report, bot, mock_persistence):
+        """_cmd_report replies with no-data message when DB has no trades."""
+        mock_gen_report.return_value = {"pdf_bytes": None, "metrics": {}}
         mock_persistence.get_analytics.return_value = {"total_trades": 0}
         bot.notifier = MagicMock()
         bot.notifier.reply = AsyncMock()
         bot.notifier.notify_report_ready = AsyncMock()
         bot.notifier.send_document = AsyncMock()
         await bot._cmd_report(30)
-        # Should call reply at least once (may call generate_report_data which can fail gracefully)
-        assert bot.notifier.reply.await_count >= 1
+        # Should reply with "no data" message
+        reply_text = bot.notifier.reply.call_args_list[-1].args[0]
+        assert "No trading data" in reply_text
+        bot.notifier.send_document.assert_not_awaited()
+        bot.notifier.notify_report_ready.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_report_command_uses_days_arg(self, bot, mock_persistence):
-        """_cmd_report passes the days argument when provided."""
-        mock_persistence.get_analytics.return_value = {
-            "total_trades": 10,
-            "win_rate": 50.0,
-            "total_pnl": 100.0,
-            "return_pct": 1.0,
-            "sharpe_ratio": 0.8,
-            "max_drawdown_pct": 2.0,
+    @patch("cli.analytics_report.generate_report_data")
+    async def test_report_command_handles_exception(self, mock_gen_report, bot, mock_persistence):
+        """_cmd_report sends error message when generate_report_data raises."""
+        mock_gen_report.side_effect = RuntimeError("DB connection failed")
+        bot.notifier = MagicMock()
+        bot.notifier.reply = AsyncMock()
+        await bot._cmd_report(30)
+        # Should have sent the error fallback message
+        reply_text = bot.notifier.reply.call_args_list[-1].args[0]
+        assert "Failed to generate report" in reply_text
+
+    @pytest.mark.asyncio
+    @patch("cli.analytics_report.generate_report_data")
+    async def test_report_command_uses_days_arg(self, mock_gen_report, bot, mock_persistence):
+        """_cmd_report passes the days argument from /report command."""
+        mock_gen_report.return_value = {
+            "pdf_bytes": b"%PDF-test",
+            "metrics": {
+                "total_pnl": 100.0,
+                "return_pct": 1.0,
+                "win_rate": 50.0,
+                "sharpe_ratio": 0.8,
+                "max_drawdown_pct": 2.0,
+            },
         }
         bot.notifier = MagicMock()
         bot.notifier.reply = AsyncMock()
-        bot.notifier.notify_report_ready = AsyncMock()
         bot.notifier.send_document = AsyncMock()
         await bot._handle_telegram_command("report", ["7"])
-        # Should at least call reply to notify it's generating
-        assert bot.notifier.reply.await_count >= 1
+        mock_gen_report.assert_called_once()
+        call_kwargs = mock_gen_report.call_args.kwargs
+        assert call_kwargs["days"] == 7
 
     @pytest.mark.asyncio
     async def test_help_command_lists_all_commands(self, bot):
