@@ -179,6 +179,20 @@ def run_api_command(command: str) -> None:
         sys.exit(1)
 
 
+async def _handle_ticker_commands(
+    api_client: RevolutAPIClient, command: str, symbol: str, symbols: str | None
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """Handle ticker and tickers commands."""
+    if command == "ticker":
+        return await api_client.get_ticker(symbol)
+
+    # tickers or all-tickers
+    if symbols:
+        symbol_list = [s.strip() for s in symbols.split(",")]
+        return await api_client.get_tickers(symbol_list)
+    return await api_client.get_tickers()
+
+
 async def _execute_api_command(
     api_client: RevolutAPIClient,
     command: str,
@@ -215,18 +229,12 @@ async def _execute_api_command(
         return await simple_commands[command]()
 
     # Ticker commands
-    if command == "ticker":
-        assert symbol is not None  # Validated above
-        return await api_client.get_ticker(symbol)
-
-    if command in ("tickers", "all-tickers"):
-        if symbols:
-            symbol_list = [s.strip() for s in symbols.split(",")]
-            return await api_client.get_tickers(symbol_list)
-        return await api_client.get_tickers()
+    if command in ("ticker", "tickers", "all-tickers"):
+        assert symbol is not None  # Validated above for ticker
+        return await _handle_ticker_commands(api_client, command, symbol, symbols)
 
     # Symbol-based data commands - dispatch table
-    assert symbol is not None  # Validated above for all remaining symbol commands
+    assert symbol is not None  # Validated above for remaining symbol commands
 
     symbol_commands = {
         "order-book": lambda: api_client.get_order_book(symbol, depth=depth or 10),
