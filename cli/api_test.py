@@ -193,51 +193,52 @@ async def _execute_api_command(
 
     Extracted to reduce cognitive complexity of run_api_endpoint.
     """
-    # Commands requiring symbol
+    # Validate required parameters
     if command in ("ticker", "order-book", "candles", "trades", "public-trades") and not symbol:
         print(f"❌ Error: {command} command requires --symbol")
         sys.exit(1)
 
-    # Command requiring order_id
     if command == "order" and not order_id:
         print("❌ Error: order command requires --order-id")
         sys.exit(1)
 
-    # Simple commands (no parameters)
-    if command == "balance":
-        return await api_client.get_balance()
-    if command == "currencies":
-        return await api_client.get_currencies()
-    if command == "currency-pairs":
-        return await api_client.get_currency_pairs()
-    if command == "open-orders":
-        return await api_client.get_open_orders()
-    if command == "orders":
-        return await api_client.get_historical_orders()
+    # Simple commands (no parameters) - dispatch table
+    simple_commands = {
+        "balance": api_client.get_balance,
+        "currencies": api_client.get_currencies,
+        "currency-pairs": api_client.get_currency_pairs,
+        "open-orders": api_client.get_open_orders,
+        "orders": api_client.get_historical_orders,
+    }
+
+    if command in simple_commands:
+        return await simple_commands[command]()
 
     # Ticker commands
     if command == "ticker":
         assert symbol is not None  # Validated above
         return await api_client.get_ticker(symbol)
+
     if command in ("tickers", "all-tickers"):
         if symbols:
             symbol_list = [s.strip() for s in symbols.split(",")]
             return await api_client.get_tickers(symbol_list)
         return await api_client.get_tickers()
 
-    # Symbol-based data commands
-    if command == "order-book":
-        assert symbol is not None  # Validated above
-        return await api_client.get_order_book(symbol, depth=depth or 10)
-    if command == "candles":
-        assert symbol is not None  # Validated above
-        return await api_client.get_candles(symbol, interval=interval or 60, limit=limit or 100)
-    if command == "trades":
-        assert symbol is not None  # Validated above
-        return await api_client.get_trades(symbol=symbol, limit=limit or 100)
-    if command == "public-trades":
-        assert symbol is not None  # Validated above
-        return await api_client.get_public_trades(symbol, limit=limit or 100)
+    # Symbol-based data commands - dispatch table
+    assert symbol is not None  # Validated above for all remaining symbol commands
+
+    symbol_commands = {
+        "order-book": lambda: api_client.get_order_book(symbol, depth=depth or 10),
+        "candles": lambda: api_client.get_candles(
+            symbol, interval=interval or 60, limit=limit or 100
+        ),
+        "trades": lambda: api_client.get_trades(symbol=symbol, limit=limit or 100),
+        "public-trades": lambda: api_client.get_public_trades(symbol, limit=limit or 100),
+    }
+
+    if command in symbol_commands:
+        return await symbol_commands[command]()
 
     # Order lookup
     if command == "order":

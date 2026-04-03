@@ -789,7 +789,7 @@ def _build_performance_grid(
             continue
         try:
             ts = datetime.fromisoformat(str(trade["timestamp"]))
-            day_of_week = ts.weekday()  # 0=Monday, 6=Sunday
+            day_of_week = ts.weekday()  # Monday is 0, Sunday is 6
             hour = ts.hour
             pnl = float(trade["pnl"])
 
