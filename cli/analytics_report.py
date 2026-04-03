@@ -44,6 +44,7 @@ from src.utils.telegram import TelegramNotifier
 mdates: Any = None
 plt: Any = None
 mticker: Any = None
+np: Any = None
 
 try:
     import matplotlib  # type: ignore[import-untyped]
@@ -52,6 +53,7 @@ try:
     import matplotlib.dates as mdates  # type: ignore[import-untyped]
     import matplotlib.pyplot as plt  # type: ignore[import-untyped]
     import matplotlib.ticker as mticker  # type: ignore[import-untyped]
+    import numpy as np  # type: ignore[import-untyped]
 
     _HAS_MATPLOTLIB = True
 except ImportError:  # pragma: no cover
@@ -74,6 +76,16 @@ _TOTAL_PNL_LABEL_EUR = "Total P&L (EUR)"
 
 # Default output directory for reports
 _DEFAULT_REPORT_DIR = Path("data/reports")
+
+# Date/time format for chart axes
+_CHART_DATETIME_FORMAT = "%m/%d %H:%M"
+
+# Metric labels (used in multiple report sections)
+_LABEL_TOTAL_TRADES = "Total Trades"
+_LABEL_WIN_RATE = "Win Rate"
+_LABEL_TOTAL_PNL = "Total P&L"
+_LABEL_MAX_DRAWDOWN = "Max Drawdown"
+_LABEL_SHARPE_RATIO = "Sharpe Ratio"
 
 # Professional color scheme for charts and PDF
 _COLOR_PRIMARY = "#2196F3"  # Blue
@@ -505,7 +517,7 @@ def _chart_equity_curve(
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("€%.0f"))
     if use_dates:
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(_CHART_DATETIME_FORMAT))
     ax.grid(True, alpha=_CHART_GRID_ALPHA, linestyle="--")
     ax.legend(loc="best", framealpha=0.9)
     ax.spines["top"].set_visible(False)
@@ -543,7 +555,7 @@ def _chart_drawdown(
     ax.grid(True, alpha=0.3)
     if use_dates:
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(_CHART_DATETIME_FORMAT))
     plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
     path = output_dir / "drawdown.png"
@@ -747,7 +759,7 @@ def _chart_volatility(
 
     if use_dates:
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(_CHART_DATETIME_FORMAT))
 
     ax.grid(True, alpha=_CHART_GRID_ALPHA, linestyle="--")
     ax.legend(loc="best", framealpha=0.9)
@@ -761,14 +773,14 @@ def _chart_volatility(
     return path
 
 
-def _chart_performance_heatmap(
-    trade_history: list[dict[str, Any]], output_dir: Path
-) -> Path | None:  # pragma: no cover
-    """Save performance heatmap (hour x day of week) to *output_dir*."""
-    if not _HAS_MATPLOTLIB or not trade_history:
-        return None
+def _build_performance_grid(
+    trade_history: list[dict[str, Any]],
+) -> tuple[list[list[float]], list[list[int]]]:  # pragma: no cover
+    """Build 24x7 grids for performance data and trade counts.
 
-    # Create 24x7 grid for performance data
+    Returns:
+        Tuple of (performance_grid, trade_count_grid).
+    """
     performance_grid = [[0.0 for _ in range(24)] for _ in range(7)]
     trade_count_grid = [[0 for _ in range(24)] for _ in range(7)]
 
@@ -786,11 +798,29 @@ def _chart_performance_heatmap(
         except (ValueError, TypeError):
             continue
 
-    # Average P&L per trade in each cell
+    return performance_grid, trade_count_grid
+
+
+def _average_grid_cells(
+    performance_grid: list[list[float]], trade_count_grid: list[list[int]]
+) -> None:  # pragma: no cover
+    """Average P&L per trade in each grid cell (in-place modification)."""
     for day in range(7):
         for hour in range(24):
             if trade_count_grid[day][hour] > 0:
                 performance_grid[day][hour] /= trade_count_grid[day][hour]
+
+
+def _chart_performance_heatmap(
+    trade_history: list[dict[str, Any]], output_dir: Path
+) -> Path | None:  # pragma: no cover
+    """Save performance heatmap (hour x day of week) to *output_dir*."""
+    if not _HAS_MATPLOTLIB or not trade_history:
+        return None
+
+    # Build and average the grid
+    performance_grid, trade_count_grid = _build_performance_grid(trade_history)
+    _average_grid_cells(performance_grid, trade_count_grid)
 
     # Check if we have enough data
     total_trades = sum(sum(row) for row in trade_count_grid)
@@ -799,9 +829,7 @@ def _chart_performance_heatmap(
 
     fig, ax = plt.subplots(figsize=(16, 6))
 
-    # Plot heatmap
-    import numpy as np
-
+    # Plot heatmap (numpy pre-imported at module level)
     data = np.array(performance_grid)
 
     # Use a diverging colormap centered at zero
@@ -917,21 +945,28 @@ def _generate_report_charts(
     backtest_runs: list[dict[str, Any]],
 ) -> list[Path]:
     """Generate PNG charts (including new Phase 1 charts) and return their paths."""
+    if not _HAS_MATPLOTLIB:
+        logger.info(
+            "Chart generation skipped: matplotlib not installed. "
+            "Install with: uv sync --extra analytics"
+        )
+        return []
+
     chart_paths: list[Path] = []
-    if _HAS_MATPLOTLIB:  # pragma: no cover
-        for fn, arg in [
-            (_chart_equity_curve, portfolio_series),
-            (_chart_drawdown, portfolio_series),
-            (_chart_win_loss_streaks, trade_history),
-            (_chart_volatility, portfolio_series),
-            (_chart_performance_heatmap, trade_history),
-            (_chart_pnl_distribution, trade_history),
-            (_chart_symbol_performance, symbol_analytics),
-            (_chart_backtest_comparison, backtest_runs),
-        ]:
-            path = fn(arg, output_dir)
-            if path:
-                chart_paths.append(path)
+    for fn, arg in [  # pragma: no cover
+        (_chart_equity_curve, portfolio_series),
+        (_chart_drawdown, portfolio_series),
+        (_chart_win_loss_streaks, trade_history),
+        (_chart_volatility, portfolio_series),
+        (_chart_performance_heatmap, trade_history),
+        (_chart_pnl_distribution, trade_history),
+        (_chart_symbol_performance, symbol_analytics),
+        (_chart_backtest_comparison, backtest_runs),
+    ]:
+        path = fn(arg, output_dir)
+        if path:
+            chart_paths.append(path)
+
     return chart_paths
 
 
@@ -1087,15 +1122,15 @@ def _pdf_core_metrics_section(pdf: Any, metrics: dict[str, Any]) -> None:  # pra
     _pdf_two_col_table(
         pdf,
         [
-            ("Total Trades", str(total_trades)),
-            ("Win Rate", f"{win_rate:.1f}%"),
-            ("Total P&L", f"{pnl_pfx}EUR{abs(total_pnl):,.2f}"),
+            (_LABEL_TOTAL_TRADES, str(total_trades)),
+            (_LABEL_WIN_RATE, f"{win_rate:.1f}%"),
+            (_LABEL_TOTAL_PNL, f"{pnl_pfx}EUR{abs(total_pnl):,.2f}"),
             ("Total Fees", f"EUR{total_fees:,.2f}"),
             ("Return", f"{ret_pfx}{ret_pct:.2f}%"),
             ("Initial Portfolio Value", f"EUR{initial:,.2f}" if initial else "N/A"),
             ("Final Portfolio Value", f"EUR{final:,.2f}" if final else "N/A"),
-            ("Max Drawdown", f"{max_dd:.2f}%"),
-            ("Sharpe Ratio", _format_metric_value(sharpe, ".3f")),
+            (_LABEL_MAX_DRAWDOWN, f"{max_dd:.2f}%"),
+            (_LABEL_SHARPE_RATIO, _format_metric_value(sharpe, ".3f")),
             ("Sortino Ratio", _format_metric_value(sortino, ".3f")),
             ("Profit Factor", _format_metric_value(profit_factor, ".2f")),
         ],
@@ -1201,6 +1236,141 @@ def _pdf_charts_section(pdf: Any, chart_paths: list[Path]) -> None:  # pragma: n
             logger.debug(f"Could not embed chart {chart_path.name} in PDF — skipping")
 
 
+def _determine_health_status(sharpe: float, max_dd: float) -> tuple[str, str]:  # pragma: no cover
+    """Determine overall health indicator and status based on Sharpe and drawdown.
+
+    Returns:
+        Tuple of (indicator, status_text).
+    """
+    if sharpe and sharpe < 0:
+        return "[!!]", "NEEDS ATTENTION"
+    if sharpe and sharpe < 0.5:
+        return "[!]", "CAUTIONARY"
+    if max_dd > 20:
+        return "[!!]", "HIGH RISK"
+    if max_dd > 10:
+        return "[!]", "MODERATE RISK"
+    return "[OK]", "GOOD"
+
+
+def _generate_insights(
+    total_pnl: float,
+    win_rate: float,
+    sharpe: float,
+    max_dd: float,
+    profit_factor: float,
+) -> list[str]:  # pragma: no cover
+    """Generate list of key insights based on metrics."""
+    insights = []
+
+    if total_pnl > 0:
+        insights.append(f"[+] Profitable period with {_fmt_eur(total_pnl)} total P&L")
+    else:
+        insights.append(f"[-] Loss period with {_fmt_eur(total_pnl)} total P&L - review strategy")
+
+    if win_rate >= 55:
+        insights.append(f"[+] Strong win rate at {win_rate:.1f}%")
+    elif win_rate < 40:
+        insights.append(f"[-] Low win rate at {win_rate:.1f}% - needs improvement")
+
+    if sharpe and sharpe >= 1.0:
+        insights.append(f"[+] Excellent risk-adjusted returns (Sharpe: {sharpe:.2f})")
+    elif sharpe and sharpe < 0:
+        insights.append(f"[-] Negative Sharpe ratio ({sharpe:.2f}) - losses outweigh gains")
+
+    if max_dd > 20:
+        insights.append(f"[!] High drawdown of {max_dd:.1f}% - consider reducing risk")
+    elif max_dd < 5:
+        insights.append(f"[+] Low drawdown of {max_dd:.1f}% - good risk control")
+
+    if profit_factor and profit_factor >= 1.5:
+        insights.append(f"[+] Strong profit factor of {profit_factor:.2f}")
+
+    return insights
+
+
+def _pdf_kpi_grid(
+    pdf: Any,
+    total_pnl: float,
+    return_pct: float,
+    win_rate: float,
+    sharpe: float,
+    max_dd: float,
+    total_trades: int,
+) -> None:  # pragma: no cover
+    """Render the 2x3 KPI grid into the PDF."""
+    col_width = (pdf.w - 30) / 2
+
+    # Row 1: P&L and Return
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text(_LABEL_TOTAL_PNL), border=1)
+    pdf.cell(col_width, 8, _pdf_safe_text("Return %"), border=1, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 14)
+    pnl_indicator = "+" if total_pnl >= 0 else "-"
+    ret_indicator = "+" if return_pct >= 0 else "-"
+    pdf.cell(
+        col_width, 10, _pdf_safe_text(f"{pnl_indicator} {_fmt_eur(total_pnl)}"), border=1, align="C"
+    )
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{ret_indicator} {_fmt_pct(return_pct)}"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+    # Row 2: Win Rate and Sharpe
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text(_LABEL_WIN_RATE), border=1)
+    pdf.cell(
+        col_width, 8, _pdf_safe_text(_LABEL_SHARPE_RATIO), border=1, new_x="LMARGIN", new_y="NEXT"
+    )
+
+    pdf.set_font("Helvetica", "", 14)
+    wr_indicator = "[OK]" if win_rate >= 50 else "[!]"
+    sharpe_indicator = "*" if sharpe and sharpe >= 1.0 else ""
+    sharpe_str = f"{sharpe:.2f}" if sharpe else "N/A"
+    pdf.cell(col_width, 10, _pdf_safe_text(f"{wr_indicator} {win_rate:.1f}%"), border=1, align="C")
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{sharpe_indicator}{sharpe_str}"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+    # Row 3: Max Drawdown and Trades
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(col_width, 8, _pdf_safe_text(_LABEL_MAX_DRAWDOWN), border=1)
+    pdf.cell(
+        col_width, 8, _pdf_safe_text(_LABEL_TOTAL_TRADES), border=1, new_x="LMARGIN", new_y="NEXT"
+    )
+
+    pdf.set_font("Helvetica", "", 14)
+    # Determine drawdown indicator based on severity
+    if max_dd > 20:
+        dd_indicator = "[!!]"
+    elif max_dd > 10:
+        dd_indicator = "[!]"
+    else:
+        dd_indicator = "[OK]"
+    pdf.cell(col_width, 10, _pdf_safe_text(f"{dd_indicator} {max_dd:.1f}%"), border=1, align="C")
+    pdf.cell(
+        col_width,
+        10,
+        _pdf_safe_text(f"{total_trades} trades"),
+        border=1,
+        align="C",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+
+
 def _pdf_executive_summary(
     pdf: Any, metrics: dict[str, Any], days: int
 ) -> None:  # pragma: no cover
@@ -1228,20 +1398,7 @@ def _pdf_executive_summary(
     total_trades = metrics.get("total_trades", 0)
 
     # Determine overall health status
-    health_indicator = "[OK]"  # Good by default
-    health_status = "GOOD"
-    if sharpe and sharpe < 0:
-        health_indicator = "[!!]"
-        health_status = "NEEDS ATTENTION"
-    elif sharpe and sharpe < 0.5:
-        health_indicator = "[!]"
-        health_status = "CAUTIONARY"
-    elif max_dd > 20:
-        health_indicator = "[!!]"
-        health_status = "HIGH RISK"
-    elif max_dd > 10:
-        health_indicator = "[!]"
-        health_status = "MODERATE RISK"
+    health_indicator, health_status = _determine_health_status(sharpe, max_dd)
 
     # Overall status card
     pdf.set_font("Helvetica", "B", 14)
@@ -1257,68 +1414,8 @@ def _pdf_executive_summary(
     )
     pdf.ln(3)
 
-    # Key metrics in a 2x3 grid
-    pdf.set_font("Helvetica", "", 10)
-    col_width = (pdf.w - 30) / 2
-
-    # Row 1: P&L and Return
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(col_width, 8, _pdf_safe_text("Total P&L"), border=1)
-    pdf.cell(col_width, 8, _pdf_safe_text("Return %"), border=1, new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_font("Helvetica", "", 14)
-    pnl_indicator = "+" if total_pnl >= 0 else "-"
-    ret_indicator = "+" if return_pct >= 0 else "-"
-    pdf.cell(
-        col_width, 10, _pdf_safe_text(f"{pnl_indicator} {_fmt_eur(total_pnl)}"), border=1, align="C"
-    )
-    pdf.cell(
-        col_width,
-        10,
-        _pdf_safe_text(f"{ret_indicator} {_fmt_pct(return_pct)}"),
-        border=1,
-        align="C",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-
-    # Row 2: Win Rate and Sharpe
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(col_width, 8, _pdf_safe_text("Win Rate"), border=1)
-    pdf.cell(col_width, 8, _pdf_safe_text("Sharpe Ratio"), border=1, new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_font("Helvetica", "", 14)
-    wr_indicator = "[OK]" if win_rate >= 50 else "[!]"
-    sharpe_indicator = "*" if sharpe and sharpe >= 1.0 else ""
-    sharpe_str = f"{sharpe:.2f}" if sharpe else "N/A"
-    pdf.cell(col_width, 10, _pdf_safe_text(f"{wr_indicator} {win_rate:.1f}%"), border=1, align="C")
-    pdf.cell(
-        col_width,
-        10,
-        _pdf_safe_text(f"{sharpe_indicator}{sharpe_str}"),
-        border=1,
-        align="C",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
-
-    # Row 3: Max Drawdown and Trades
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(col_width, 8, _pdf_safe_text("Max Drawdown"), border=1)
-    pdf.cell(col_width, 8, _pdf_safe_text("Total Trades"), border=1, new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_font("Helvetica", "", 14)
-    dd_indicator = "[!!]" if max_dd > 20 else ("[!]" if max_dd > 10 else "[OK]")
-    pdf.cell(col_width, 10, _pdf_safe_text(f"{dd_indicator} {max_dd:.1f}%"), border=1, align="C")
-    pdf.cell(
-        col_width,
-        10,
-        _pdf_safe_text(f"{total_trades} trades"),
-        border=1,
-        align="C",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    # Key metrics grid
+    _pdf_kpi_grid(pdf, total_pnl, return_pct, win_rate, sharpe, max_dd, total_trades)
 
     pdf.ln(5)
 
@@ -1327,30 +1424,7 @@ def _pdf_executive_summary(
     pdf.cell(0, 8, _pdf_safe_text("Key Insights:"), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("Helvetica", "", 10)
-    insights = []
-
-    if total_pnl > 0:
-        insights.append(f"[+] Profitable period with {_fmt_eur(total_pnl)} total P&L")
-    else:
-        insights.append(f"[-] Loss period with {_fmt_eur(total_pnl)} total P&L - review strategy")
-
-    if win_rate >= 55:
-        insights.append(f"[+] Strong win rate at {win_rate:.1f}%")
-    elif win_rate < 40:
-        insights.append(f"[-] Low win rate at {win_rate:.1f}% - needs improvement")
-
-    if sharpe and sharpe >= 1.0:
-        insights.append(f"[+] Excellent risk-adjusted returns (Sharpe: {sharpe:.2f})")
-    elif sharpe and sharpe < 0:
-        insights.append(f"[-] Negative Sharpe ratio ({sharpe:.2f}) - losses outweigh gains")
-
-    if max_dd > 20:
-        insights.append(f"[!] High drawdown of {max_dd:.1f}% - consider reducing risk")
-    elif max_dd < 5:
-        insights.append(f"[+] Low drawdown of {max_dd:.1f}% - good risk control")
-
-    if profit_factor and profit_factor >= 1.5:
-        insights.append(f"[+] Strong profit factor of {profit_factor:.2f}")
+    insights = _generate_insights(total_pnl, win_rate, sharpe, max_dd, profit_factor)
 
     for insight in insights:
         pdf.set_x(pdf.l_margin + 10)  # Indent 10mm from left margin
@@ -1406,6 +1480,9 @@ def _generate_pdf(
         Raw PDF bytes, or ``None`` when fpdf2 is unavailable.
     """
     if not _HAS_FPDF2:
+        logger.info(
+            "PDF generation skipped: fpdf2 not installed. Install with: uv sync --extra analytics"
+        )
         return None
 
     from fpdf import FPDF  # type: ignore[import-untyped]
@@ -1733,15 +1810,15 @@ def _print_report(
         print(f"  {'Metric':<30} {'Value':>28}")
         print("-" * 62)
         rows = [
-            ("Total Trades", str(total_trades)),
-            ("Win Rate", f"{win_rate:.1f}%"),
-            ("Total P&L", _fmt_eur(total_pnl)),
+            (_LABEL_TOTAL_TRADES, str(total_trades)),
+            (_LABEL_WIN_RATE, f"{win_rate:.1f}%"),
+            (_LABEL_TOTAL_PNL, _fmt_eur(total_pnl)),
             ("Total Fees", f"€{total_fees:,.2f}"),
             ("Return", _fmt_pct(ret_pct) if ret_pct else "N/A"),
             ("Initial Portfolio Value", f"€{initial:,.2f}" if initial else "N/A"),
             ("Final Portfolio Value", f"€{final:,.2f}" if final else "N/A"),
-            ("Max Drawdown", f"{max_dd:.2f}%"),
-            ("Sharpe Ratio", f"{sharpe:.3f}" if sharpe else "N/A"),
+            (_LABEL_MAX_DRAWDOWN, f"{max_dd:.2f}%"),
+            (_LABEL_SHARPE_RATIO, f"{sharpe:.3f}" if sharpe else "N/A"),
             ("Sortino Ratio", f"{sortino:.3f}" if sortino else "N/A"),
             ("Profit Factor", f"{profit_factor:.2f}" if profit_factor else "N/A"),
         ]

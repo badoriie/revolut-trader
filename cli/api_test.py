@@ -203,46 +203,47 @@ async def _execute_api_command(
         print("❌ Error: order command requires --order-id")
         sys.exit(1)
 
-    # Route to API method
+    # Simple commands (no parameters)
     if command == "balance":
         return await api_client.get_balance()
+    if command == "currencies":
+        return await api_client.get_currencies()
+    if command == "currency-pairs":
+        return await api_client.get_currency_pairs()
+    if command == "open-orders":
+        return await api_client.get_open_orders()
+    if command == "orders":
+        return await api_client.get_historical_orders()
+
+    # Ticker commands
     if command == "ticker":
         assert symbol is not None  # Validated above
         return await api_client.get_ticker(symbol)
-    if command == "tickers":
+    if command in ("tickers", "all-tickers"):
         if symbols:
             symbol_list = [s.strip() for s in symbols.split(",")]
             return await api_client.get_tickers(symbol_list)
         return await api_client.get_tickers()
-    if command == "all-tickers":
-        return await api_client.get_tickers()
+
+    # Symbol-based data commands
     if command == "order-book":
         assert symbol is not None  # Validated above
         return await api_client.get_order_book(symbol, depth=depth or 10)
     if command == "candles":
         assert symbol is not None  # Validated above
-        return await api_client.get_candles(
-            symbol,
-            interval=interval or 60,
-            limit=limit or 100,
-        )
-    if command == "open-orders":
-        return await api_client.get_open_orders()
-    if command == "orders":
-        return await api_client.get_historical_orders()
+        return await api_client.get_candles(symbol, interval=interval or 60, limit=limit or 100)
     if command == "trades":
         assert symbol is not None  # Validated above
         return await api_client.get_trades(symbol=symbol, limit=limit or 100)
     if command == "public-trades":
         assert symbol is not None  # Validated above
         return await api_client.get_public_trades(symbol, limit=limit or 100)
+
+    # Order lookup
     if command == "order":
         assert order_id is not None  # Validated above
         return await api_client.get_order(order_id)
-    if command == "currencies":
-        return await api_client.get_currencies()
-    if command == "currency-pairs":
-        return await api_client.get_currency_pairs()
+
     print(f"❌ Unknown command: {command}")
     sys.exit(1)
 
