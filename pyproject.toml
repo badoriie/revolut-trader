@@ -122,20 +122,8 @@ venvPath = "."
 venv = ".venv"
 reportMissingTypeStubs = false
 
-[tool.coverage.run]
-omit = [
-    "cli/run.py",
-    "cli/backtest.py",
-    "cli/backtest_compare.py",
-    "cli/db_manage.py",
-    "cli/view_logs.py",
-    "cli/revt.py",
-    "cli/analytics_report.py",
-    "cli/telegram_control.py",
-]
-
 [tool.coverage.report]
-fail_under = 96
+fail_under = 97
 
 [tool.commitizen]
 name = "cz_conventional_commits"
