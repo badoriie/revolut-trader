@@ -140,7 +140,7 @@ Every change must update relevant docs. Not optional — a change is not done un
 | `cli/revt.py`                         | `revt` CLI entry point                                     |
 | `cli/run.py`                          | Bot runner (--env, --strategy, --risk)                     |
 | `cli/backtest.py`                     | Single strategy backtest                                   |
-| `cli/backtest_compare.py`            | Multi-strategy comparison + matrix                         |
+| `cli/backtest_compare.py`             | Multi-strategy comparison + matrix                         |
 | `cli/api_test.py`                     | API connectivity and endpoint testing                      |
 | `cli/db_manage.py`                    | Database management and export                             |
 | `cli/analytics_report.py`             | Analytics report (Sharpe, drawdown, charts, Telegram PDF)  |

@@ -506,6 +506,264 @@ class TestShutdownAsync:
 
 
 # ---------------------------------------------------------------------------
+# /backtest
+# ---------------------------------------------------------------------------
+
+
+def _make_backtest_results(**overrides):
+    """Return a fully-populated MagicMock BacktestResults."""
+    from decimal import Decimal
+
+    r = MagicMock()
+    r.initial_capital = Decimal("10000.00")
+    r.final_capital = Decimal("10100.00")
+    r.total_pnl = Decimal("100.00")
+    r.total_fees = Decimal("9.00")
+    r.max_drawdown = Decimal("200.00")
+    r.return_pct = 1.0
+    r.win_rate = 60.0
+    r.sharpe_ratio = 1.0
+    r.max_drawdown_pct = 2.0
+    r.profit_factor = 1.5
+    r.total_trades = 10
+    r.winning_trades = 6
+    r.losing_trades = 4
+    for k, v in overrides.items():
+        setattr(r, k, v)
+    return r
+
+
+class TestBacktestCommand:
+    @pytest.mark.asyncio
+    async def test_backtest_rejects_if_already_running(self, plane):
+        """Second /backtest while one is running gets a warning."""
+        plane._backtest_task = _pending_task()
+        await asyncio.sleep(0)
+
+        try:
+            await plane._cmd_backtest([])
+            text = plane.notifier.reply.call_args.args[0]
+            assert "already" in text.lower() or "⚠️" in text
+        finally:
+            plane._backtest_task.cancel()
+
+    @pytest.mark.asyncio
+    async def test_backtest_sends_running_message(self, plane):
+        """Acknowledges the command immediately with a progress message."""
+        mock_results = _make_backtest_results()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest([])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        calls = [c.args[0] for c in plane.notifier.reply.call_args_list]
+        assert any("backtest" in t.lower() or "⏳" in t for t in calls)
+
+    @pytest.mark.asyncio
+    async def test_backtest_sends_results_on_success(self, plane):
+        """Results message contains all key metrics (full report parity)."""
+        from decimal import Decimal
+
+        mock_results = MagicMock()
+        mock_results.initial_capital = Decimal("10000.00")
+        mock_results.final_capital = Decimal("10250.00")
+        mock_results.total_pnl = Decimal("250.00")
+        mock_results.total_fees = Decimal("22.50")
+        mock_results.max_drawdown = Decimal("400.00")
+        mock_results.return_pct = 2.5
+        mock_results.win_rate = 65.0
+        mock_results.sharpe_ratio = 1.5
+        mock_results.max_drawdown_pct = 4.0
+        mock_results.profit_factor = 2.1
+        mock_results.total_trades = 20
+        mock_results.winning_trades = 13
+        mock_results.losing_trades = 7
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest([])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        calls = [c.args[0] for c in plane.notifier.reply.call_args_list]
+        results_msg = " ".join(calls)
+        assert "10,000.00" in results_msg  # initial capital
+        assert "10,250.00" in results_msg  # final capital
+        assert "22.50" in results_msg  # fees
+        assert "250.00" in results_msg  # net P&L
+        assert "2.50%" in results_msg  # return
+        assert "65.00%" in results_msg  # win rate
+        assert "2.10" in results_msg  # profit factor
+        assert "4.00%" in results_msg  # max drawdown pct
+        assert "400.00" in results_msg  # max drawdown abs
+        assert "1.500" in results_msg  # sharpe
+
+    @pytest.mark.asyncio
+    async def test_backtest_saves_to_db(self, plane):
+        """Completed backtest is persisted to the database."""
+        mock_results = _make_backtest_results()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest([])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        mock_db.save_backtest_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_backtest_sends_error_on_failure(self, plane):
+        """Engine errors are caught and reported via Telegram."""
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(side_effect=RuntimeError("no data"))
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+        ):
+            await plane._cmd_backtest([])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        calls = [c.args[0] for c in plane.notifier.reply.call_args_list]
+        assert any("❌" in t or "failed" in t.lower() for t in calls)
+
+    @pytest.mark.asyncio
+    async def test_backtest_clears_task_on_completion(self, plane):
+        """_backtest_task is set to None after the run finishes."""
+        mock_results = _make_backtest_results()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest([])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        assert plane._backtest_task is None
+
+    @pytest.mark.asyncio
+    async def test_backtest_parses_strategy_arg(self, plane):
+        """Strategy token is passed to BacktestEngine."""
+        mock_results = _make_backtest_results()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine) as mock_cls,
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest(["momentum"])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        from src.config import StrategyType
+
+        assert mock_cls.call_args.kwargs.get("strategy_type") == StrategyType.MOMENTUM
+
+    @pytest.mark.asyncio
+    async def test_backtest_parses_days_arg(self, plane):
+        """Numeric token is parsed as days."""
+        mock_results = _make_backtest_results()
+
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_results)
+
+        mock_api = MagicMock()
+        mock_api.initialize = AsyncMock()
+        mock_api.close = AsyncMock()
+
+        mock_db = MagicMock()
+        mock_db.save_backtest_run = MagicMock(return_value=1)
+
+        with (
+            patch("cli.telegram_control.create_api_client", return_value=mock_api),
+            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+        ):
+            await plane._cmd_backtest(["14"])
+            if plane._backtest_task:
+                await plane._backtest_task
+
+        mock_engine.run.assert_awaited_once()
+        call_kwargs = mock_engine.run.call_args.kwargs
+        assert call_kwargs.get("days") == 14
+
+    @pytest.mark.asyncio
+    async def test_help_command_lists_backtest(self, plane):
+        """/help output includes the /backtest command."""
+        await plane._cmd_help()
+        text = plane.notifier.reply.call_args.args[0]
+        assert "/backtest" in text
+
+
+# ---------------------------------------------------------------------------
 # run_control_plane entry point
 # ---------------------------------------------------------------------------
 

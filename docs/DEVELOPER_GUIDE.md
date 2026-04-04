@@ -541,6 +541,7 @@ While the bot is running it also **listens for commands** you send directly in t
    status - Show bot status and session P&L
    balance - Show cash balance and open positions
    report - Generate analytics report (optional: days, default 30)
+   backtest - Run a backtest (optional: strategy, risk, days, pairs)
    help - Show list of available commands
    ```
 
@@ -608,16 +609,17 @@ revt telegram start --env int  # paper trading
 
 Additional commands available only through the control plane:
 
-| Command                  | Response                                                                  |
-| ------------------------ | ------------------------------------------------------------------------- |
-| `/run`                   | Start the trading bot with default strategy and risk                      |
-| `/run momentum moderate` | Start with a specific strategy and risk level                             |
-| `/run BTC-EUR,ETH-EUR`   | Start trading specific pairs                                              |
-| `/stop`                  | Gracefully stop the bot (cancels orders, closes positions, saves state)   |
-| `/status`                | Bot status (delegates to running bot, or "not running" when idle)         |
-| `/balance`               | Cash and positions (delegates to running bot, or "not running" when idle) |
-| `/report [days]`         | Analytics (delegates to running bot, or queries database when idle)       |
-| `/help`                  | List all available commands                                               |
+| Command                                          | Response                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------- |
+| `/run`                                           | Start the trading bot with default strategy and risk                      |
+| `/run momentum moderate`                         | Start with a specific strategy and risk level                             |
+| `/run BTC-EUR,ETH-EUR`                           | Start trading specific pairs                                              |
+| `/stop`                                          | Gracefully stop the bot (cancels orders, closes positions, saves state)   |
+| `/status`                                        | Bot status (delegates to running bot, or "not running" when idle)         |
+| `/balance`                                       | Cash and positions (delegates to running bot, or "not running" when idle) |
+| `/report [days]`                                 | Analytics (delegates to running bot, or queries database when idle)       |
+| `/backtest [strategy] [risk] [days] [pairs,...]` | Run a backtest and receive full results summary via Telegram              |
+| `/help`                                          | List all available commands                                               |
 
 The control plane and `make run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
 
@@ -628,7 +630,7 @@ ______________________________________________________________________
 
 ## 12. Deploying Unattended (Raspberry Pi / Server)
 
-For deploying on servers or Raspberry Pi, see [section 12](#12-telegram-notifications) for the Telegram control plane setup.
+For deploying on servers or Raspberry Pi, see [section 11](#11-telegram-notifications-optional) for the Telegram control plane setup.
 
 ### Quick summary
 
