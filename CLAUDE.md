@@ -138,9 +138,15 @@ Every change must update relevant docs. Not optional — a change is not done un
 | `tests/conftest.py`                   | Shared fixtures, `ENVIRONMENT=dev`                         |
 | `tests/mocks/mock_onepassword.py`     | Mock 1Password for tests                                   |
 | `cli/revt.py`                         | `revt` CLI entry point                                     |
+| `cli/run.py`                          | Bot runner (--env, --strategy, --risk)                     |
+| `cli/backtest.py`                     | Single strategy backtest                                   |
+| `cli/backtest_compare.py`            | Multi-strategy comparison + matrix                         |
+| `cli/api_test.py`                     | API connectivity and endpoint testing                      |
+| `cli/db_manage.py`                    | Database management and export                             |
 | `cli/analytics_report.py`             | Analytics report (Sharpe, drawdown, charts, Telegram PDF)  |
 | `cli/telegram_control.py`             | Always-on Telegram Control Plane                           |
 | `cli/view_logs.py`                    | View decrypted logs from DB                                |
+| `cli/validators.py`                   | Input validation helpers for CLI                           |
 | `build/revt.spec`                     | PyInstaller spec for `revt` binary                         |
 | `docs/revolut-x-api-docs.md`          | **API reference — source of truth**                        |
 | `docs/ARCHITECTURE.md`                | Component details and data flow                            |
