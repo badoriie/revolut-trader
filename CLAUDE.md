@@ -155,3 +155,5 @@ Every change must update relevant docs. Not optional — a change is not done un
 | `docs/END_USER_GUIDE.md`              | End-user quick start                                       |
 | `docs/DEVELOPER_GUIDE.md`             | Developer setup + advanced usage                           |
 | `docs/1PASSWORD.md`                   | Credential setup + troubleshooting                         |
+| `docs/TELEGRAM_BOT_COMMANDS.md`       | BotFather command list setup                               |
+| `docs/README.md`                      | Documentation index                                        |
