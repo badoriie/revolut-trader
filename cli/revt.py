@@ -588,6 +588,21 @@ def _mask_secret(val: str) -> str:
     return "(empty)"
 
 
+def _safe_mask(raw: str) -> str:
+    """
+    Apply secret masking and enforce that no more than a small suffix of the
+    secret is ever exposed. This ensures nothing close to the full secret is
+    printed, even if _mask_secret is relaxed in the future.
+    """
+    masked = _mask_secret(raw)
+    # As an extra safety net, only allow at most the last 4 characters to be visible.
+    # Everything else is replaced with '*' so the original secret cannot be reconstructed.
+    # Note: _mask_secret always returns a string, so no None check needed
+    if len(masked) <= 4:
+        return "*" * len(masked)
+    return "*" * (len(masked) - 4) + masked[-4:]
+
+
 def _ops_show(env: str) -> None:
     """Print stored credentials and configuration (secrets masked)."""
     if not _check_op():
@@ -599,23 +614,6 @@ def _ops_show(env: str) -> None:
         print("    It can only be run interactively (not piped or redirected to a file).")
         print("    Example of what NOT to do: revt ops --show > file.txt")
         sys.exit(1)
-
-    def _safe_mask(raw: str) -> str:
-        """
-        Apply secret masking and enforce that no more than a small suffix of the
-        secret is ever exposed. This ensures nothing close to the full secret is
-        printed, even if _mask_secret is relaxed in the future.
-        """
-        masked = _mask_secret(raw)
-        # As an extra safety net, only allow at most the last 4 characters to be visible.
-        # Everything else is replaced with '*' so the original secret cannot be reconstructed.
-        if masked is None:
-            return ""
-        # Convert to string in case _mask_secret returns a non-str object.
-        masked_str = str(masked)
-        if len(masked_str) <= 4:
-            return "*" * len(masked_str)
-        return "*" * (len(masked_str) - 4) + masked_str[-4:]
 
     print(f"\n=== Credentials  ({_op_creds_item(env)}) ===\n")
     if env == "dev":
