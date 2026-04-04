@@ -628,7 +628,7 @@ def _ops_show(env: str) -> None:
         "--reveal",
     )
     if r.returncode == 0:
-        print(f"  {'TELEGRAM_BOT_TOKEN':<28}  {_mask_secret(r.stdout.strip())}")
+        print(f"  {'TELEGRAM_BOT_TOKEN':<28}  <stored in 1Password (hidden)>")
 
     print(f"\n=== Configuration  ({_op_config_item(env)}) ===\n")
     print(f"  {'TRADING_MODE':<28}  (derived: dev/int → paper, prod → live)")
