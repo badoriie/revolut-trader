@@ -127,6 +127,7 @@ Get notifications and control the bot from your phone:
    status - Show bot status and session P&L
    balance - Show cash balance and open positions
    report - Generate analytics report (optional: days, default 30)
+   backtest - Run a backtest (optional: strategy, risk, days, pairs)
    help - Show list of available commands
    ```
 
@@ -154,6 +155,7 @@ Get notifications and control the bot from your phone:
 - `/status` — current status and P&L
 - `/balance` — account balance and positions
 - `/report [days]` — analytics summary
+- `/backtest [strategy] [risk] [days] [pairs,...]` — run a backtest
 - `/help` — command list
 
 ______________________________________________________________________

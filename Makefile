@@ -54,7 +54,7 @@ help:
 	@echo "  make run               - Run the bot (env auto-detected)"
 	@echo "                           STRATEGY=... RISK=... PAIRS=... INTERVAL=... MODE=live"
 	@echo "  make telegram          - Start Telegram Control Plane (always-on process)"
-	@echo "                           Control bot via Telegram: /run /stop /status /balance /report /help"
+	@echo "                           Control bot via Telegram: /run /stop /status /balance /report /backtest /help"
 	@echo "  make backtest          - Backtest one strategy (env auto-detected from branch)"
 	@echo "                           STRATEGY=... DAYS=... RISK=... INTERVAL=... PAIRS=..."
 	@echo "  make backtest-hf       - High-frequency backtest (1-minute candles, closest to live 5s polling)"
@@ -608,7 +608,7 @@ run:
 
 telegram:
 	@echo "Starting Telegram Control Plane (env: $(ENV))…"
-	@echo "Control the bot via Telegram: /run /stop /status /balance /report /help"
+	@echo "Control the bot via Telegram: /run /stop /status /balance /report /backtest /help"
 	ENVIRONMENT=$(ENV) uv run python cli/telegram_control.py --env $(ENV)
 
 backtest:

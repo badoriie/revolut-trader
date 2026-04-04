@@ -8,6 +8,7 @@ Start this process once and control the trading bot entirely via Telegram comman
   /status                             — bot status and session P&L
   /balance                            — cash balance and open positions
   /report [days]                      — analytics report (default 30 days)
+  /backtest [strategy] [risk] [days] [pairs,...] — run a backtest
   /help                               — list all commands
 
 The control plane never exits on its own; stop it with Ctrl-C or SIGTERM.
@@ -22,6 +23,8 @@ from decimal import Decimal
 
 from loguru import logger
 
+from src.api import create_api_client
+from src.backtest.engine import BacktestEngine
 from src.bot import TradingBot
 from src.config import RiskLevel, StrategyType, settings
 from src.utils.db_persistence import DatabasePersistence
@@ -44,6 +47,7 @@ class TelegramControlPlane:
         self.persistence = DatabasePersistence()
         self.bot = None
         self._bot_task: asyncio.Task | None = None
+        self._backtest_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
 
     # ------------------------------------------------------------------
@@ -83,6 +87,7 @@ class TelegramControlPlane:
             "status": self._cmd_status,
             "balance": self._cmd_balance,
             "report": lambda: self._cmd_report(int(args[0]) if args and args[0].isdigit() else 30),
+            "backtest": lambda: self._cmd_backtest(args),
         }
         handler = dispatch.get(command)
         if handler is None:
@@ -105,6 +110,7 @@ class TelegramControlPlane:
             "/status — bot status and P&amp;L\n"
             "/balance — cash balance and positions\n"
             "/report [days] — analytics report (default 30)\n"
+            "/backtest [strategy] [risk] [days] [pairs,...] — run a backtest\n"
             "/help — this message"
         )
         await self.notifier.reply(msg)
@@ -226,6 +232,150 @@ class TelegramControlPlane:
             return
         assert self.bot is not None
         await self.bot._cmd_balance()
+
+    # ------------------------------------------------------------------
+    # /backtest
+    # ------------------------------------------------------------------
+
+    async def _cmd_backtest(self, args: list[str]) -> None:
+        """Start a backtest run from Telegram.
+
+        Parses optional positional args: strategy name, risk level, number of
+        days (a bare integer), or comma-separated pairs.  Any unrecognised
+        token is silently ignored.
+
+        Only one backtest can run at a time.  The results summary is sent via
+        Telegram when the run completes, and the run is persisted to the
+        encrypted database.
+
+        Args:
+            args: Tokens following /backtest in the Telegram message.
+        """
+        if self._backtest_task is not None and not self._backtest_task.done():
+            await self.notifier.reply("⚠️ A backtest is already running. Please wait.")
+            return
+
+        strategy_type: StrategyType | None = None
+        risk_level: RiskLevel | None = None
+        days: int | None = None
+        trading_pairs: list[str] | None = None
+
+        for token in args:
+            token_lower = token.lower()
+            if token_lower in StrategyType._value2member_map_:
+                strategy_type = StrategyType(token_lower)
+            elif token_lower in RiskLevel._value2member_map_:
+                risk_level = RiskLevel(token_lower)
+            elif token.isdigit():
+                days = int(token)
+            elif "," in token or token.isupper():
+                trading_pairs = token.split(",")
+
+        await self.notifier.reply("⏳ Running backtest…")
+        self._backtest_task = asyncio.create_task(
+            self._run_backtest(strategy_type, risk_level, days, trading_pairs)
+        )
+
+    async def _run_backtest(
+        self,
+        strategy_type: StrategyType | None,
+        risk_level: RiskLevel | None,
+        days: int | None,
+        trading_pairs: list[str] | None,
+    ) -> None:
+        """Execute the backtest engine and report results via Telegram.
+
+        Runs as a background asyncio task spawned by ``_cmd_backtest``.
+        Clears ``_backtest_task`` on exit (success or failure).
+
+        Args:
+            strategy_type: Strategy to backtest, or ``None`` to use the
+                1Password default.
+            risk_level: Risk level to use, or ``None`` to use the 1Password
+                default.
+            days: Historical window in days, or ``None`` to use the 1Password
+                default.
+            trading_pairs: List of symbols, or ``None`` to use the 1Password
+                default.
+        """
+        effective_strategy = strategy_type or settings.default_strategy
+        effective_risk = risk_level or settings.risk_level
+        effective_days = days if days is not None else settings.backtest_days
+        effective_pairs = trading_pairs or settings.trading_pairs
+        initial_capital = Decimal(str(settings.paper_initial_capital))
+
+        api_client = create_api_client(settings.environment)
+        await api_client.initialize()
+
+        try:
+            engine = BacktestEngine(
+                api_client=api_client,
+                strategy_type=effective_strategy,
+                risk_level=effective_risk,
+                initial_capital=initial_capital,
+            )
+            results = await engine.run(
+                symbols=effective_pairs,
+                days=effective_days,
+                interval=settings.backtest_interval,
+            )
+
+            gross_pnl = results.total_pnl + results.total_fees
+            gross_sign = "+" if gross_pnl >= 0 else ""
+            net_sign = "+" if results.total_pnl >= 0 else ""
+            profit_factor_str = (
+                "∞" if results.profit_factor == float("inf") else f"{results.profit_factor:.2f}"
+            )
+            msg = (
+                f"📊 <b>Backtest Results ({effective_days}d)</b>\n\n"
+                f"Strategy: {effective_strategy.value}\n"
+                f"Risk: {effective_risk.value}\n"
+                f"Pairs: {', '.join(effective_pairs)}\n\n"
+                f"💵 Initial Capital: €{results.initial_capital:,.2f}\n"
+                f"💵 Final Capital:   €{results.final_capital:,.2f}\n\n"
+                f"📈 Gross P&amp;L: {gross_sign}€{gross_pnl:,.2f}\n"
+                f"💸 Total Fees:  -€{results.total_fees:,.2f}\n"
+                f"💰 Net P&amp;L:   {net_sign}€{results.total_pnl:,.2f}\n"
+                f"📊 Return:      {results.return_pct:.2f}%\n\n"
+                f"🔄 Trades: {results.total_trades} "
+                f"({results.winning_trades}W / {results.losing_trades}L)\n"
+                f"✅ Win Rate:      {results.win_rate:.2f}%\n"
+                f"⚖️  Profit Factor: {profit_factor_str}\n"
+                f"📉 Max Drawdown: {results.max_drawdown_pct:.2f}% "
+                f"(€{results.max_drawdown:,.2f})\n"
+                f"📐 Sharpe Ratio: {results.sharpe_ratio:.3f}"
+            )
+            await self.notifier.reply(msg)
+
+            db = DatabasePersistence()
+            db.save_backtest_run(
+                strategy=effective_strategy.value,
+                risk_level=effective_risk.value,
+                symbols=effective_pairs,
+                days=effective_days,
+                interval=str(settings.backtest_interval),
+                initial_capital=initial_capital,
+                results={
+                    "final_capital": float(results.final_capital),
+                    "total_pnl": float(results.total_pnl),
+                    "total_fees": float(results.total_fees),
+                    "return_pct": results.return_pct,
+                    "total_trades": results.total_trades,
+                    "winning_trades": results.winning_trades,
+                    "losing_trades": results.losing_trades,
+                    "win_rate": results.win_rate,
+                    "profit_factor": results.profit_factor,
+                    "max_drawdown": float(results.max_drawdown),
+                    "sharpe_ratio": results.sharpe_ratio,
+                },
+            )
+
+        except Exception as exc:
+            logger.error(f"Backtest failed: {exc}", exc_info=True)
+            await self.notifier.reply(f"❌ Backtest failed: {exc}")
+        finally:
+            await api_client.close()
+            self._backtest_task = None
 
     # ------------------------------------------------------------------
     # /report

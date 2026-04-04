@@ -307,6 +307,7 @@ revolut-trader/
 │   ├── BACKTESTING.md            # Backtesting guide
 │   ├── DEVELOPMENT_GUIDELINES.md # TDD, coding standards, contribution rules
 │   ├── 1PASSWORD.md              # Credential and config setup
+│   ├── TELEGRAM_BOT_COMMANDS.md  # BotFather command list (copy-paste ready)
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
 │   └── README.md                 # Documentation index
 └── Makefile                  # All project commands

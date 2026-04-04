@@ -18,6 +18,7 @@ stop - Stop the trading bot gracefully
 status - Show bot status and session P&L
 balance - Show cash balance and open positions
 report - Generate analytics report (optional: days, default 30)
+backtest - Run a backtest (optional: strategy, risk, days, pairs)
 help - Show list of available commands
 ```
 
@@ -31,20 +32,22 @@ Setting up these commands enables:
 
 ## Available Commands (Details)
 
-| Command          | Description                                                           | Usage                      |
-| ---------------- | --------------------------------------------------------------------- | -------------------------- |
-| `/run`           | Start the trading bot with optional parameters                        | `/run momentum aggressive` |
-| `/stop`          | Stop the trading bot gracefully (closes positions, saves state)       | `/stop`                    |
-| `/status`        | Show bot status, uptime, open positions, and session P&L              | `/status`                  |
-| `/balance`       | Show cash balance, open positions with entry price and unrealized P&L | `/balance`                 |
-| `/report [days]` | Generate analytics report (PDF or text) for the last N days           | `/report 30`               |
-| `/help`          | Show list of available commands                                       | `/help`                    |
+| Command                                          | Description                                                           | Usage                                    |
+| ------------------------------------------------ | --------------------------------------------------------------------- | ---------------------------------------- |
+| `/run`                                           | Start the trading bot with optional parameters                        | `/run momentum aggressive`               |
+| `/stop`                                          | Stop the trading bot gracefully (closes positions, saves state)       | `/stop`                                  |
+| `/status`                                        | Show bot status, uptime, open positions, and session P&L              | `/status`                                |
+| `/balance`                                       | Show cash balance, open positions with entry price and unrealized P&L | `/balance`                               |
+| `/report [days]`                                 | Generate analytics report (PDF or text) for the last N days           | `/report 30`                             |
+| `/backtest [strategy] [risk] [days] [pairs,...]` | Run a backtest and send results summary                               | `/backtest momentum moderate 30 BTC-EUR` |
+| `/help`                                          | Show list of available commands                                       | `/help`                                  |
 
 ## Notes
 
 - These commands work with both the standalone bot (`revt run`) and the Telegram Control Plane (`revt telegram start`)
 - The Control Plane owns the polling loop and allows you to `/run` and `/stop` the trading bot remotely
 - When running the bot directly (`revt run`), only status/balance/report commands are available
+- `/backtest` is only available from the Control Plane; only one backtest can run at a time; results are persisted to the encrypted database
 - All commands are secured to the configured `TELEGRAM_CHAT_ID` — other users cannot control your bot
 
 ## Full Setup Guide

@@ -35,7 +35,7 @@ graph TD
     Risk["RiskManager\nsrc/risk_management/risk_manager.py"]
     Exec["OrderExecutor\nsrc/execution/executor.py"]
 
-    Strat["BaseStrategy\nsrc/strategies/base.py"]
+    Strat["BaseStrategy\nsrc/strategies/base_strategy.py"]
     Momentum["MomentumStrategy"]
     MarketMaking["MarketMakingStrategy"]
     MeanRev["MeanReversionStrategy"]
@@ -121,10 +121,10 @@ Three risk profiles control position sizing, stop-loss/take-profit, and portfoli
 
 | Parameter              | Conservative | Moderate | Aggressive |
 | ---------------------- | ------------ | -------- | ---------- |
-| Max Position Size      | 5%           | 10%      | 20%        |
-| Max Daily Loss         | 2%           | 5%       | 10%        |
-| Stop Loss (baseline)   | 1.5%         | 2.0%     | 3.0%       |
-| Take Profit (baseline) | 2.0%         | 3.0%     | 5.0%       |
+| Max Position Size      | 1.5%         | 3%       | 5%         |
+| Max Daily Loss         | 3%           | 5%       | 10%        |
+| Stop Loss (baseline)   | 1.5%         | 2.5%     | 4.0%       |
+| Take Profit (baseline) | 2.5%         | 4.0%     | 7.0%       |
 | Max Open Positions     | 3            | 5        | 8          |
 
 **Note:** Per-strategy SL/TP overrides (see below) replace the baseline but **position sizing always comes from the risk level**. This ensures the three profiles produce meaningfully different trade sizes.
