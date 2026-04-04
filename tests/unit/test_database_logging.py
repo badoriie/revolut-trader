@@ -13,7 +13,9 @@ class TestDatabaseLogging:
     @pytest.fixture
     def persistence(self):
         """Create a DatabasePersistence instance for testing."""
-        return DatabasePersistence()
+        db = DatabasePersistence()
+        yield db
+        db.engine.dispose()
 
     def test_setup_database_logging_returns_sink_id(self, persistence):
         """Database logging setup should return a sink ID."""
@@ -105,6 +107,16 @@ class TestDatabaseLogging:
     def test_info_logs_not_saved_to_database(self, persistence):
         """INFO logs should NOT be saved to the database (only stdout)."""
         session_id = 999  # Use unique session to avoid key conflicts
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Log an info message - it shouldn't trigger database save
@@ -122,6 +134,16 @@ class TestDatabaseLogging:
     def test_debug_logs_not_saved_to_database(self, persistence):
         """DEBUG logs should NOT be saved to the database."""
         session_id = 998  # Use unique session
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Log a debug message - it shouldn't trigger database save
@@ -139,6 +161,16 @@ class TestDatabaseLogging:
     def test_sink_can_be_removed(self, persistence):
         """Database logging sink should be removable."""
         session_id = 997  # Use unique session
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Remove the sink

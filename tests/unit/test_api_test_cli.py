@@ -17,6 +17,18 @@ from cli.api_test import (
 )
 
 
+def _make_asyncio_run_mock(exc=None):
+    """Return a side_effect for asyncio.run that closes the coroutine before optionally raising."""
+
+    def _handler(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        if exc is not None:
+            raise exc
+
+    return _handler
+
+
 @pytest.fixture
 def mock_api_client():
     """Create a mock API client."""
@@ -297,7 +309,7 @@ def test_run_api_command_test(mock_api_client, capsys):
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0}
 
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run") as mock_run:
+        with patch("cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock()) as mock_run:
             run_api_command("test")
             assert mock_run.called
 
@@ -305,7 +317,9 @@ def test_run_api_command_test(mock_api_client, capsys):
 def test_run_api_command_keyboard_interrupt(mock_api_client):
     """Test run_api_command handles keyboard interrupt."""
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=KeyboardInterrupt):
+        with patch(
+            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_command("test")
             assert exc_info.value.code == 1
@@ -314,7 +328,9 @@ def test_run_api_command_keyboard_interrupt(mock_api_client):
 def test_run_api_command_exception(mock_api_client):
     """Test run_api_command handles exceptions."""
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=Exception("Test error")):
+        with patch(
+            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(Exception("Test error"))
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_command("test")
             assert exc_info.value.code == 1
@@ -325,7 +341,7 @@ def test_run_api_endpoint_balance(mock_api_client, capsys):
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0}
 
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run") as mock_run:
+        with patch("cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock()) as mock_run:
             run_api_endpoint(command="balance")
             assert mock_run.called
 
@@ -333,7 +349,9 @@ def test_run_api_endpoint_balance(mock_api_client, capsys):
 def test_run_api_endpoint_keyboard_interrupt(mock_api_client):
     """Test run_api_endpoint handles keyboard interrupt."""
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=KeyboardInterrupt):
+        with patch(
+            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_endpoint(command="balance")
             assert exc_info.value.code == 1
@@ -342,7 +360,9 @@ def test_run_api_endpoint_keyboard_interrupt(mock_api_client):
 def test_run_api_endpoint_exception(mock_api_client):
     """Test run_api_endpoint handles exceptions."""
     with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=Exception("Test error")):
+        with patch(
+            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(Exception("Test error"))
+        ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_endpoint(command="balance")
             assert exc_info.value.code == 1

@@ -12,7 +12,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -599,7 +599,7 @@ class TestCmdRun:
             mode=None,
             confirm_live=False,
         )
-        mock_run_bot = AsyncMock()
+        mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
             patch("cli.revt._resolve_env", return_value="dev"),
@@ -645,7 +645,7 @@ class TestCmdRun:
             confirm_live=False,
         )
         mock_settings = MagicMock()
-        mock_run_bot = AsyncMock()
+        mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
             patch("cli.revt._resolve_env", return_value="dev"),
@@ -678,7 +678,7 @@ class TestCmdRun:
             patch("cli.revt._setup_logger"),
             patch("cli.revt.TradingMode", create=True),
             patch("cli.revt.settings", create=True),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=AsyncMock())}),
+            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=MagicMock())}),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
         ):
             cmd_run(args)
@@ -796,7 +796,7 @@ class TestBacktestSingle:
             capital=None,
             log_level=None,
         )
-        mock_run_backtest = AsyncMock()
+        mock_run_backtest = MagicMock()
         with (
             patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
             patch("asyncio.run"),
@@ -815,7 +815,7 @@ class TestBacktestSingle:
             capital=None,
             log_level=None,
         )
-        mock_run_backtest = AsyncMock()
+        mock_run_backtest = MagicMock()
         with (
             patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
@@ -1416,7 +1416,7 @@ class TestCmdTelegram:
     def test_test_subcommand_success(self, capsys):
         args = _ns(env="dev", telegram_cmd="test")
         mock_notifier = MagicMock()
-        mock_notifier.send_test = AsyncMock()
+        mock_notifier.send_test = MagicMock()
         # Patch settings attributes on the real singleton and TelegramNotifier at its source
         with (
             patch("cli.revt._resolve_env", return_value="dev"),
@@ -1432,7 +1432,7 @@ class TestCmdTelegram:
     def test_test_subcommand_failure_exits(self, capsys):
         args = _ns(env="dev", telegram_cmd="test")
         mock_notifier = MagicMock()
-        mock_notifier.send_test = AsyncMock()
+        mock_notifier.send_test = MagicMock()
         with (
             patch("cli.revt._resolve_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),

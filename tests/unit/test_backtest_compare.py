@@ -21,6 +21,19 @@ from cli.backtest_compare import (
 from src.backtest.engine import BacktestResults
 from src.config import RiskLevel, StrategyType
 
+
+def _make_asyncio_run_mock(exc=None):
+    """Return a side_effect for asyncio.run that closes the coroutine before optionally raising."""
+
+    def _handler(coro):
+        if hasattr(coro, "close"):
+            coro.close()
+        if exc is not None:
+            raise exc
+
+    return _handler
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -465,7 +478,7 @@ class TestRunCompare:
 class TestRunCompareCli:
     """Tests for the synchronous run_compare_cli wrapper."""
 
-    @patch("cli.backtest_compare.asyncio.run")
+    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
     @patch("cli.backtest_compare.setup_logging")
     def test_success(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Successful run calls asyncio.run and setup_logging."""
@@ -473,14 +486,19 @@ class TestRunCompareCli:
         mock_setup.assert_called_once()
         mock_asyncio_run.assert_called_once()
 
-    @patch("cli.backtest_compare.asyncio.run", side_effect=KeyboardInterrupt)
+    @patch(
+        "cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+    )
     @patch("cli.backtest_compare.setup_logging")
     def test_keyboard_interrupt(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """KeyboardInterrupt is caught gracefully (no sys.exit)."""
         # Should NOT raise
         run_compare_cli(strategies="momentum")
 
-    @patch("cli.backtest_compare.asyncio.run", side_effect=ValueError("bad config"))
+    @patch(
+        "cli.backtest_compare.asyncio.run",
+        side_effect=_make_asyncio_run_mock(ValueError("bad config")),
+    )
     @patch("cli.backtest_compare.setup_logging")
     def test_exception_exits(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Unhandled exception triggers sys.exit(1)."""
@@ -488,7 +506,7 @@ class TestRunCompareCli:
             run_compare_cli(strategies="momentum")
         assert exc_info.value.code == 1
 
-    @patch("cli.backtest_compare.asyncio.run")
+    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
     @patch("cli.backtest_compare.setup_logging")
     def test_default_log_level_from_settings(
         self, mock_setup: MagicMock, mock_asyncio_run: MagicMock
@@ -499,7 +517,7 @@ class TestRunCompareCli:
         call_arg = mock_setup.call_args[0][0]
         assert isinstance(call_arg, str)
 
-    @patch("cli.backtest_compare.asyncio.run")
+    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
     @patch("cli.backtest_compare.setup_logging")
     def test_explicit_log_level(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Explicit log_level is forwarded to setup_logging."""
