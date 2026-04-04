@@ -353,7 +353,61 @@ Examples:
     )
 
     args = parser.parse_args()
-    setup_logging(args.log_level or settings.log_level)
+
+    # Call the new function with parsed arguments
+    run_compare_cli(
+        strategies=args.strategies,
+        risk=args.risk,
+        risk_levels=args.risk_levels,
+        pairs=args.pairs,
+        days=args.days,
+        interval=args.interval,
+        capital=args.capital,
+        log_level=args.log_level,
+    )
+
+
+def run_compare_cli(
+    *,
+    strategies: str | None = None,
+    risk: str | None = None,
+    risk_levels: str | None = None,
+    pairs: str | None = None,
+    days: int | None = None,
+    interval: int | None = None,
+    capital: float | None = None,
+    log_level: str | None = None,
+) -> None:
+    """Run comparison backtest with the given parameters.
+
+    This function can be called directly from other modules without
+    needing to patch sys.argv.
+
+    Args:
+        strategies: Comma-separated strategy names, or None for all.
+        risk: Single risk level to test.
+        risk_levels: Comma-separated risk levels to test (overrides risk).
+        pairs: Comma-separated trading pairs.
+        days: Days of historical data.
+        interval: Candle interval in minutes.
+        capital: Initial capital in EUR.
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
+    """
+    from types import SimpleNamespace
+
+    setup_logging(log_level or settings.log_level)
+
+    # Create a namespace object with the parameters
+    args = SimpleNamespace(
+        strategies=strategies,
+        risk=risk,
+        risk_levels=risk_levels,
+        pairs=pairs,
+        days=days,
+        interval=interval,
+        capital=capital,
+        log_level=log_level,
+    )
 
     try:
         asyncio.run(run_compare(args))

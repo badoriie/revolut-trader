@@ -154,6 +154,13 @@ class TestMaxCapitalConfigLoading:
 class TestMaxCapitalEnforcement:
     """Tests that MAX_CAPITAL caps cash_balance in TradingBot."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_db(self, monkeypatch):
+        """Prevent real database engine creation during TradingBot instantiation."""
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr("src.bot.DatabasePersistence", MagicMock)
+
     @pytest.mark.asyncio
     async def test_live_balance_capped_when_max_capital_set(self) -> None:
         """CRITICAL: In live mode, cash_balance MUST be min(available, max_capital).

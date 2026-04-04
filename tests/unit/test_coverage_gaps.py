@@ -677,8 +677,11 @@ class TestDbPersistenceBacktestFilter:
         from src.utils.db_persistence import DatabasePersistence
 
         db = DatabasePersistence()
-        results = db.load_backtest_runs(strategy="momentum", limit=5)
-        assert isinstance(results, list)
+        try:
+            results = db.load_backtest_runs(strategy="momentum", limit=5)
+            assert isinstance(results, list)
+        finally:
+            db.engine.dispose()
 
 
 # ---------------------------------------------------------------------------

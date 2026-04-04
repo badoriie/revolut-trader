@@ -13,7 +13,10 @@ class TestDatabaseLogging:
     @pytest.fixture
     def persistence(self):
         """Create a DatabasePersistence instance for testing."""
-        return DatabasePersistence()
+        db = DatabasePersistence()
+        yield db
+        db.engine.pool.dispose()
+        db.engine.dispose()
 
     def test_setup_database_logging_returns_sink_id(self, persistence):
         """Database logging setup should return a sink ID."""
@@ -24,34 +27,45 @@ class TestDatabaseLogging:
     def test_warning_logs_saved_to_database(self, persistence):
         """WARNING logs should be saved to the database."""
         session_id = 1001  # Use unique session
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Log a warning
         test_message = "Test warning unique message 1001"
         logger.warning(test_message)
 
-        # Query logs from database - only get recent logs to avoid old encrypted data
-        all_logs = persistence.load_log_entries(since=None, level="WARNING", limit=100)
+        # Force log to be written (loguru buffers by default)
+        import time
 
-        # Filter to only logs that can be decrypted and match our session
-        # (old logs from previous test runs may fail to decrypt with current key)
-        valid_logs = []
-        for log in all_logs:
-            try:
-                if log.get("session_id") == session_id and log.get("message"):
-                    valid_logs.append(log)
-            except Exception:
-                continue  # Skip logs that can't be decrypted
+        time.sleep(0.1)  # Give loguru time to write
+
+        # Clean up first
+        logger.remove(sink_id)
+
+        # Query ALL logs without time filter
+        all_logs = persistence.load_log_entries(since=None, level=None, limit=None)
+
+        # Filter to only logs that match our session (recently created)
+        valid_logs = [log for log in all_logs if log.get("session_id") == session_id]
 
         # Verify the log was saved
-        assert len(valid_logs) > 0, "No logs found for this session"
+        assert len(valid_logs) > 0, (
+            f"No logs found for session {session_id}. Total logs in DB: {len(all_logs)}"
+        )
         assert any(test_message in log["message"] for log in valid_logs), (
-            "Test message not found in logs"
+            f"Test message '{test_message}' not found. Found messages: {[log.get('message', '')[:100] for log in valid_logs]}"
         )
         assert all(log["level"] == "WARNING" for log in valid_logs)
         assert all(log["session_id"] == session_id for log in valid_logs)
-
-        logger.remove(sink_id)
 
     def test_error_logs_saved_to_database(self, persistence):
         """ERROR logs should be saved to the database."""
@@ -94,6 +108,16 @@ class TestDatabaseLogging:
     def test_info_logs_not_saved_to_database(self, persistence):
         """INFO logs should NOT be saved to the database (only stdout)."""
         session_id = 999  # Use unique session to avoid key conflicts
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Log an info message - it shouldn't trigger database save
@@ -111,6 +135,16 @@ class TestDatabaseLogging:
     def test_debug_logs_not_saved_to_database(self, persistence):
         """DEBUG logs should NOT be saved to the database."""
         session_id = 998  # Use unique session
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Log a debug message - it shouldn't trigger database save
@@ -128,6 +162,16 @@ class TestDatabaseLogging:
     def test_sink_can_be_removed(self, persistence):
         """Database logging sink should be removable."""
         session_id = 997  # Use unique session
+
+        # Clear old test logs to avoid encryption key mismatches
+        # (This is safe because we're in test environment with ENVIRONMENT=dev)
+        with persistence._session() as sess:
+            from src.models.db import LogEntryDB
+
+            # Delete old logs with our test session_id to avoid key conflicts
+            sess.query(LogEntryDB).filter(LogEntryDB.session_id == session_id).delete()
+            sess.commit()
+
         sink_id = _setup_database_logging(persistence, session_id=session_id)
 
         # Remove the sink

@@ -232,10 +232,10 @@ class TelegramControlPlane:
     # ------------------------------------------------------------------
 
     async def _cmd_report(self, days: int) -> None:
-        """Send an analytics report.
+        """Send a comprehensive analytics report as PDF.
 
         Delegates to the bot when running (so it includes the live session).
-        Falls back to a direct database query when the bot is idle.
+        Falls back to generating a full PDF report when the bot is idle.
 
         Args:
             days: Number of historical days to include in the report.
@@ -245,29 +245,62 @@ class TelegramControlPlane:
             await self.bot._cmd_report(days)
             return
 
-        # Bot is not running — query the database directly.
+        # Bot is not running — generate full PDF report
+        from pathlib import Path
+
+        from cli.analytics_report import generate_report_data
+
         try:
-            analytics = self.persistence.get_analytics(days=days)
+            await self.notifier.reply(f"📊 Generating {days}-day analytics report...")
+
+            # Generate report data and PDF (safe to call from async context)
+            result = generate_report_data(
+                days=days,
+                output_dir=Path("data/reports"),
+            )
+
+            if not result.get("pdf_bytes"):
+                # Fall back to text summary if PDF generation failed
+                analytics = self.persistence.get_analytics(days=days)
+                total_trades = analytics.get("total_trades", 0)
+
+                if not total_trades:
+                    await self.notifier.reply(f"📊 No trade data found for the last {days} days.")
+                    return
+
+                await self.notifier.notify_report_ready(
+                    days=days,
+                    total_trades=total_trades,
+                    total_pnl=Decimal(str(analytics.get("total_pnl", 0))),
+                    return_pct=float(analytics.get("return_pct", 0.0)),
+                    win_rate=float(analytics.get("win_rate", 0.0)),
+                    sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
+                    max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
+                    report_path="(fpdf2 not installed - run `revt db report` for full PDF)",
+                )
+                return
+
+            # Send PDF via Telegram
+            total_pnl = result["metrics"]["total_pnl"]
+            pnl_sign = "+" if total_pnl >= 0 else ""
+            caption = (
+                f"📊 **Analytics Report - Last {days} Days**\n\n"
+                f"📈 Total P&L: {pnl_sign}€{total_pnl:,.2f}\n"
+                f"📉 Return: {result['metrics']['return_pct']:.2f}%\n"
+                f"✅ Win Rate: {result['metrics']['win_rate']:.1f}%\n"
+                f"📊 Sharpe Ratio: {result['metrics']['sharpe_ratio']:.2f}\n"
+                f"📉 Max Drawdown: {result['metrics']['max_drawdown_pct']:.1f}%"
+            )
+
+            await self.notifier.send_document(
+                document=result["pdf_bytes"],
+                filename="analytics_report.pdf",
+                caption=caption,
+            )
+
         except Exception as exc:
-            logger.error(f"Failed to query analytics: {exc}")
-            await self.notifier.reply(f"❌ Could not fetch report: {exc}")
-            return
-
-        total_trades = analytics.get("total_trades", 0)
-        if not total_trades:
-            await self.notifier.reply(f"📊 No trade data found for the last {days} days.")
-            return
-
-        await self.notifier.notify_report_ready(
-            days=days,
-            total_trades=total_trades,
-            total_pnl=Decimal(str(analytics.get("total_pnl", 0))),
-            return_pct=float(analytics.get("return_pct", 0.0)),
-            win_rate=float(analytics.get("win_rate", 0.0)),
-            sharpe_ratio=float(analytics.get("sharpe_ratio") or 0.0),
-            max_drawdown_pct=float(analytics.get("max_drawdown_pct", 0.0)),
-            report_path="(run `revt db report` for full PDF)",
-        )
+            logger.error(f"Failed to generate report: {exc}", exc_info=True)
+            await self.notifier.reply(f"❌ Could not generate report: {exc}")
 
 
 # ---------------------------------------------------------------------------

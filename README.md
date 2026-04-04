@@ -283,7 +283,8 @@ revolut-trader/
 │   ├── db_manage.py          # Database management and export
 │   ├── analytics_report.py   # Comprehensive analytics report with charts
 │   ├── telegram_control.py   # Telegram Control Plane (always-on bot commands)
-│   └── view_logs.py          # View decrypted logs from database
+│   ├── view_logs.py          # View decrypted logs from database
+│   └── validators.py         # Input validation helpers for CLI
 ├── build/                    # Build configuration
 │   └── revt.spec             # PyInstaller spec for revt binary
 ├── tests/
@@ -409,6 +410,7 @@ make api-test   # test API connectivity
 | [Backtesting Guide](docs/BACKTESTING.md)                 | Metrics, interpretation, best practices                |
 | [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) | TDD workflow, coding standards, contribution rules     |
 | [1Password Setup](docs/1PASSWORD.md)                     | Credential and configuration management                |
+| [Telegram Bot Commands](docs/TELEGRAM_BOT_COMMANDS.md)   | BotFather command list setup (copy-paste ready)        |
 | [Revolut X API Docs](docs/revolut-x-api-docs.md)         | API reference (source of truth for all API code)       |
 
 ## Warnings

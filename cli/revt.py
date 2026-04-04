@@ -51,15 +51,7 @@ def _detect_env() -> str:
         return "prod"
 
     try:
-        tag = subprocess.run(
-            ["git", "describe", "--exact-match", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_ROOT,
-            timeout=5,
-        )
-        if tag.returncode == 0:
-            return "prod"
+        # Check branch first (faster than checking for tags)
         branch = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True,
@@ -67,9 +59,34 @@ def _detect_env() -> str:
             cwd=_ROOT,
             timeout=5,
         )
-        return "int" if branch.stdout.strip() == "main" else "dev"
+        if branch.returncode != 0:
+            return "prod"  # not a git repo
+
+        branch_name = branch.stdout.strip()
+
+        # Only check for tags on main branch (optimization)
+        if branch_name in {"main", "master"}:
+            tag = subprocess.run(
+                ["git", "describe", "--exact-match", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=_ROOT,
+                timeout=5,
+            )
+            if tag.returncode == 0:
+                return "prod"  # on a tagged release
+
+        return "int" if branch_name == "main" else "dev"
+    except subprocess.TimeoutExpired:
+        # Git command timed out - likely repo issues
+        return "prod"  # safe fallback
+    except OSError:
+        # Git not installed, not a git repo, or other OS-level error
+        # (FileNotFoundError is a subclass of OSError, so this catches both)
+        return "prod"  # safe fallback
     except Exception:
-        return "prod"  # safe fallback outside a git repo
+        # Unexpected error
+        return "prod"  # safe fallback
 
 
 def _resolve_env(args: argparse.Namespace) -> str:
@@ -178,8 +195,11 @@ def _get_current_version_from_pyproject() -> str | None:
         return None
 
 
-def _get_latest_github_release() -> str | None:
+def _get_latest_github_release(timeout: int = 5) -> str | None:
     """Get latest release tag from GitHub API.
+
+    Args:
+        timeout: Request timeout in seconds (default: 5).
 
     Returns:
         Latest tag (without 'v' prefix) or None if unavailable.
@@ -192,7 +212,7 @@ def _get_latest_github_release() -> str | None:
         req = urllib.request.Request(url)
         req.add_header("Accept", "application/vnd.github.v3+json")
         # nosec B310: HTTPS URL from trusted GitHub API
-        with urllib.request.urlopen(req, timeout=5) as response:  # nosec B310
+        with urllib.request.urlopen(req, timeout=timeout) as response:  # nosec B310
             data = json.loads(response.read().decode())
             return data.get("tag_name", "").lstrip("v")
     except Exception:
@@ -233,7 +253,12 @@ def _check_for_updates() -> tuple[str, str] | None:
         Tuple of (current_version, latest_version) if update available, else None.
 
     Uses a cache file to avoid hitting GitHub API too frequently (once per day).
+    Can be disabled via REVT_SKIP_UPDATE_CHECK environment variable.
     """
+    # Allow disabling update checks
+    if os.environ.get("REVT_SKIP_UPDATE_CHECK"):
+        return None
+
     cache_file = _ROOT / "data" / ".update_check_cache"
     cache_ttl = 86400  # 24 hours in seconds
 
@@ -357,6 +382,16 @@ def cmd_run(args: argparse.Namespace) -> None:
     mode_override = getattr(args, "mode", None)
     confirm_live = getattr(args, "confirm_live", False)
 
+    # Validate trading pairs if provided
+    if args.pairs:
+        from cli.validators import validate_trading_pairs
+
+        is_valid, error = validate_trading_pairs(args.pairs)
+        if not is_valid:
+            print(f"❌  {error}")
+            print("    Example: --pairs BTC-EUR,ETH-EUR")
+            sys.exit(1)
+
     _print_run_config(args, env, mode_override)
 
     # Import config to check actual trading mode
@@ -399,6 +434,17 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     _show_update_notification()
 
     _resolve_env(args)
+
+    # Validate conflicting flags
+    if args.matrix and (args.strategy or args.strategies):
+        print("⚠️  Warning: --strategy and --strategies are ignored in --matrix mode")
+        print("    Matrix mode tests all strategies × all risk levels")
+        print()
+
+    if args.compare and args.strategy:
+        print("⚠️  Warning: --strategy is ignored in --compare mode")
+        print("    Compare mode tests multiple strategies side-by-side")
+        print()
 
     from loguru import logger
 
@@ -469,36 +515,22 @@ def _run_compare_cli(
     strategies: str | None,
     log_level: str | None,
 ) -> None:
-    """Invoke ``backtest_compare.main()`` by patching sys.argv.
+    """Invoke backtest_compare.run_compare_cli() directly with parameters.
 
-    Any None argument is omitted from argv so backtest_compare falls back to its
-    1Password-sourced defaults.
+    No more sys.argv patching - calls the function directly.
     """
-    from cli.backtest_compare import main as _compare_main
+    from cli.backtest_compare import run_compare_cli
 
-    argv = ["backtest_compare"]
-    if days is not None:
-        argv += ["--days", str(days)]
-    if interval is not None:
-        argv += ["--interval", str(interval)]
-    if pairs is not None:
-        argv += ["--pairs", pairs]
-    if capital is not None:
-        argv += ["--capital", str(capital)]
-    if log_level is not None:
-        argv += ["--log-level", log_level]
-    if risk_levels:
-        argv += ["--risk-levels", risk_levels]
-    elif risk:
-        argv += ["--risk", risk]
-    if strategies:
-        argv += ["--strategies", strategies]
-
-    old_argv, sys.argv = sys.argv, argv
-    try:
-        _compare_main()
-    finally:
-        sys.argv = old_argv
+    run_compare_cli(
+        days=days,
+        interval=interval,
+        pairs=pairs,
+        capital=capital,
+        risk=risk,
+        risk_levels=risk_levels,
+        strategies=strategies,
+        log_level=log_level,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -508,7 +540,7 @@ def _run_compare_cli(
 
 def cmd_ops(args: argparse.Namespace) -> None:
     """Manage Revolut X API credentials stored in 1Password."""
-    env = getattr(args, "env", None) or _detect_env()
+    env = _resolve_env(args)
 
     if args.status:
         _ops_status(env)
@@ -559,6 +591,13 @@ def _mask_secret(val: str) -> str:
 def _ops_show(env: str) -> None:
     """Print stored credentials and configuration (secrets masked)."""
     if not _check_op():
+        sys.exit(1)
+
+    # Safety: Ensure we're not redirecting to a file (prevents accidental secret leakage)
+    if not sys.stdout.isatty():
+        print("❌  This command displays sensitive data.")
+        print("    It can only be run interactively (not piped or redirected to a file).")
+        print("    Example of what NOT to do: revt ops --show > file.txt")
         sys.exit(1)
 
     print(f"\n=== Credentials  ({_op_creds_item(env)}) ===\n")
@@ -652,7 +691,7 @@ def _ops_set_creds(env: str) -> None:
 
 def cmd_config(args: argparse.Namespace) -> None:
     """View and manage trading configuration stored in 1Password."""
-    env = getattr(args, "env", None) or _detect_env()
+    env = _resolve_env(args)
     sub = getattr(args, "config_cmd", None) or "show"
 
     if sub == "show":
@@ -692,6 +731,15 @@ def _config_show(env: str) -> None:
 def _config_set(env: str, key: str, value: str) -> None:
     """Write a single configuration key to 1Password."""
     if not _check_op():
+        sys.exit(1)
+
+    # Validate the value before setting
+    from cli.validators import validate_config_value
+
+    is_valid, error = validate_config_value(key, value)
+    if not is_valid:
+        print(f"  ✗  Validation error: {error}")
+        print(f"     Use 'revt config show --env {env}' to see current values")
         sys.exit(1)
 
     r = _op(
@@ -796,44 +844,37 @@ def cmd_api(args: argparse.Namespace) -> None:
     ``cli.api_test`` command names, then delegates to that module's ``main()``.
     Dev environment is blocked — it uses a local mock with no real endpoints.
     """
-    env = getattr(args, "env", None) or _detect_env()
+    env = _resolve_env(args)
     if env == "dev":
         print("⚠️   API commands require a real API environment.")
         print("    Dev uses a local mock — no network calls are made.")
         print("    Use --env int or --env prod.")
         sys.exit(1)
 
-    os.environ["ENVIRONMENT"] = env
-
-    from loguru import logger
-
-    logger.remove()
-    logger.add(sys.stderr, level="WARNING")
-
     raw_cmd: str = args.api_cmd
     api_cmd: str = _API_CMD_MAP.get(raw_cmd, raw_cmd)
 
-    from cli.api_test import main as _api_main
+    # Delegate to api_test — validation of required args happens there
+    if raw_cmd in {"test", "ready"}:
+        from cli.api_test import run_api_command
 
-    argv: list[str] = ["api", api_cmd]
-    if getattr(args, "symbol", None):
-        argv += ["--symbol", args.symbol]
-    if getattr(args, "symbols", None):
-        argv += ["--symbols", args.symbols]
-    if getattr(args, "order_id", None):
-        argv += ["--order-id", args.order_id]
-    if getattr(args, "interval", None) is not None:
-        argv += ["--interval", str(args.interval)]
-    if getattr(args, "limit", None) is not None:
-        argv += ["--limit", str(args.limit)]
-    if getattr(args, "depth", None) is not None:
-        argv += ["--depth", str(args.depth)]
+        # Map friendly names to api_test command names
+        cmd_map = {"ready": "trade-ready", "test": "test"}
+        run_api_command(cmd_map.get(raw_cmd, raw_cmd))
+        return
 
-    old_argv, sys.argv = sys.argv, argv
-    try:
-        _api_main()
-    finally:
-        sys.argv = old_argv
+    # For all other API endpoints, call them directly via the API client
+    from cli.api_test import run_api_endpoint
+
+    run_api_endpoint(
+        command=api_cmd,
+        symbol=getattr(args, "symbol", None),
+        symbols=getattr(args, "symbols", None),
+        order_id=getattr(args, "order_id", None),
+        interval=getattr(args, "interval", None),
+        limit=getattr(args, "limit", None),
+        depth=getattr(args, "depth", None),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -907,8 +948,8 @@ def cmd_db(args: argparse.Namespace) -> None:
     Delegates to the appropriate ``cli.db_manage`` or ``cli.analytics_report``
     function based on the subcommand.
     """
-    env = getattr(args, "env", None) or _detect_env()
-    os.environ["ENVIRONMENT"] = env
+    # Resolve environment and set ENVIRONMENT variable for database selection
+    _resolve_env(args)
 
     sub = getattr(args, "db_cmd", None) or "stats"
 
@@ -1012,12 +1053,28 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
         backup_path = current_binary.with_suffix(".backup")
 
         # Backup current binary
-        if current_binary.exists():
-            shutil.copy2(current_binary, backup_path)
-            print(f"✓ Backed up current binary to: {backup_path}")
+        try:
+            if current_binary.exists():
+                shutil.copy2(current_binary, backup_path)
+                print(f"✓ Backed up current binary to: {backup_path}")
+        except OSError as e:
+            print(f"⚠️  Warning: Failed to backup current binary: {e}")
+            print("   Continuing with update...")
 
         # Replace with new binary
-        shutil.move(str(tmp_path), str(current_binary))
+        try:
+            shutil.move(str(tmp_path), str(current_binary))
+        except OSError as e:
+            # Try to restore backup if move failed
+            if backup_path.exists():
+                try:
+                    shutil.copy2(backup_path, current_binary)
+                    print(f"⚠️  Update failed, restored backup: {e}")
+                except Exception:
+                    # Backup restore failed - not critical since we're raising the main error
+                    pass  # nosec B110
+            raise RuntimeError(f"Failed to replace binary: {e}") from e
+
         print(f"✓ Updated: {current_binary}")
         print()
         print("✅ Update complete!")
@@ -1048,39 +1105,14 @@ def _check_binary_version() -> tuple[str | None, str | None]:
     """Check current and latest binary versions.
 
     Returns:
-        Tuple of (current_version, latest_tag) or (None, None) if unavailable.
+        Tuple of (current_version, latest_version) or (None, None) if unavailable.
     """
-    import json
-    import urllib.request
-
-    def get_current_version() -> str | None:
-        """Get current version from pyproject.toml."""
-        try:
-            import tomllib  # Python 3.11+
-        except ImportError:
-            import tomli as tomllib  # type: ignore[import-not-found]  # fallback for older Python
-
-        pyproject_path = _ROOT / "pyproject.toml"
-        if pyproject_path.exists():
-            with open(pyproject_path, "rb") as f:
-                data = tomllib.load(f)
-                return data.get("project", {}).get("version")
-        return None
-
-    def get_latest_release_tag() -> str | None:
-        """Get latest release tag from GitHub API."""
-        try:
-            url = "https://api.github.com/repos/badoriie/revolut-trader/releases/latest"
-            req = urllib.request.Request(url)
-            req.add_header("Accept", "application/vnd.github.v3+json")
-            # nosec B310: HTTPS URL from trusted GitHub API
-            with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310
-                data = json.loads(response.read().decode())
-                return data.get("tag_name")  # e.g., "v0.3.0"
-        except Exception:
-            return None
-
-    return get_current_version(), get_latest_release_tag()
+    current_version = _get_current_version_from_pyproject()
+    latest_tag = _get_latest_github_release(timeout=10)
+    # Latest tag comes with 'v' prefix from some callers, strip it
+    if latest_tag and latest_tag.startswith("v"):
+        latest_tag = latest_tag.lstrip("v")
+    return current_version, latest_tag
 
 
 def _update_from_binary() -> None:
@@ -1120,12 +1152,8 @@ def _update_from_binary() -> None:
     _download_and_install_binary(url, latest_tag)
 
 
-def _update_from_source() -> None:
-    """Update when running from source (git repository)."""
-    print("🔄 Checking for updates...")
-    print()
-
-    # Check if in git repository
+def _verify_git_repository() -> None:
+    """Verify we're in a git repository, exit if not."""
     try:
         subprocess.run(
             ["git", "rev-parse", "--git-dir"],
@@ -1137,6 +1165,70 @@ def _update_from_source() -> None:
         print("❌ Not in a git repository")
         print("   Clone from: https://github.com/badoriie/revolut-trader")
         sys.exit(1)
+
+
+def _get_git_commits(local_ref: str, remote_ref: str) -> tuple[str, str]:
+    """Get local and remote commit SHAs."""
+    local_commit = subprocess.run(
+        ["git", "rev-parse", local_ref],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    remote_commit = subprocess.run(
+        ["git", "rev-parse", remote_ref],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=_ROOT,
+    ).stdout.strip()
+
+    return local_commit, remote_commit
+
+
+def _stash_local_changes() -> bool:
+    """Stash local changes if any exist.
+
+    Returns:
+        True if changes were stashed, False otherwise.
+    """
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=_ROOT,
+    )
+
+    if status.stdout.strip():
+        print("📦 Stashing local changes...")
+        stash_result = subprocess.run(
+            ["git", "stash", "push", "-m", "revt update"],
+            capture_output=True,
+            text=True,
+            cwd=_ROOT,
+        )
+        if stash_result.returncode != 0:
+            print(f"❌ Failed to stash changes:\n{stash_result.stderr.strip()}")
+            print("\n💡 Suggestions:")
+            print("   - Commit your changes: git commit -am 'WIP'")
+            print("   - Discard changes: git reset --hard")
+            print("   - Resolve conflicts and try again")
+            sys.exit(1)
+        print("✓ Changes stashed")
+        print()
+        return True
+
+    return False
+
+
+def _update_from_source() -> None:
+    """Update when running from source (git repository)."""
+    print("🔄 Checking for updates...")
+    print()
+
+    _verify_git_repository()
 
     # Get current branch
     current_branch = subprocess.run(
@@ -1152,21 +1244,7 @@ def _update_from_source() -> None:
     subprocess.run(["git", "fetch", "origin"], check=True, cwd=_ROOT)
 
     # Check if behind
-    local_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=_ROOT,
-    ).stdout.strip()
-
-    remote_commit = subprocess.run(
-        ["git", "rev-parse", f"origin/{current_branch}"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=_ROOT,
-    ).stdout.strip()
+    local_commit, remote_commit = _get_git_commits("HEAD", f"origin/{current_branch}")
 
     print(f"Current branch: {current_branch}")
     print()
@@ -1188,21 +1266,7 @@ def _update_from_source() -> None:
     print(f"📥 {commits_behind} new commit(s) available")
     print()
 
-    # Check for uncommitted changes
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        capture_output=True,
-        text=True,
-        cwd=_ROOT,
-    )
-
-    has_changes = bool(status.stdout.strip())
-
-    if has_changes:
-        print("📦 Stashing local changes...")
-        subprocess.run(["git", "stash", "push", "-m", "revt update"], check=True, cwd=_ROOT)
-        print("✓ Changes stashed")
-        print()
+    had_stashed_changes = _stash_local_changes()
 
     # Pull latest changes
     print(f"📥 Pulling origin/{current_branch}...")
@@ -1215,9 +1279,17 @@ def _update_from_source() -> None:
 
     if result.returncode != 0:
         print(f"❌ Pull failed:\n{result.stderr}")
-        if has_changes:
+        if had_stashed_changes:
             print("\n🔄 Re-applying stashed changes...")
-            subprocess.run(["git", "stash", "pop"], cwd=_ROOT)
+            pop_result = subprocess.run(
+                ["git", "stash", "pop"],
+                capture_output=True,
+                text=True,
+                cwd=_ROOT,
+            )
+            if pop_result.returncode != 0:
+                print(f"⚠️  Failed to re-apply stash:\n{pop_result.stderr}")
+                print("💡 Your changes are still in the stash. Use: git stash pop")
         sys.exit(1)
 
     print("✓ Pulled latest changes")
@@ -1225,7 +1297,7 @@ def _update_from_source() -> None:
         print(result.stdout)
 
     # Re-apply stashed changes if any
-    if has_changes:
+    if had_stashed_changes:
         print("🔄 Re-applying local changes...")
         pop_result = subprocess.run(
             ["git", "stash", "pop"],
@@ -1236,8 +1308,13 @@ def _update_from_source() -> None:
         if pop_result.returncode == 0:
             print("✓ Changes re-applied")
         else:
-            print("⚠️  Conflicts detected — resolve manually")
+            print("⚠️  Conflicts detected while re-applying changes")
             print(pop_result.stdout)
+            print("\n💡 Resolve conflicts manually:")
+            print("   1. git status  (view conflicts)")
+            print("   2. Edit conflicting files")
+            print("   3. git add <files>")
+            print("   4. git stash drop  (once resolved)")
 
     # Update dependencies
     print()
@@ -1290,7 +1367,9 @@ def _add_env_arg(p: argparse.ArgumentParser) -> None:
         "-e",
         choices=["dev", "int", "prod"],
         help=(
-            "Environment (default: prod). Use --env int for paper trading with real market data."
+            "Environment. Auto-detected from git branch (tagged→prod, main→int, other→dev) when running from source, "
+            "or defaults to prod when frozen binary. Override with --env. "
+            "Use --env int for paper trading with real market data."
         ),
     )
 
@@ -1303,37 +1382,57 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
+  # Credentials & Configuration
   revt ops                                    store your Revolut API key
-  revt ops --show                             show credentials + config
+  revt ops --show                             show credentials + config (masked)
   revt ops --status                           check 1Password connection
-
   revt config show                            view trading configuration
-  revt config set RISK_LEVEL aggressive
+  revt config set RISK_LEVEL aggressive       change risk level
   revt config set MAX_CAPITAL 5000            cap how much the bot can trade
+  revt config delete MAX_CAPITAL              remove capital cap
+  revt config --env dev init                  create config with safe defaults
 
-  revt run                                    start live trading
+  # Note: For nested commands (config, db, telegram), --env must come before the subcommand:
+  # ✓ revt config --env dev show
+  # ✗ revt config show --env dev
+
+  # Trading & Backtesting
+  revt run                                    start trading (paper mode by default)
   revt run --strategy momentum --risk moderate
-  revt run --env int                          paper trading (real data, no real trades)
-
+  revt run --env int                          paper trading with real market data
+  revt run --mode live --confirm-live         LIVE TRADING (requires confirmation)
   revt backtest                               30-day backtest
   revt backtest --hf                          high-frequency (1-min candles)
-  revt backtest --compare                     compare all strategies
+  revt backtest --compare                     compare all strategies side-by-side
   revt backtest --matrix                      all strategies × all risk levels
 
+  # API Commands (requires --env int or prod)
   revt api balance                            account balances
   revt api ready                              check API permissions
-  revt api ticker --symbol BTC-EUR
+  revt api ticker --symbol BTC-EUR            get ticker for specific symbol
+  revt api tickers --symbols BTC-EUR,ETH-EUR  get multiple tickers
+  revt api all-tickers                        get all available tickers
+  revt api order-book --symbol BTC-EUR        order book depth
 
-  revt db stats                               database overview
-  revt db analytics --days 60
-  revt db backtests
-  revt db export
+  # Database & Analytics
+  revt db --env dev stats                     database overview
+  revt db --env dev analytics --days 60       trading analytics
+  revt db backtests                           view backtest results
+  revt db export                              export all data to CSV
   revt db report                              full analytics report + charts
+  revt db encrypt-setup                       set up database encryption
+  revt db encrypt-status                      check encryption status
 
-  revt telegram test                          verify Telegram notifications are working
-  revt telegram start                         start always-on Telegram Control Plane
+  # Telegram Control Plane
+  revt telegram test                          verify Telegram is configured
+  revt telegram start                         start always-on control plane
 
+  # Updates
   revt update                                 update revt (preserves data/ and config)
+
+environment variables:
+  REVT_SKIP_UPDATE_CHECK=1                    disable update notifications
+  ENVIRONMENT                                 override env detection (dev/int/prod)
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
@@ -1390,7 +1489,7 @@ examples:
     p_run.add_argument(
         "--confirm-live",
         action="store_true",
-        help="Skip confirmation prompt for live mode (use with --mode live in scripts)",
+        help="⚠️  DANGEROUS: Skip confirmation for live mode (only use in trusted automation scripts)",
     )
     p_run.set_defaults(func=cmd_run)
 

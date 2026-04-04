@@ -1,417 +1,157 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-> **GitHub Copilot users:** see `.github/copilot-instructions.md` for the tool-agnostic equivalent of these instructions. When updating architecture, rules, or conventions here, keep that file in sync.
+> **GitHub Copilot users:** see `.github/copilot-instructions.md`. Keep both files in sync.
 
 ## Commands
 
 **Package manager: `uv`** — always prefix Python commands with `uv run`.
 
 ```bash
-# Install dependencies
-uv sync --extra dev
+uv sync --extra dev          # install dependencies
+make test                    # run tests with coverage
+make lint / format / typecheck / security / check
+make pre-commit              # run all pre-commit hooks
 
-# Run tests with coverage
-make test                    # or: uv run pytest --cov=src --cov-report=term-missing
+# Bot (env auto-detected: tagged→prod, main→int, branch→dev; always paper by default)
+make run                     # STRATEGY=... RISK=... PAIRS=... INTERVAL=...
+make run ENV=prod MODE=live  # LIVE TRADING — requires confirmation
 
-# Run a single test file
-uv run pytest tests/unit/test_risk_manager.py -v
-
-# Run a single test
-uv run pytest tests/unit/test_risk_manager.py::TestClassName::test_name -v
-
-# Lint, format, type-check, security
-make lint                    # ruff check
-make format                  # ruff format + ruff check --fix
-make typecheck               # pyright src/ cli/
-make security                # bandit static security analysis
-make check                   # all of the above + tests
-
-# Run pre-commit hooks on all files
-make pre-commit
-
-# Run the bot (env auto-detected: tagged commit→prod, main→int, other branch→dev)
-# All environments default to paper mode; live trading requires explicit opt-in
-make run                     # env auto-detected; STRATEGY=... RISK=... PAIRS=... INTERVAL=...
-make run ENV=dev             # force dev (mock API, no credentials needed)
-make run ENV=int             # force int (paper trading by default)
-make run ENV=prod            # force prod (paper trading by default)
-make run ENV=prod MODE=live  # LIVE TRADING with real money — requires confirmation
-
-# Telegram Control Plane — always-on process; control bot via Telegram commands
-make telegram                # start control plane (env auto-detected)
-make telegram ENV=int        # force int
-
-# Backtesting (results saved to encrypted DB, not files)
-make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
-make backtest-hf             # high-frequency: 1-min candles (closest to live 5s polling)
-make backtest-compare        # compare all strategies side-by-side (DAYS=... RISK=...)
-make backtest-matrix         # all strategies × all risk levels matrix
-make db-backtests            # view stored results (uses ENV)
-make db-export-csv           # export results to CSV
-
-# Logs (decrypted from database)
-make logs                    # view recent WARNING+ logs (LIMIT=50 LEVEL=... SESSION=...)
-
-# Database (per environment: data/dev.db, data/int.db, data/prod.db)
-make db                      # show database overview (ENV=dev)
-make db-stats                # show database statistics
-make db-analytics            # trading analytics (DAYS=30)
-make db-encrypt-setup        # generate and store encryption key in 1Password
-make db-encrypt-status       # check if encryption is active
-make db-report               # comprehensive analytics report with charts (DAYS=30, DIR=data/reports)
-
-# API utilities (use ENV to select API keys)
-make api-test ENV=int
-make api-ready ENV=int       # check API permissions (view + trade)
-
-# 1Password / credential management (per environment)
-make setup                   # first-time setup: creates items for dev/int/prod
-make ops ENV=dev             # interactively set API key for dev environment
-make opshow ENV=dev          # show stored values for dev (masked)
-make opstatus                # check 1Password CLI status
-make opconfig-show ENV=dev   # show trading configuration for dev
-make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
-```
-
-### `revt` — user-facing CLI (production binary + source runner)
-
-The `revt` binary is built for **Linux x86_64** and **Linux ARM64 (Raspberry Pi 4+)** by the `build-revt` CI job and attached to every GitHub release as a downloadable asset. Users download it, `chmod +x`, put it in their PATH, and use it directly with no Python or uv required. When running as a frozen binary, `revt` always defaults to the `prod` environment.
-
-```bash
-# Build locally (for testing)
-uv run pyinstaller build/revt.spec --distpath dist --workpath build/.pyinstaller
-./dist/revt --help
-```
-
-After `uv sync`, a `revt` command is available. Environment is auto-detected from the git branch (same logic as the Makefile) and can always be overridden with `--env`.
-
-```bash
-# Run the bot
-revt run                                   # paper mode (mock if dev branch, real API if main/prod)
-revt run --env prod                        # paper mode on prod (safe by default)
-revt run --env prod --mode live            # LIVE TRADING — prompts for confirmation
-revt run --env prod --mode live --confirm-live  # bypass confirmation (automation)
-revt run --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR
-
-# Telegram Control Plane
-revt telegram start                        # start always-on Telegram control plane
-revt telegram start --env int              # paper trading control plane
-revt telegram test                         # verify Telegram is configured
+make telegram                # start always-on Telegram Control Plane
 
 # Backtesting
-revt backtest                              # 30-day backtest, market_making, conservative
-revt backtest --hf                         # high-frequency (1-min candles)
-revt backtest --compare                    # all strategies side-by-side
-revt backtest --matrix                     # all strategies × all risk levels
-revt backtest --strategy breakout --days 60 --risk moderate
-
-# Credentials
-revt ops                                   # set API key (interactive)
-revt ops --show                            # show stored credentials + config
-revt ops --status                          # check 1Password CLI status
-revt ops --env prod                        # target prod environment
-
-# Configuration
-revt config show                           # view current config
-revt config show --env prod
-revt config set RISK_LEVEL aggressive
-revt config set MAX_CAPITAL 5000 --env prod
-revt config init --env prod                # create config with safe defaults
-revt config delete MAX_CAPITAL
-
-# API utilities (requires --env int or prod)
-revt api test                              # authenticated connection test
-revt api ready                             # check API permissions
-revt api balance                           # account balances
-revt api ticker --symbol BTC-EUR
-revt api tickers --symbols BTC-EUR,ETH-EUR
-revt api all-tickers
-revt api order-book --symbol BTC-EUR
-revt api candles --symbol BTC-EUR --interval 60
-revt api open-orders
-revt api orders                            # historical orders
-revt api trades --symbol BTC-EUR
-revt api order --order-id <uuid>
+make backtest                # STRATEGY=momentum DAYS=30
+make backtest-hf / backtest-compare / backtest-matrix
 
 # Database
-revt db stats
-revt db analytics --days 60
-revt db backtests --limit 20
-revt db export                             # export to CSV
-revt db report                             # full analytics report + charts
-revt db encrypt-setup
-revt db encrypt-status
+make db / db-stats / db-analytics / db-backtests / db-export-csv
+make db-encrypt-setup / db-encrypt-status
+make db-report               # analytics report + charts (DAYS=30, DIR=data/reports)
+make logs                    # view WARNING+ logs from DB
+
+# 1Password / credentials
+make setup                   # first-time setup (idempotent)
+make ops ENV=dev             # set API key interactively
+make opshow / opstatus / opconfig-show / opconfig-set
+
+# API utilities
+make api-test / api-ready ENV=int
 ```
+
+### `revt` CLI
+
+Production binary (Linux x86_64 / ARM64) shipped with every GitHub release. After `uv sync`, also available as a source runner. Run `revt --help` or `revt <cmd> --help` for full usage. Key commands: `run`, `backtest`, `telegram`, `ops`, `config`, `api`, `db`. Defaults to `prod` when run as a frozen binary.
 
 ## Architecture
 
-**Entry point**: `cli/run.py` (sets `ENVIRONMENT` early) → creates `TradingBot` (`src/bot.py`) → async main loop over trading pairs.
+See `docs/ARCHITECTURE.md` for full detail. Summary:
 
-**Environments & Branches** (`src/config.py`): Three environments (dev, int, prod) with a single `main` branch. Branch flow: `feature branches → PR to main`. The environment follows the branch: feature branches use `dev` (mock API, no credentials), `main` uses `int` (real API), released tags use `prod` (real API). CI enforces this automatically: PRs from feature branches run with `ENVIRONMENT=dev`; post-merge pushes to `main` run with `ENVIRONMENT=int`; the release workflow runs with `ENVIRONMENT=prod`. The `ENVIRONMENT` env var (or `--env` CLI arg) determines which 1Password items and DB file to use.
+- **Entry**: `cli/run.py` → `TradingBot` (`src/bot.py`) → async loop per trading pair
+- **Environments**: `dev` (mock API, no creds) | `int` (real API, paper) | `prod` (real API, paper or live). Branch auto-detection: feature→dev, main→int, tag→prod. Override with `--env`.
+- **Trading mode**: Paper by default everywhere. Live only in prod — requires `TRADING_MODE=live` in 1Password + explicit confirmation. Bypass with `--confirm-live`.
+- **API client**: `create_api_client()` returns `MockRevolutAPIClient` (dev) or `RevolutAPIClient` (int/prod). Both implement identical interfaces.
+- **Loop**: `get_tickers()` (1 call) → `strategy.analyze()` → `executor.execute_signal()` (signal filter + order type) → `risk_manager.validate()` → place order → persist. Portfolio saved every 60 s.
+- **Shutdown**: cancel orders → close losing positions → close profitable via trailing stop (or immediately) → save state. **Guarantee: all bot-opened positions closed before exit.**
+- **Strategies**: 6 implementations (`MarketMaking`, `Momentum`, `MeanReversion`, `MultiStrategy`, `Breakout`, `RangeReversion`). All tunable via 1Password items (`revolut-trader-strategy-{name}`).
+- **Config** (`src/config.py`): Pydantic. `ENVIRONMENT` from `os.environ`. Everything else from 1Password. CLI flags override per-run. Fails fast with actionable errors on missing fields.
+- **Persistence**: SQLite via SQLAlchemy, per-env DB (`data/{env}.db`). Fernet encryption on sensitive fields. WARNING+ logs auto-persisted via loguru sink.
+- **1Password**: `revolut-trader-credentials-{env}`, `revolut-trader-config-{env}`, `revolut-trader-risk-{level}`, `revolut-trader-strategy-{name}`.
+- **Tests**: `tests/conftest.py` sets `ENVIRONMENT=dev`. Safety-critical in `tests/safety/`, financial math in `tests/unit/test_calculations.py`. Coverage ≥ 97% enforced by CI.
+- **CI/CD**: `ci.yml` (lint+test), `sonarcloud.yml`, `backtest.yml`, `release.yml` (commitizen semver + changelog), `diagrams.yml`.
 
-**Trading Mode — Paper by Default**: All environments default to **paper mode**. `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`). **CRITICAL SAFETY: Live trading is ONLY allowed in the `prod` environment.** Attempting to enable live mode in `dev` or `int` (via 1Password or `--mode live` flag) will fail with a clear error. To enable live trading in prod: (1) set `TRADING_MODE=live` in 1Password via `make opconfig-set KEY=TRADING_MODE VALUE=live ENV=prod`, or (2) override per-run with `--mode live` CLI flag. When `TRADING_MODE=live`, the bot requires explicit confirmation (`"Type 'I UNDERSTAND' to proceed"`) before starting; bypass with `--confirm-live` for automation. `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API.
+## Commit Convention
 
-Each environment has separate credentials (`revolut-trader-credentials-{env}`) and config (`revolut-trader-config-{env}`) items in 1Password, and a separate database (`data/{env}.db`). Environment selects **which** credentials/DB to use; trading mode selects **whether** orders execute as simulated or real.
+[Conventional Commits](https://www.conventionalcommits.org/) — enforced by commitizen pre-commit hook.
 
-**Mock API** (`src/api/mock_client.py`): `ENVIRONMENT=dev` uses `MockRevolutAPIClient` — an in-process mock of all 17 API endpoints returning realistic fake data matching `docs/revolut-x-api-docs.md`. No network calls, no credentials, no Ed25519 keys. The `create_api_client()` factory in `src/api/__init__.py` selects mock vs real client based on environment. `int` and `prod` use the real `RevolutAPIClient`. The API client uses `RateLimiter` (`src/utils/rate_limiter.py`) to respect API rate limits.
-
-**Component hierarchy:**
-
-- `TradingBot` (orchestrator) owns: `RevolutAPIClient` or `MockRevolutAPIClient`, `RiskManager`, `OrderExecutor`, `BaseStrategy`, `DatabasePersistence`
-- Each trading loop iteration: batch-fetch all tickers via `get_tickers()` (1 API call) → `strategy.analyze()` → `executor.execute_signal()` (signal strength filter + order type selection) → `risk_manager.validate()` → place order → persist
-- Portfolio state is saved every 60 seconds of wall-clock time (time-based, not iteration-based)
-- Graceful shutdown: `bot.stop()` → `executor.graceful_shutdown(trailing_stop_pct, max_wait_seconds)` (cancel orders → close losing positions immediately → close profitable positions via trailing stop or immediately) → save final state → end DB session. **Guarantee: all bot-opened positions are closed before the bot exits (EUR → trade → EUR contract).**
-
-**Strategies** (`src/strategies/`): All inherit `BaseStrategy`. Six implementations: `MarketMakingStrategy`, `MomentumStrategy`, `MeanReversionStrategy`, `MultiStrategy` (weighted voting), `BreakoutStrategy`, `RangeReversionStrategy`. Each strategy has tunable constants stored in a dedicated 1Password item (`revolut-trader-strategy-{name}`) with fields `INTERVAL`, `MIN_SIGNAL_STRENGTH`, `ORDER_TYPE`, `STOP_LOSS_PCT`, `TAKE_PROFIT_PCT`. These are loaded at startup into `settings.strategy_configs: dict[str, StrategyConfig]` and replace the previously hardcoded module-level dicts. SL/TP overrides only affect those two parameters (not position size) so risk levels remain meaningfully distinct. Each strategy item also accepts optional internal calibration fields (absent = strategy uses its built-in defaults): `momentum` — `FAST_PERIOD`, `SLOW_PERIOD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `market_making` — `SPREAD_THRESHOLD`, `INVENTORY_TARGET`; `mean_reversion` — `LOOKBACK_PERIOD`, `NUM_STD_DEV`, `MIN_DEVIATION`; `breakout` — `LOOKBACK_PERIOD`, `BREAKOUT_THRESHOLD`, `RSI_PERIOD`, `RSI_OVERBOUGHT`, `RSI_OVERSOLD`; `range_reversion` — `BUY_ZONE`, `SELL_ZONE`, `RSI_PERIOD`, `RSI_CONFIRMATION_OVERSOLD`, `RSI_CONFIRMATION_OVERBOUGHT`, `MIN_RANGE_PCT`; `multi_strategy` — `MIN_CONSENSUS`, `WEIGHT_MOMENTUM`, `WEIGHT_BREAKOUT`, `WEIGHT_MARKET_MAKING`, `WEIGHT_MEAN_REVERSION`, `WEIGHT_RANGE_REVERSION`. `make setup` creates every strategy item with sensible defaults; missing items fall back to the same defaults. Adding a strategy requires a new file implementing `BaseStrategy`.
-
-**Configuration** (`src/config.py`): Pydantic-based. `ENVIRONMENT` comes from `os.environ` (infrastructure-level). `TRADING_MODE` is loaded from the environment-specific 1Password config item (optional, defaults to `"paper"`); the `--mode` CLI flag overrides it per-run. When `TRADING_MODE=live`, the bot requires confirmation before starting (bypass with `--confirm-live`). All other trading config (strategy, risk level, pairs, capital) is fetched from the environment-specific 1Password items at startup — there are no code-level defaults. `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never trades with more than this amount (e.g., account holds 50,000 EUR but MAX_CAPITAL=5,000 → bot uses 5,000). `SHUTDOWN_TRAILING_STOP_PCT` is optional — when set (e.g., `0.5` for 0.5%), profitable positions on shutdown wait for a trailing stop before closing; when absent, profitable positions are closed immediately. `SHUTDOWN_MAX_WAIT_SECONDS` is optional — hard timeout (default 120s) before force-closing a profitable position whose trailing stop has not triggered. `LOG_LEVEL` is optional — sets the logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`; default `INFO`); the CLI `--log-level` flag overrides it per-run. `INTERVAL` is optional — sets the trading loop interval in seconds, overriding the per-strategy default; the CLI `--interval` flag overrides it per-run. `BACKTEST_DAYS` is optional — default look-back window in days for all backtest commands (default `30`); CLI `--days` overrides. `BACKTEST_INTERVAL` is optional — default candle width in minutes for backtests (default `60`; must be a valid choice from `[1, 5, 15, 30, 60, 240, 1440, ...]`); CLI `--interval` overrides. `MAKER_FEE_PCT` and `TAKER_FEE_PCT` are optional fee rate overrides (defaults: 0.0 and 0.0009) stored in the config item — update these when Revolut changes its fee schedule. `MAX_ORDER_VALUE` (default 10000) and `MIN_ORDER_VALUE` (default 10) are optional order safety limits in base currency that prevent accidental oversized or dust orders. Risk level parameters (`MAX_POSITION_SIZE_PCT`, `MAX_DAILY_LOSS_PCT`, `STOP_LOSS_PCT`, `TAKE_PROFIT_PCT`, `MAX_OPEN_POSITIONS`) are loaded from the environment-agnostic `revolut-trader-risk-{level}` items and stored in `settings.risk_configs: dict[str, RiskLevelConfig]`. All other CLI flags (`--strategy`, `--risk`, `--pairs`, `--capital`, `--mode`) now fall back to their corresponding 1Password keys (`DEFAULT_STRATEGY`, `RISK_LEVEL`, `TRADING_PAIRS`, `INITIAL_CAPITAL`, `TRADING_MODE`) when not provided on the command line. Config fails fast with actionable error messages if 1Password fields are missing.
-
-**Persistence** (`src/utils/db_persistence.py`): SQLite via SQLAlchemy. Each environment uses its own DB file (`data/dev.db`, `data/int.db`, `data/prod.db`). All data stays in the encrypted database. Writes immediately after each trade and on shutdown. WARNING+ logs are automatically persisted to the database via a loguru sink (`_setup_database_logging` in `src/bot.py`); view with `make logs`. Use `make db-export-csv ENV=prod` for on-demand exports.
-
-**Security**: Separate API keys per environment in 1Password. All sensitive fields are encrypted at the application layer using Fernet symmetric encryption before being written to the database. The encryption key is stored exclusively in 1Password (`DATABASE_ENCRYPTION_KEY` in the environment-specific credentials item). If no key exists, one is auto-generated on first run. Encrypted fields: `SessionDB.trading_pairs`, `LogEntryDB.message`. Categorical fields (`strategy`, `risk_level`, `trading_mode`) are plaintext for SQL filterability — they are not sensitive. No plaintext log files are written to disk.
-
-**1Password** (`src/utils/onepassword.py`): Wraps the `op` CLI. Environment-aware via `get_credentials_item(env)` / `get_config_item(env)` functions. Retrieves API keys, private keys (Ed25519 — public keys are uploaded directly to the Revolut X platform, not stored in 1Password), trading configuration, and the database encryption key from the environment-specific items. Risk level parameters are loaded from the environment-agnostic `revolut-trader-risk-{level}` items (one per risk level: conservative / moderate / aggressive) via `get_risk_item(level)`. Tests use `tests/mocks/mock_onepassword.py` to avoid real 1Password calls.
-
-**Technical indicators** (`src/utils/indicators.py`): SMA, EMA, RSI, Bollinger Bands — all O(1) incremental updates (no history recalculation).
-
-**Execution** (`src/execution/executor.py`): `OrderExecutor` handles order placement, fill tracking, position management, and graceful shutdown via the API client. Before placing any order, `execute_signal` applies two strategy-aware filters: (1) **signal strength threshold** — each strategy has a minimum confidence floor (`_STRATEGY_MIN_SIGNAL_STRENGTH`); signals below it are discarded without placing an order; (2) **order type selection** — speed-critical strategies (momentum, breakout) use MARKET orders; patient strategies use LIMIT orders (`_STRATEGY_ORDER_TYPE`). After each paper fill, `_execute_paper_order` computes `order.commission` via `calculate_fee()` from `src.utils.fees` (0% for LIMIT, 0.09% for MARKET). When `_update_positions` closes or reduces a position, it assigns `order.realized_pnl = gross_pnl - order.commission` so every closing order carries the net-of-fee P&L. The bot's `_process_filled_order` uses `order.commission` to keep `cash_balance` accurate (BUY deducts value + fee; SELL adds value - fee). On shutdown, `graceful_shutdown(trailing_stop_pct, max_wait_seconds)` runs three phases: (1) cancel all pending orders; (2) close losing positions immediately at market; (3) close profitable/breakeven positions via trailing stop wait then market close (or immediately if no trailing stop configured). **Guarantee: `self.positions` is empty when `graceful_shutdown` returns — no bot-opened position is ever left open.** Returns a `ShutdownSummary` so the bot can update its cash balance. Pre-existing crypto (not opened by the bot) is never touched: the SELL guard in `execute_signal` blocks any sell for a symbol with no tracked position.
-
-**Tests** (`tests/`):
-
-- `tests/conftest.py` — shared fixtures, sets `ENVIRONMENT=dev` before `Settings` singleton is created
-- `tests/test_config.py` — configuration loading and validation tests
-- `tests/safety/` — safety-critical tests (order limits, position sizing, loss limits, environment restrictions, graceful shutdown)
-- `tests/safety/test_environment.py` — environment stage safety tests (live mode restricted to prod)
-- `tests/safety/test_graceful_shutdown.py` — graceful shutdown safety tests (order cancellation, all-positions closure, trailing stop logic, timeout force-close)
-- `tests/safety/test_pre_existing_crypto.py` — pre-existing crypto protection tests (SELL guard, shutdown scope)
-- `tests/safety/test_currency_mismatch.py` — trading pair / BASE_CURRENCY mismatch validation tests
-- `tests/safety/test_config_required.py` — required config field validation tests (fail-fast on missing 1Password fields)
-- `tests/safety/test_max_capital.py` — MAX_CAPITAL cap enforcement tests
-- `tests/safety/test_order_limits.py` — order size and position limit safety tests
-- `tests/safety/test_fees_config.py` — fee configuration validation tests
-- `tests/safety/test_risk_config.py` — risk level configuration tests
-- `tests/safety/test_strategy_config.py` — strategy configuration tests
-- `tests/unit/` — component unit tests (calculations, indicators, risk manager, executor, strategies, backtest engine)
-- `tests/mocks/` — mock 1Password for testing (supports per-environment mocks)
-- Coverage must be as high as possible (currently ≥ 97%, enforced by CI and pre-commit)
-
-**CLI** (`cli/`): Entry points for all operations — `run.py` (bot runner), `backtest.py` (single strategy), `backtest_compare.py` (multi-strategy comparison + matrix), `api_test.py` (API connectivity), `db_manage.py` (database management and export), `analytics_report.py` (comprehensive analytics report with charts and improvement suggestions), `telegram_control.py` (always-on Telegram Control Plane), `view_logs.py` (view decrypted WARNING+ logs from the database).
-
-**Analytics** (`cli/analytics_report.py`): Reads the encrypted database and produces a terminal report, a `report.md` markdown file, and PNG charts (requires `--extra analytics`). Computes Sharpe ratio, Sortino ratio, max drawdown, profit factor, per-symbol and per-strategy breakdowns, and rule-based improvement suggestions. Charts: equity curve, drawdown, P&L distribution, symbol performance, backtest strategy comparison. Output goes to `data/reports/` by default. The suggestions engine flags low win rates, high fee drag, excessive drawdown, weak Sharpe, and underperforming symbols. When Telegram is configured, sends the report as a PDF file (via `sendDocument`) if `fpdf2` is installed (`--extra analytics`); falls back to a compact text summary (`notify_report_ready`) when fpdf2 is absent.
-
-**Telegram command listener** (`src/utils/telegram.py`, `src/bot.py`): While the bot is running, a background `asyncio.Task` polls `getUpdates` (long-poll, 25 s timeout) and dispatches incoming `/command` messages from the configured chat. Commands: `/status` (strategy, mode, uptime, P&L), `/balance` (cash + open positions), `/report [days]` (analytics summary via `notify_report_ready`), `/help`. Messages from any other chat are silently ignored. The task is created in `TradingBot.start()` and cancelled in `TradingBot.stop()` before the shutdown sequence. `TelegramNotifier` exposes `get_updates()`, `start_polling()`, and `reply()` for this purpose. `TradingBot.start()` accepts `start_command_listener: bool = True`; pass `False` when the Telegram Control Plane owns the polling loop.
-
-**Telegram Control Plane** (`cli/telegram_control.py`): Always-on process (`make telegram` / `revt telegram start`) that owns the single Telegram polling loop and can start/stop the trading bot on demand. Commands: `/run [strategy] [risk] [pairs,...]` (start bot), `/stop` (graceful shutdown), `/status`, `/balance`, `/report [days]`, `/help`. When the bot is not running, `/status` and `/balance` send a "not running" notice; `/report` queries the database directly. Uses `TradingBot.start(start_command_listener=False)` so there is exactly one polling consumer. Validates Telegram credentials at startup and exits cleanly on SIGTERM/SIGINT.
-
-**CI/CD** (`.github/workflows/`): `ci.yml` (lint, typecheck, security, tests — triggers on PRs to `main` with `ENVIRONMENT=dev` and on post-merge pushes to `main` with `ENVIRONMENT=int`), `sonarcloud.yml` (code scanning on PRs and post-merge pushes to `main`), `backtest.yml` (manual backtest matrix on `int`), `release.yml` (manual production release with `ENVIRONMENT=prod` — commitizen determines next semver from conventional commits, updates `pyproject.toml`, generates `CHANGELOG.md` incrementally, creates the git tag, and publishes a GitHub Release; inputs: `confirm: "I UNDERSTAND"` + optional `increment` override `patch/minor/major`), `diagrams.yml` (auto-generates architecture class diagrams using pyreverse on pushes to `main` or manual trigger; uploads diagrams as artifacts with 90-day retention).
-
-## Commit Message Convention
-
-All commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/). This is enforced by the `commitizen` `commit-msg` pre-commit hook.
-
-**Format:** `<type>[optional scope]: <description>`
-
-| Type       | When to use                               |
-| ---------- | ----------------------------------------- |
-| `feat`     | New feature (triggers minor version bump) |
-| `fix`      | Bug fix (triggers patch version bump)     |
-| `docs`     | Documentation only                        |
-| `refactor` | Code restructuring, no behaviour change   |
-| `test`     | Adding or updating tests                  |
-| `chore`    | Build process, dependencies, tooling      |
-| `perf`     | Performance improvement                   |
-| `ci`       | CI/CD workflow changes                    |
-| `style`    | Formatting, no logic change               |
-
-**Breaking change:** append `!` after the type (`feat!:`) or add `BREAKING CHANGE:` footer. Triggers major version bump.
-
-**Examples:**
-
-```
-feat(strategy): add breakout strategy with ATR-based stops
-fix(executor): prevent duplicate orders on rapid signal changes
-docs: add backtesting guide to README
-chore(deps): upgrade httpx to 0.28
-feat!: replace REST polling with WebSocket feed
-```
-
-**Interactive commit helper:** `uv run cz commit` — prompts for type, scope, and description.
+`<type>[scope]: <description>` — types: `feat` `fix` `docs` `refactor` `test` `chore` `perf` `ci` `style`. Breaking change: `feat!:` or `BREAKING CHANGE:` footer. Use `uv run cz commit` for interactive helper.
 
 ## Mandatory Rules
 
-These are enforced by pre-commit hooks and must be followed:
+### Environment Parity
 
-### Environment Parity — Non-Negotiable
+All environments run **identical code paths** — only data source differs. Never add `if environment == "dev"` logic branches. `if trading_mode == "paper"` is allowed **only** for order execution calls, never for business logic, fee calculation, or accounting. `_execute_paper_order` and `_execute_live_order` must populate identical fields.
 
-All three environments (`dev`, `int`, `prod`) must execute **identical code paths**. Only the data source differs:
+### API Docs Are Law
 
-| Environment | Data source                               | Trading Mode Allowed    |
-| ----------- | ----------------------------------------- | ----------------------- |
-| `dev`       | `MockRevolutAPIClient` (synthetic prices) | Paper only              |
-| `int`       | Real Revolut X API (live market data)     | Paper only              |
-| `prod`      | Real Revolut X API (live market data)     | Paper (default) or Live |
-
-**The rule:** if behaviour X works in `dev` or `int`, it must work exactly the same way in `prod` — and vice versa. Trading mode (paper vs. live) is a separate safety setting controlled by `TRADING_MODE` in 1Password or the `--mode` CLI flag — **not hardcoded per environment**. All environments default to paper mode; live mode is restricted to `prod` only and requires explicit opt-in and confirmation. Any code path that is only exercised in one environment or one trading mode is a hidden bug waiting to surface in production with real money.
-
-**Concrete implications:**
-
-- Never add `if environment == "dev"` branches that skip logic. Paper mode simulates fills locally, but all accounting — `filled_quantity`, `commission`, `realized_pnl` — must be computed by the same formulas as live mode. `if trading_mode == "paper"` checks are allowed **only** for order execution (paper vs. live API calls) — never for business logic, fee calculation, position tracking, or commission accounting.
-- `_execute_paper_order` and `_execute_live_order` must produce orders with the same fields populated. If one sets `commission`, both must set `commission`. If one sets `filled_quantity`, both must set `filled_quantity`.
-- SL/TP triggers, graceful shutdown, Telegram notifications, and trade persistence must fire under the same conditions in every environment.
-- When adding a feature, ask: "Would this behave differently if the environment were prod?" If yes, that is a bug.
-
-**Why this matters:** bugs that only appear in `prod` are dangerous because they involve real money and cannot be safely reproduced. Test coverage in `dev`/`int` is only meaningful if those environments exercise the same logic.
-
-### Revolut X API Docs — The Single Source of Truth
-
-`docs/revolut-x-api-docs.md` is the authoritative reference for **all** API behaviour.
-Every endpoint path, request body shape, response shape, field name, field type, and valid
-enum value must be taken from that document — never guessed, inferred from existing code, or
-assumed from another source.
-
-**The hierarchy is strict and non-negotiable:**
-
-```
-Revolut X API docs  →  tests  →  code
-```
-
-1. **API docs define reality.** If the docs say the order creation response is
-   `{"data": [{"venue_order_id": ..., "state": "new"}]}`, that is what the tests must assert
-   and what the code must produce. Do not let existing code shapes influence what you believe
-   the API returns.
-
-1. **Tests encode the API contract.** Every field name, every valid enum string, every
-   response envelope must appear in tests exactly as the docs describe them. A test that uses
-   `"state": "open"` when the API only allows `"new" | "pending_new" | "partially_filled" | "filled" | "cancelled" | "rejected" | "replaced"` is a wrong test — fix the test first.
-
-1. **Code must pass the tests.** Implementation details (domain models, mappers, client
-   methods) are written or corrected to make the API-aligned tests pass — never the reverse.
-
-**Practical checklist before touching any API-related code or test:**
-
-- Open `docs/revolut-x-api-docs.md` and locate the relevant endpoint section.
-- Verify the HTTP method, path, required/optional params, and exact response shape.
-- Confirm every enum value used in tests (`"new"`, `"buy"`, `"limit"`, …) appears verbatim
-  in the docs.
-- If existing code or tests contradict the docs, the docs win — update code and tests.
+`docs/revolut-x-api-docs.md` is the **single source of truth**. Hierarchy: `API docs → tests → code`. Every field name, enum value, and response shape must match the docs exactly. If code contradicts docs, fix the code.
 
 ### TDD — Non-Negotiable
 
-Write tests **first**, then code. Every new feature or fix:
-
-1. Consult `docs/revolut-x-api-docs.md` to establish the API contract.
-1. Write the test against the API contract → confirm it fails.
-1. Write minimal code → confirm it passes.
-1. Refactor if needed.
-
-Safety-critical tests go in `tests/safety/`, financial math in `tests/unit/test_calculations.py`, everything else in `tests/unit/`.
+1. Consult `docs/revolut-x-api-docs.md` for the contract
+1. Write failing test
+1. Write minimal code to pass
+1. Refactor if needed
 
 ### Financial Calculations — Always `Decimal`
 
 ```python
-# NEVER
-price: float = 100.5
-
-# ALWAYS
-from decimal import Decimal
-
-price: Decimal = Decimal("100.5")
+# NEVER: price: float = 100.5
+# ALWAYS: price: Decimal = Decimal("100.5")
 ```
 
-All monetary columns in the ORM use `Numeric(20, 10)` — never `Float`. Never cast financial values with `float()` before storing.
+ORM monetary columns: `Numeric(20, 10)` — never `Float`. Never `float()` before storing.
 
 ### Configuration — No Code Defaults
 
-**Any variable the user might want to control must live in 1Password — no exceptions.** This includes trading parameters, strategy tuning constants, runtime behaviour switches, and optional feature flags. If you are adding a constant that a user could reasonably want to change without modifying source code, it belongs in a 1Password item with a corresponding field in `Settings`, a fallback in `make setup`, and an entry in the docs. Hardcoding it in Python is forbidden.
-
-**The complete rule hierarchy:**
-
-1. **1Password is the single source of truth** for all user-controllable values. CLI flags (`--strategy`, `--risk`, `--interval`, `--log-level`, etc.) may override per-run, but the 1Password value is the standing default.
-1. **`make setup` must create every field** with a sensible default value so a fresh install works immediately without manual configuration.
-1. **Idempotent "add if missing" checks** must be present in `make setup` so re-running it on an existing vault backfills any new fields added by future changes.
-1. **`config.py` loads and validates** every field. Required fields raise `RuntimeError` with a `make opconfig-set` fix command. Optional fields fall back gracefully (never silently ignore bad values).
-1. **`make opshow` must display** every new field so users can verify their configuration.
-
-Trading config must come from 1Password exclusively. One exception:
-
-- `ENVIRONMENT` — comes from `os.environ` (set by the Makefile or `--env` CLI arg) because it must be known before 1Password items can be resolved.
-
-`TRADING_MODE` is stored in the environment-specific 1Password config item (optional, defaults to `"paper"`). `INITIAL_CAPITAL` is only required for paper mode; live mode fetches the real balance from the API. `MAX_CAPITAL` is optional for all environments — when set, it caps the cash balance at startup so the bot never uses more than this amount. `SHUTDOWN_TRAILING_STOP_PCT` (optional, e.g. `0.5`) — trailing stop percentage for profitable positions on shutdown. `SHUTDOWN_MAX_WAIT_SECONDS` (optional, e.g. `120`) — hard timeout before force-closing profitable positions on shutdown. If a required field is missing, raise a `RuntimeError` with instructions on how to fix it (e.g., `make opconfig-set KEY=... VALUE=... ENV=dev`). Never silently fall back to a hardcoded default.
+All user-controllable values live in 1Password. `make setup` must create every field (idempotent). `config.py` validates all fields — required fields raise `RuntimeError` with a fix command; optional fields fall back gracefully. `ENVIRONMENT` is the only exception (from `os.environ`).
 
 ### Database Encryption — Always On
 
-Database encryption is mandatory. `DatabaseEncryption` auto-generates a key in 1Password if none exists. Never disable encryption or add a plaintext fallback. Only encrypt genuinely sensitive fields — not categoricals that need SQL filtering.
+`DatabaseEncryption` auto-generates a key in 1Password if none exists. Never disable or add plaintext fallback. Encrypt only sensitive fields — not categoricals used for SQL filtering.
 
 ### No Plaintext Files for Sensitive Data
 
-- No log files on disk — logs go to the encrypted database via `save_log_entry()`
-- No JSON result exports — backtest results go to the encrypted database
-- Use `make db-export-csv` for on-demand exports when needed
+Logs → encrypted DB (`save_log_entry()`). Backtest results → encrypted DB. Use `make db-export-csv` for on-demand exports.
 
-### All Functions — Type Hints + Docstrings
+### Code Quality
 
-Every public function needs type annotations on all parameters and return value, plus a docstring explaining what it does and (for critical functions) why it matters.
+- All public functions: type hints + docstring
+- Cognitive complexity ≤ 15 (SonarCloud). Extract helpers, use early returns, avoid deep nesting.
 
-### Cognitive Complexity — Maximum 15
+### Documentation — Always Updated
 
-All functions must have a cognitive complexity of **at most 15** (SonarCloud standard). When a function exceeds this threshold:
+Every change must update relevant docs. Not optional — a change is not done until docs are updated.
 
-1. **Extract helper methods** — break down complex logic into focused, single-responsibility functions
-1. **Use early returns** — reduce nesting by returning early for edge cases
-1. **Avoid deep nesting** — prefer flat, linear control flow over nested if/else chains
-1. **Limit conditionals** — keep the number of decision points low
-
-Keeping functions simple improves maintainability, testability, and readability. Each helper function should be independently testable and reusable.
-
-### Documentation Updates — Always, No Exceptions
-
-Every code change **must** include corresponding documentation updates. This is not optional — treat documentation as part of task completion. A change is not done until the docs are updated.
-
-- `README.md` — feature additions, configuration changes, usage instructions
-- `CHANGELOG.md` — auto-generated from GitHub Releases by the release workflow (do not edit manually)
-- Inline docstrings — logic changes, new functions, modified behavior
-- `CLAUDE.md` — architectural changes, new components, workflow changes
-- `.github/copilot-instructions.md` — keep in sync with `CLAUDE.md` (tool-agnostic sections)
-- `docs/END_USER_GUIDE.md` — user-facing changes: new config keys, new commands, changed behavior
-- `docs/DEVELOPER_GUIDE.md` — developer-facing changes: new make commands, setup instructions
-- `docs/` files — API changes, strategy changes, development guidelines
-
-Claude Code must handle this proactively without being asked.
+- `README.md`, inline docstrings, `CLAUDE.md`, `.github/copilot-instructions.md`
+- `docs/END_USER_GUIDE.md` (user-facing changes), `docs/DEVELOPER_GUIDE.md` (dev changes)
 
 ## Key Files
 
-| File                                  | Purpose                                                                                                                                                                                                                                  |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/bot.py`                          | Main orchestrator — start here to understand flow                                                                                                                                                                                        |
-| `src/config.py`                       | Pydantic config + 1Password loading                                                                                                                                                                                                      |
-| `src/api/client.py`                   | Real Revolut X API client (Ed25519 auth, httpx)                                                                                                                                                                                          |
-| `src/api/mock_client.py`              | Mock API client for dev environment (no real API calls)                                                                                                                                                                                  |
-| `src/models/domain.py`                | Core domain models (Position, Order, Trade, Signal, etc.)                                                                                                                                                                                |
-| `src/models/db.py`                    | SQLAlchemy 2.0 ORM models (SQLite, Numeric columns, WAL mode)                                                                                                                                                                            |
-| `src/risk_management/risk_manager.py` | Risk validation and position sizing                                                                                                                                                                                                      |
-| `src/execution/executor.py`           | Order execution and position management                                                                                                                                                                                                  |
-| `src/strategies/base_strategy.py`     | Abstract base all strategies implement                                                                                                                                                                                                   |
-| `src/utils/onepassword.py`            | 1Password CLI wrapper (environment-aware item names)                                                                                                                                                                                     |
-| `src/utils/db_persistence.py`         | SQLAlchemy session management, all CRUD operations + CSV export                                                                                                                                                                          |
-| `src/utils/db_encryption.py`          | Fernet encryption; key auto-generated in 1Password                                                                                                                                                                                       |
-| `src/utils/indicators.py`             | Technical indicators (SMA, EMA, RSI, Bollinger Bands)                                                                                                                                                                                    |
-| `src/utils/rate_limiter.py`           | API rate limiting                                                                                                                                                                                                                        |
-| `src/utils/fees.py`                   | Trading fee constants and `calculate_fee()` — single source of truth for the Revolut X fee schedule (0% maker / 0.09% taker)                                                                                                             |
-| `src/utils/telegram.py`               | Telegram notifier: push notifications + `get_updates`/`start_polling`/`reply` for two-way bot command listener (`/status`, `/balance`, `/report`, `/help`)                                                                               |
-| `src/backtest/engine.py`              | Backtest engine — mirrors live trading: per-strategy risk overrides, signal strength filter, per-strategy order type (MARKET/LIMIT), intra-bar SL/TP via candle high/low, LIMIT fill verification, 0.1% spread, taker fees, Sharpe ratio |
-| `tests/conftest.py`                   | Shared fixtures, ENVIRONMENT=dev setup                                                                                                                                                                                                   |
-| `tests/mocks/mock_onepassword.py`     | Use this in tests instead of real 1Password                                                                                                                                                                                              |
-| `docs/revolut-x-api-docs.md`          | Revolut X API reference (source of truth for all API code)                                                                                                                                                                               |
-| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards, contribution rules                                                                                                                                                                                       |
-| `docs/ARCHITECTURE.md`                | Component details and data flow                                                                                                                                                                                                          |
-| `docs/BACKTESTING.md`                 | Backtesting guide, metrics, interpretation                                                                                                                                                                                               |
-| `docs/END_USER_GUIDE.md`              | Quick start for end users: download binary, configure, trade                                                                                                                                                                             |
-| `docs/DEVELOPER_GUIDE.md`             | Developer guide: setup, configuration, advanced usage, make commands                                                                                                                                                                     |
-| `docs/1PASSWORD.md`                   | Credential and configuration setup, commands, troubleshooting                                                                                                                                                                            |
-| `cli/analytics_report.py`             | Comprehensive analytics report: Sharpe/Sortino/drawdown/profit factor, per-symbol/strategy tables, rule-based suggestions, PNG charts (matplotlib optional), optional Telegram PDF notification (fpdf2 optional — falls back to text)    |
-| `cli/telegram_control.py`             | Always-on Telegram Control Plane (`make telegram` / `revt telegram start`); owns the polling loop; handles /run /stop /status /balance /report /help; starts TradingBot with `start_command_listener=False`                              |
-| `cli/view_logs.py`                    | View decrypted WARNING/ERROR/CRITICAL logs from the database (`make logs`); supports level/session filtering and `--follow` tail mode                                                                                                    |
-| `cli/revt.py`                         | `revt` CLI entry point — polished user-facing command replacing all non-development make targets; defaults to `prod` when running as a frozen binary; delegates to existing CLI modules without subprocess overhead                      |
-| `build/revt.spec`                     | PyInstaller spec for building the standalone `revt` binary; used by the `build-revt` CI job to produce `revt-linux-x86_64` and `revt-linux-arm64` release assets                                                                         |
+| File                                  | Purpose                                                    |
+| ------------------------------------- | ---------------------------------------------------------- |
+| `src/bot.py`                          | Main orchestrator                                          |
+| `src/config.py`                       | Pydantic config + 1Password loading                        |
+| `src/api/client.py`                   | Real Revolut X API client                                  |
+| `src/api/mock_client.py`              | Mock client for dev                                        |
+| `src/models/domain.py`                | Core domain models                                         |
+| `src/models/db.py`                    | SQLAlchemy ORM models                                      |
+| `src/risk_management/risk_manager.py` | Risk validation + position sizing                          |
+| `src/execution/executor.py`           | Order execution + position management                      |
+| `src/strategies/base_strategy.py`     | Abstract base for strategies                               |
+| `src/utils/onepassword.py`            | 1Password CLI wrapper                                      |
+| `src/utils/db_persistence.py`         | SQLAlchemy CRUD + CSV export                               |
+| `src/utils/db_encryption.py`          | Fernet encryption                                          |
+| `src/utils/indicators.py`             | SMA, EMA, RSI, Bollinger Bands (O(1) incremental)          |
+| `src/utils/fees.py`                   | Fee constants + `calculate_fee()` (0% maker / 0.09% taker) |
+| `src/utils/telegram.py`               | Telegram notifier + command listener                       |
+| `src/utils/rate_limiter.py`           | API rate limiting                                          |
+| `src/backtest/engine.py`              | Backtest engine (mirrors live trading)                     |
+| `tests/conftest.py`                   | Shared fixtures, `ENVIRONMENT=dev`                         |
+| `tests/mocks/mock_onepassword.py`     | Mock 1Password for tests                                   |
+| `cli/revt.py`                         | `revt` CLI entry point                                     |
+| `cli/run.py`                          | Bot runner (--env, --strategy, --risk)                     |
+| `cli/backtest.py`                     | Single strategy backtest                                   |
+| `cli/backtest_compare.py`            | Multi-strategy comparison + matrix                         |
+| `cli/api_test.py`                     | API connectivity and endpoint testing                      |
+| `cli/db_manage.py`                    | Database management and export                             |
+| `cli/analytics_report.py`             | Analytics report (Sharpe, drawdown, charts, Telegram PDF)  |
+| `cli/telegram_control.py`             | Always-on Telegram Control Plane                           |
+| `cli/view_logs.py`                    | View decrypted logs from DB                                |
+| `cli/validators.py`                   | Input validation helpers for CLI                           |
+| `build/revt.spec`                     | PyInstaller spec for `revt` binary                         |
+| `docs/revolut-x-api-docs.md`          | **API reference — source of truth**                        |
+| `docs/ARCHITECTURE.md`                | Component details and data flow                            |
+| `docs/DEVELOPMENT_GUIDELINES.md`      | TDD workflow, coding standards                             |
+| `docs/BACKTESTING.md`                 | Backtesting guide                                          |
+| `docs/END_USER_GUIDE.md`              | End-user quick start                                       |
+| `docs/DEVELOPER_GUIDE.md`             | Developer setup + advanced usage                           |
+| `docs/1PASSWORD.md`                   | Credential setup + troubleshooting                         |

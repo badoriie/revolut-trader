@@ -119,6 +119,19 @@ Get notifications and control the bot from your phone:
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) → get token
 
+1. **Set up bot commands** (in @BotFather, select your bot and run `/setcommands`, then paste):
+
+   ```
+   run - Start the trading bot (optional: strategy, risk, pairs)
+   stop - Stop the trading bot gracefully
+   status - Show bot status and session P&L
+   balance - Show cash balance and open positions
+   report - Generate analytics report (optional: days, default 30)
+   help - Show list of available commands
+   ```
+
+   This enables autocomplete in Telegram when typing `/`.
+
 1. Get your chat ID with [@getidsbot](https://t.me/getidsbot)
 
 1. Store them:

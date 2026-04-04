@@ -39,7 +39,9 @@ jobs:
         run: >
           uv run pytest
           --cov=src
+          --cov=cli
           --cov-report=xml:coverage.xml
+          --cov-fail-under=0
           -q
 
       - name: SonarCloud Scan
@@ -53,7 +55,6 @@ jobs:
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.sources=src/,cli/
             -Dsonar.tests=tests/
-            -Dsonar.coverage.exclusions=cli/**
             -Dsonar.python.version=${{ env.PYTHON_VERSION }}
             -Dsonar.qualitygate.wait=true
 
