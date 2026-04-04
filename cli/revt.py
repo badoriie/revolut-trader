@@ -588,6 +588,21 @@ def _mask_secret(val: str) -> str:
     return "(empty)"
 
 
+def _safe_mask(raw: str) -> str:
+    """
+    Apply secret masking and enforce that no more than a small suffix of the
+    secret is ever exposed. This ensures nothing close to the full secret is
+    printed, even if _mask_secret is relaxed in the future.
+    """
+    masked = _mask_secret(raw)
+    # As an extra safety net, only allow at most the last 4 characters to be visible.
+    # Everything else is replaced with '*' so the original secret cannot be reconstructed.
+    # Note: _mask_secret always returns a string, so no None check needed
+    if len(masked) <= 4:
+        return "*" * len(masked)
+    return "*" * (len(masked) - 4) + masked[-4:]
+
+
 def _ops_show(env: str) -> None:
     """Print stored credentials and configuration (secrets masked)."""
     if not _check_op():
@@ -616,7 +631,7 @@ def _ops_show(env: str) -> None:
                 "--reveal",
             )
             if r.returncode == 0:
-                print(f"  {field:<28}  {_mask_secret(r.stdout.strip())}")
+                print(f"  {field:<28}  {_safe_mask(r.stdout.strip())}")
     r = _op(
         "item",
         "get",
