@@ -15,6 +15,7 @@ class TestDatabaseLogging:
         """Create a DatabasePersistence instance for testing."""
         db = DatabasePersistence()
         yield db
+        db.engine.pool.dispose()
         db.engine.dispose()
 
     def test_setup_database_logging_returns_sink_id(self, persistence):
