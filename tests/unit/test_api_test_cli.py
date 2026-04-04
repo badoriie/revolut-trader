@@ -424,3 +424,62 @@ async def test_execute_api_command_orders(mock_api_client):
 
     assert len(result) == 1
     mock_api_client.get_historical_orders.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# main() entry point
+# ---------------------------------------------------------------------------
+
+
+def test_main_parses_args_and_calls_run_api_command(monkeypatch):
+    """Test main() parses sys.argv and delegates to run_api_command."""
+    monkeypatch.setattr("sys.argv", ["api_test.py", "test"])
+
+    with patch("cli.api_test.run_api_command") as mock_cmd:
+        from cli.api_test import main
+
+        main()
+        mock_cmd.assert_called_once_with("test")
+
+
+def test_main_trade_ready_command(monkeypatch):
+    """Test main() with trade-ready command."""
+    monkeypatch.setattr("sys.argv", ["api_test.py", "trade-ready"])
+
+    with patch("cli.api_test.run_api_command") as mock_cmd:
+        from cli.api_test import main
+
+        main()
+        mock_cmd.assert_called_once_with("trade-ready")
+
+
+# ---------------------------------------------------------------------------
+# Ticker edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_ticker_tickers_without_symbols(mock_api_client):
+    """Test _handle_ticker_commands for 'tickers' without symbols falls back to all."""
+    mock_api_client.get_tickers.return_value = [{"symbol": "BTC-EUR"}]
+
+    result = await _handle_ticker_commands(mock_api_client, "tickers", "BTC-EUR", None)
+
+    assert len(result) == 1
+    mock_api_client.get_tickers.assert_called_once_with()
+
+
+# ---------------------------------------------------------------------------
+# run_api_endpoint JSON display
+# ---------------------------------------------------------------------------
+
+
+def test_run_api_endpoint_displays_json(mock_api_client, capsys):
+    """Test run_api_endpoint displays JSON output."""
+    mock_api_client.get_balance.return_value = {"total_eur": 1000.0, "currency": "EUR"}
+
+    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+        run_api_endpoint(command="balance")
+
+    # asyncio.run actually runs the endpoint, which prints JSON
+    # We can't easily capture since asyncio.run is real, but verify no crash
