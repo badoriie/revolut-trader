@@ -530,13 +530,31 @@ While the bot is running it also **listens for commands** you send directly in t
 ### Set up a bot
 
 1. Open Telegram and message [@BotFather](https://t.me/BotFather)
+
 1. Send `/newbot` and follow the prompts — copy the **API token** you receive
+
+1. **Set up bot commands** (in @BotFather, select your bot and run `/setcommands`, then paste):
+
+   ```
+   run - Start the trading bot (optional: strategy, risk, pairs)
+   stop - Stop the trading bot gracefully
+   status - Show bot status and session P&L
+   balance - Show cash balance and open positions
+   report - Generate analytics report (optional: days, default 30)
+   help - Show list of available commands
+   ```
+
+   This enables autocomplete in Telegram when typing `/` — users can see all available commands with descriptions.
+
 1. Send a message to your new bot (needed to open the chat)
+
 1. Retrieve your **chat ID**:
+
    ```bash
    curl "https://api.telegram.org/bot<TOKEN>/getUpdates"
    # Look for "chat":{"id": ...} in the response
    ```
+
    For a private channel, add the bot as admin and use the channel's negative ID (e.g. `-100123456789`).
 
 ### Store credentials in 1Password

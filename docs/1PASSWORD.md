@@ -127,6 +127,22 @@ The bot supports Telegram notifications and a control plane for remote managemen
    - Run `/newbot` and follow the instructions
    - Copy the bot token (starts with `6xxxxxx:...`)
 
+1. **Set Up Bot Commands (Optional but Recommended):**
+
+   - In your chat with @BotFather, select your bot and run `/setcommands`
+   - Paste the following command list:
+
+   ```
+   run - Start the trading bot (optional: strategy, risk, pairs)
+   stop - Stop the trading bot gracefully
+   status - Show bot status and session P&L
+   balance - Show cash balance and open positions
+   report - Generate analytics report (optional: days, default 30)
+   help - Show list of available commands
+   ```
+
+   - This enables autocomplete in Telegram when typing `/` — users can see all available commands with descriptions
+
 1. **Get Your Chat ID:**
 
    - Add your bot to the desired group or start a chat with it
@@ -145,10 +161,11 @@ op item edit revolut-trader-config-int \
   TELEGRAM_REPORTS_ENABLED[text]="true"
 ```
 
-4. **Verify:**
+5. **Verify:**
    - Run `make telegram ENV=int` to start the Telegram control plane
    - Run `make run` or `make run ENV=int` and check for Telegram notifications
    - Use `/status`, `/balance`, `/report` commands in your Telegram chat
+   - Type `/` in your Telegram chat to see the autocomplete menu with all bot commands
 
 ### How the Bot Uses Telegram Config
 

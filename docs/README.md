@@ -7,6 +7,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md)                     | Component hierarchy, data flow, key files, safety layers                   |
 | [DEVELOPMENT_GUIDELINES.md](DEVELOPMENT_GUIDELINES.md) | TDD workflow, coding standards, testing, performance, pre-commit checklist |
 | [1PASSWORD.md](1PASSWORD.md)                           | Credential & configuration setup, commands, troubleshooting                |
+| [TELEGRAM_BOT_COMMANDS.md](TELEGRAM_BOT_COMMANDS.md)   | BotFather command list setup (copy-paste ready)                            |
 | [BACKTESTING.md](BACKTESTING.md)                       | Backtest engine usage, metrics, interpreting results                       |
 | [revolut-x-api-docs.md](revolut-x-api-docs.md)         | **Single source of truth** for all Revolut X API behaviour                 |
 
