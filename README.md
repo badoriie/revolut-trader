@@ -283,7 +283,8 @@ revolut-trader/
 │   ├── db_manage.py          # Database management and export
 │   ├── analytics_report.py   # Comprehensive analytics report with charts
 │   ├── telegram_control.py   # Telegram Control Plane (always-on bot commands)
-│   └── view_logs.py          # View decrypted logs from database
+│   ├── view_logs.py          # View decrypted logs from database
+│   └── validators.py         # Input validation helpers for CLI
 ├── build/                    # Build configuration
 │   └── revt.spec             # PyInstaller spec for revt binary
 ├── tests/
