@@ -35,6 +35,8 @@ on:
 
 permissions:
   contents: write
+  attestations: write
+  id-token: write
 
 concurrency:
   group: release-prod
@@ -284,6 +286,13 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/revt-linux-arm64
+            dist/revt-linux-x86_64
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -306,7 +315,15 @@ jobs:
             echo "- Type Check"
             echo "- Security Scan"
             echo "- Tests (prod, ≥97% coverage)"
+            echo "- Artifact Attestations Generated"
             echo ""
             echo "**Tag:** \`$TAG\`"
             echo "**Release:** [${TAG}](../../releases/tag/${TAG})"
+            echo ""
+            echo "### Artifact Attestations"
+            echo ""
+            echo "All release binaries include build provenance attestations that can be verified using:"
+            echo '```bash'
+            echo "gh attestation verify <artifact> --owner badoriie"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

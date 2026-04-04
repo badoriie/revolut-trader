@@ -68,6 +68,13 @@ curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt
   -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
 ```
 
+**Security**: All release binaries include [build provenance attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds). Verify authenticity:
+
+```bash
+# Install GitHub CLI if needed: https://cli.github.com/
+gh attestation verify revt-linux-x86_64 --owner badoriie
+```
+
 Then:
 
 ```bash
@@ -412,6 +419,25 @@ make api-test   # test API connectivity
 | [1Password Setup](docs/1PASSWORD.md)                     | Credential and configuration management                |
 | [Telegram Bot Commands](docs/TELEGRAM_BOT_COMMANDS.md)   | BotFather command list setup (copy-paste ready)        |
 | [Revolut X API Docs](docs/revolut-x-api-docs.md)         | API reference (source of truth for all API code)       |
+| [Security Policy](SECURITY.md)                           | Vulnerability reporting, security best practices       |
+
+## Security
+
+### Vulnerability Reporting
+
+If you discover a security vulnerability, please report it via [GitHub Security Advisories](https://github.com/badoriie/revolut-trader/security/advisories). See [SECURITY.md](SECURITY.md) for our full security policy.
+
+### Security Features
+
+- **Encrypted database**: All sensitive data encrypted at rest using Fernet (AES-128)
+- **1Password integration**: Credentials stored securely in 1Password, never in code or config files
+- **Build attestations**: All release binaries include provenance attestations verifiable with `gh attestation verify`
+- **Environment isolation**: Separate API keys and databases for dev, integration, and production
+- **Paper mode default**: All environments default to paper trading unless explicitly enabled
+- **Ed25519 authentication**: Cryptographic signatures for all Revolut X API requests
+- **Rate limiting**: Built-in API rate limiter to prevent throttling
+
+See [SECURITY.md](SECURITY.md) for comprehensive security best practices.
 
 ## Warnings
 
