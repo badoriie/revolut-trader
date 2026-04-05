@@ -274,7 +274,7 @@ The backtest engine (`src/backtest/engine.py`) mirrors live trading with histori
 
 ```bash
 revt backtest                 # single strategy, 30 days, 1h candles
-revt backtest --hf            # high-frequency: 1-min candles
+revt backtest --interval 1    # high-frequency: 1-min candles
 revt backtest --compare       # all strategies side-by-side
 revt backtest --matrix        # all strategies × all risk levels
 ```
@@ -289,12 +289,12 @@ ______________________________________________________________________
 | ------------- | ------------------------------------- | ----------------------------------------------------------------- |
 | **CLI**       |                                       |                                                                   |
 |               | `cli/revt.py`                         | User-facing CLI — production binary entry point                   |
-|               | `cli/run.py`                          | Bot runner — starts trading loop                                  |
-|               | `cli/telegram_control.py`             | Always-on Telegram control plane                                  |
-|               | `cli/backtest.py`                     | Single-strategy backtest                                          |
-|               | `cli/backtest_compare.py`             | Multi-strategy comparison & matrix                                |
-|               | `cli/analytics_report.py`             | Comprehensive analytics: Sharpe, drawdown, suggestions, charts    |
-|               | `cli/view_logs.py`                    | View decrypted logs from database                                 |
+|               | `cli/commands/run.py`                 | Bot runner — starts trading loop                                  |
+|               | `cli/commands/telegram.py`            | Always-on Telegram control plane                                  |
+|               | `cli/commands/backtest.py`            | Single-strategy backtest                                          |
+|               | `cli/commands/backtest_compare.py`    | Multi-strategy comparison & matrix                                |
+|               | `cli/utils/analytics_report.py`       | Comprehensive analytics: Sharpe, drawdown, suggestions, charts    |
+|               | `cli/utils/view_logs.py`              | View decrypted logs from database                                 |
 | **Core**      |                                       |                                                                   |
 |               | `src/bot.py`                          | Main orchestrator — ties all components together                  |
 |               | `src/config.py`                       | Pydantic settings, loaded from 1Password                          |
