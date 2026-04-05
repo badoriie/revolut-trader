@@ -116,8 +116,8 @@ For development tasks (tests, linting, formatting), use `just` commands. See [De
 ```bash
 revt backtest                                  # 30 days, default strategy
 revt backtest --strategy momentum --days 90    # specific strategy and period
-revt backtest --hf                             # high-frequency: 1-min candles (closest to live 5s polling)
-revt backtest --hf --strategy breakout --days 7 # high-frequency with specific strategy
+revt backtest --interval 1                     # high-frequency: 1-min candles (closest to live polling)
+revt backtest --interval 1 --strategy breakout --days 7 # high-frequency with specific strategy
 revt db backtests                              # view stored results
 revt db export                                 # export to CSV
 ```
@@ -285,15 +285,18 @@ revolut-trader/
 │   └── bot.py                # Main orchestrator
 ├── cli/                      # CLI entry points
 │   ├── revt.py               # Main CLI tool (revt command)
-│   ├── run.py                # Bot runner (--env, --strategy, --risk)
-│   ├── backtest.py           # Single strategy backtest
-│   ├── backtest_compare.py   # Multi-strategy comparison + matrix
-│   ├── api_test.py           # API connectivity and endpoint testing
-│   ├── db_manage.py          # Database management and export
-│   ├── analytics_report.py   # Comprehensive analytics report with charts
-│   ├── telegram_control.py   # Telegram Control Plane (always-on bot commands)
-│   ├── view_logs.py          # View decrypted logs from database
-│   └── validators.py         # Input validation helpers for CLI
+│   ├── commands/             # Command handlers
+│   │   ├── run.py            # Bot runner (--strategy, --risk, --mode)
+│   │   ├── backtest.py       # Single strategy backtest
+│   │   ├── backtest_compare.py # Multi-strategy comparison + matrix
+│   │   ├── api.py            # API connectivity and endpoint testing
+│   │   ├── db.py             # Database management and export
+│   │   └── telegram.py       # Telegram bot utilities
+│   └── utils/                # CLI utilities
+│       ├── analytics_report.py # Comprehensive analytics report with charts
+│       ├── env_detect.py     # Environment auto-detection
+│       ├── validators.py     # Input validation helpers
+│       └── view_logs.py      # View decrypted logs from database
 ├── build/                    # Build configuration
 │   └── revt.spec             # PyInstaller spec for revt binary
 ├── tests/
@@ -436,6 +439,7 @@ revt api test       # test API connectivity
 | [Telegram Bot Commands](docs/TELEGRAM_BOT_COMMANDS.md)   | BotFather command list setup (copy-paste ready)        |
 | [Revolut X API Docs](docs/revolut-x-api-docs.md)         | API reference (source of truth for all API code)       |
 | [Security Policy](SECURITY.md)                           | Vulnerability reporting, security best practices       |
+| [Reports](reports/)                                      | Audit reports and analysis (documentation, code, security) |
 
 ## Security
 

@@ -103,6 +103,11 @@ check: lint format typecheck security test
 env:
     @uv run python -c "from cli.utils.env_detect import detect_env; env = detect_env(); print(f'Current environment: {env}')"
 
+# Sync CLAUDE.md to .github/copilot-instructions.md
+sync-copilot:
+    @cp CLAUDE.md .github/copilot-instructions.md
+    @echo "Synced CLAUDE.md → .github/copilot-instructions.md"
+
 # Generate class diagrams using pyreverse
 diagrams:
     #!/usr/bin/env bash

@@ -1,4 +1,8 @@
 {
+  "autoMemoryEnabled": true,
+  "enabledPlugins": {
+    "pyright-lsp@claude-plugins-official": true
+  },
   "hooks": {
     "PostToolUse": [
       {
@@ -6,8 +10,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "FILE=$(jq -r '.tool_input.file_path // .tool_response.file_path // empty' 2>/dev/null); echo \"$FILE\" | grep -qE '^src/strategies/[^/]+\\.py$|^src/utils/indicators\\.py$' && printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"REMINDER: You just modified a strategy or indicator file (%s). Review docs/USER_GUIDE.md section 14 (Trading Terminology) — if you added a new strategy, add it to the strategies table and note which indicators it uses; if you added a new indicator, add it to the Indicators table.\"}}\\n' \"$FILE\" || true",
-            "statusMessage": "Checking terminology docs..."
+            "command": "bash .claude/hooks/post_edit_check.sh",
+            "statusMessage": "Checking conventions..."
           }
         ]
       }

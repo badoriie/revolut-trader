@@ -2,25 +2,33 @@
 
 ## Commands
 
-**Package manager**: `uv` — prefix Python commands with `uv run`
-
-**Development**: `just` | **Functional**: `revt` CLI
+**Package manager**: `uv` | **Dev tooling**: `just` | **Functional CLI**: `revt`
 
 ```bash
-just install/test/lint/format/typecheck/security/check/pre-commit/clean/env
-revt run [--mode live] | backtest | telegram start | ops | config | db | api
+# Development
+just install | test | lint | format | typecheck | security | check | clean
+
+# Trading bot
+revt run [--strategy S] [--risk R] [--mode live] [--confirm-live]
+revt backtest [--compare] [--matrix] [--days N] [--interval N]
+revt ops init | [--show|--status]
+revt config show | set KEY VALUE | delete KEY
+revt api test | ready
+revt db stats | analytics | backtests | export | report
+revt telegram test | start
+revt update
 ```
 
 ## Architecture
 
-- **Entry**: `cli/run.py` → `TradingBot` → async loop per pair
+- **Entry**: `cli/revt.py` → `cli/commands/{run,backtest,backtest_compare,api,db,telegram}.py`
 - **Envs**: `dev` (mock API) | `int` (real API, paper) | `prod` (real API, paper/live)
-- **Detection**: feature→dev, main→int, tag→prod. Override: `--env`
-- **Trading mode**: Paper default. Live requires `TRADING_MODE=live` in 1Password + confirmation
+- **Detection**: feature branch→dev, main→int, tagged commit→prod, frozen binary→prod. **No manual override.**
+- **Trading mode**: Paper by default. Live requires `TRADING_MODE=live` in 1Password + confirmation
 - **Loop**: `get_tickers()` → `strategy.analyze()` → `executor.execute_signal()` → `risk_manager.validate()` → place order → persist
-- **Shutdown**: cancel orders → close losing → close profitable (trailing stop) → save. All bot positions closed
+- **Shutdown**: cancel orders → close losing → close profitable (trailing stop) → save
 - **Strategies**: 6 types, tunable via 1Password (`revolut-trader-strategy-{name}`)
-- **Config**: Pydantic + 1Password. `ENVIRONMENT` from env. Fails fast on missing fields
+- **Config**: Pydantic + 1Password. `ENVIRONMENT` from env var. Fails fast on missing fields
 - **Persistence**: SQLite per env (`revt-data/{env}.db`), Fernet encryption
 - **1Password items**: `revolut-trader-{credentials|config|risk|strategy}-*`
 - **Tests**: Coverage ≥97%. Safety in `tests/safety/`, math in `tests/unit/test_calculations.py`
@@ -60,13 +68,11 @@ ORM: `Numeric(20, 10)`, never `Float`
 
 All user values → 1Password. No code defaults (except `ENVIRONMENT` from env). Required fields → `RuntimeError` with fix command.
 
-### Database Encryption
+### Security
 
-Always on. Auto-generates key. Encrypt sensitive fields only.
-
-### No Plaintext Sensitive Data
-
-Logs/backtest → encrypted DB. Export via `make db-export-csv`.
+- DB encryption always on. Encrypt sensitive fields only.
+- Logs/backtest → encrypted DB only. Export via `revt db export`.
+- No plaintext credentials in code, logs, tests, or error messages.
 
 ### Code Quality
 
@@ -75,22 +81,24 @@ Logs/backtest → encrypted DB. Export via `make db-export-csv`.
 
 ### Documentation
 
-Every change updates relevant docs: `README.md`, docstrings, `CLAUDE.md`, `.github/copilot-instructions.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`
+Every change updates: `README.md`, docstrings, `CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`. Run `just sync-copilot` after CLAUDE.md changes.
 
 ## Key Files
 
-| File                                                                                                 | Purpose                                                             |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `src/bot.py`                                                                                         | Main orchestrator                                                   |
-| `src/config.py`                                                                                      | Pydantic config + 1Password                                         |
-| `src/api/{client,mock_client}.py`                                                                    | Real/mock API                                                       |
-| `src/models/{domain,db}.py`                                                                          | Domain models, ORM                                                  |
-| `src/risk_management/risk_manager.py`                                                                | Risk validation                                                     |
-| `src/execution/executor.py`                                                                          | Order execution                                                     |
-| `src/strategies/`                                                                                    | Strategy implementations                                            |
-| `src/utils/`                                                                                         | 1Password, DB, encryption, indicators, fees, telegram, rate limiter |
-| `src/backtest/engine.py`                                                                             | Backtest engine                                                     |
-| `tests/`                                                                                             | Tests (≥97% coverage)                                               |
-| `cli/`                                                                                               | CLI commands                                                        |
-| `docs/revolut-x-api-docs.md`                                                                         | **API reference**                                                   |
-| `docs/{ARCHITECTURE,DEVELOPMENT_GUIDELINES,BACKTESTING,END_USER_GUIDE,DEVELOPER_GUIDE,1PASSWORD}.md` | Documentation                                                       |
+| File                                  | Purpose                                                                                                              |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `src/bot.py`                          | Main orchestrator                                                                                                    |
+| `src/config.py`                       | Pydantic config + 1Password                                                                                          |
+| `src/api/{client,mock_client}.py`     | Real/mock API                                                                                                        |
+| `src/models/{domain,db}.py`           | Domain models, ORM                                                                                                   |
+| `src/risk_management/risk_manager.py` | Risk validation                                                                                                      |
+| `src/execution/executor.py`           | Order execution                                                                                                      |
+| `src/strategies/`                     | 6 strategy implementations                                                                                           |
+| `src/utils/`                          | 1Password, DB, encryption, indicators, fees, telegram, rate limiter                                                  |
+| `src/backtest/engine.py`              | Backtest engine                                                                                                      |
+| `cli/revt.py`                         | CLI entry point (`revt` command)                                                                                     |
+| `cli/commands/`                       | Command handlers (run, backtest, backtest_compare, api, db, telegram)                                                |
+| `cli/utils/`                          | env_detect, validators, analytics_report, view_logs                                                                  |
+| `tests/`                              | Tests (≥97% coverage)                                                                                                |
+| `docs/revolut-x-api-docs.md`          | **API reference**                                                                                                    |
+| `docs/`                               | ARCHITECTURE, DEVELOPMENT_GUIDELINES, BACKTESTING, END_USER_GUIDE, DEVELOPER_GUIDE, 1PASSWORD, TELEGRAM_BOT_COMMANDS |

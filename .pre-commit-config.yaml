@@ -61,16 +61,6 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # Markdown formatting
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.21
-    hooks:
-      - id: mdformat
-        exclude: ^CHANGELOG\.md$
-        additional_dependencies:
-          - mdformat-gfm
-          - mdformat-black
-
   # Tests — same as `make test`
   - repo: local
     hooks:
