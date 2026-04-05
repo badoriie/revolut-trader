@@ -28,9 +28,10 @@ class DatabaseEncryption:
         allowed.
         """
         if not op.is_available():
+            install_cmd = op.get_install_instructions()
             raise RuntimeError(
                 "1Password CLI is required for database encryption. "
-                "Install it with: brew install --cask 1password-cli"
+                f"Install it with:\n{install_cmd}"
             )
 
         encryption_key = op.get_optional("DATABASE_ENCRYPTION_KEY")
@@ -113,9 +114,8 @@ def setup_database_encryption() -> str:
         RuntimeError: If 1Password is not available or setup fails
     """
     if not op.is_available():
-        raise RuntimeError(
-            "1Password CLI not available. Install it with: brew install --cask 1password-cli"
-        )
+        install_cmd = op.get_install_instructions()
+        raise RuntimeError(f"1Password CLI not available. Install it with:\n{install_cmd}")
 
     existing_key = op.get_optional("DATABASE_ENCRYPTION_KEY")
     if existing_key:

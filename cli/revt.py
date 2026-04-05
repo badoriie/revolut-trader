@@ -490,13 +490,18 @@ def cmd_ops(args: argparse.Namespace) -> None:
 
 def _ops_status(env: str) -> None:
     """Print 1Password CLI and vault/item status for the given environment."""
+    from src.utils.onepassword import get_install_instructions
+
     print("=== 1Password Status ===\n")
 
     r = _op("--version")
     if r.returncode == 0:
         print(f"  CLI              {r.stdout.strip()}")
     else:
-        print("  CLI              not installed  (brew install --cask 1password-cli)")
+        install_cmd = get_install_instructions()
+        print(
+            f"  CLI              not installed\n\n  Install with:\n  {install_cmd.replace(chr(10), chr(10) + '  ')}"
+        )
         return
 
     r = _op("whoami")

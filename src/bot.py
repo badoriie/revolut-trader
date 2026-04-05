@@ -116,14 +116,15 @@ class TradingBot:
 
     def _validate_security_settings(self):
         """Validate that 1Password is available before starting bot."""
-        from src.utils.onepassword import is_available
+        from src.utils.onepassword import get_install_instructions, is_available
 
         if is_available():
             logger.info("✓ 1Password configured and available (secure mode)")
         else:
+            install_cmd = get_install_instructions()
             logger.error(
                 "✗ 1Password is required but not available!\n"
-                "  Install 1Password CLI: brew install --cask 1password-cli\n"
+                f"  Install 1Password CLI:\n{install_cmd}\n"
                 "  Authenticate:         export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx..."
             )
             # Will fail when trying to initialize API client

@@ -337,3 +337,47 @@ class TestModuleFunctions:
         with patch.object(op_module, "_vault", mock_vault):
             op_module._vault.invalidate()
         mock_vault.invalidate.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# get_install_instructions
+# ---------------------------------------------------------------------------
+
+
+class TestGetInstallInstructions:
+    """Tests OS-specific installation instruction generation."""
+
+    def test_returns_brew_command_on_macos(self):
+        from src.utils.onepassword import get_install_instructions
+
+        with patch("platform.system", return_value="Darwin"):
+            result = get_install_instructions()
+        assert result == "brew install --cask 1password-cli"
+
+    def test_returns_apt_commands_on_linux(self):
+        from src.utils.onepassword import get_install_instructions
+
+        with patch("platform.system", return_value="Linux"):
+            result = get_install_instructions()
+        # Check that the result contains the key components of Linux installation
+        assert "curl -sS https://downloads.1password.com" in result
+        assert "sudo gpg --dearmor" in result
+        assert "sudo apt-get update" in result
+        assert "sudo apt-get install" in result
+        assert "1password-cli" in result
+
+    def test_returns_generic_instructions_for_unknown_os(self):
+        from src.utils.onepassword import get_install_instructions
+
+        with patch("platform.system", return_value="Windows"):
+            result = get_install_instructions()
+        assert "Windows" in result
+        assert "https://developer.1password.com" in result
+
+    def test_returns_generic_instructions_for_unsupported_os(self):
+        from src.utils.onepassword import get_install_instructions
+
+        with patch("platform.system", return_value="FreeBSD"):
+            result = get_install_instructions()
+        assert "FreeBSD" in result
+        assert "https://developer.1password.com" in result
