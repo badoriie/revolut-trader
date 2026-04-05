@@ -1,5 +1,8 @@
 repos:
-  # General pre-commit hooks
+  # ============================================================================
+  # STAGE 1: FAST CHECKS
+  # Run first - if these fail, nothing else runs
+  # ============================================================================
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -21,7 +24,10 @@ repos:
       - id: detect-private-key
         exclude: ^(tests/mocks/|docs/)
 
-  # Ruff — uses the same local installation as `make format` and `make lint`
+  # ============================================================================
+  # STAGE 2: CODE QUALITY (Ruff)
+  # Runs ONLY if Stage 1 passes
+  # ============================================================================
   - repo: local
     hooks:
       - id: ruff-check
@@ -39,7 +45,10 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # Type checking — same as `make typecheck`
+  # ============================================================================
+  # STAGE 3: TYPE CHECKING
+  # Runs ONLY if Stage 1 + Stage 2 pass
+  # ============================================================================
   - repo: local
     hooks:
       - id: pyright
@@ -50,7 +59,10 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # Security — same as `make lint` (bandit reads config from pyproject.toml)
+  # ============================================================================
+  # STAGE 4: SECURITY SCAN
+  # Runs ONLY if Stage 1 + Stage 2 + Stage 3 pass
+  # ============================================================================
   - repo: local
     hooks:
       - id: bandit
@@ -61,7 +73,11 @@ repos:
         types: [python]
         pass_filenames: false
 
-  # Tests — same as `make test`
+  # ============================================================================
+  # STAGE 5: TESTS
+  # Runs ONLY if ALL above stages pass (1+2+3+4)
+  # This is the slowest check, so it runs last to save time on failures
+  # ============================================================================
   - repo: local
     hooks:
       - id: pytest
@@ -72,7 +88,10 @@ repos:
         pass_filenames: false
         always_run: true
 
-  # Commit message — enforces Conventional Commits format
+  # ============================================================================
+  # COMMIT MESSAGE VALIDATION
+  # Runs in separate stage (commit-msg), not affected by above
+  # ============================================================================
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.13.9
     hooks:

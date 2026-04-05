@@ -108,6 +108,21 @@ sync-copilot:
     @cp CLAUDE.md .github/copilot-instructions.md
     @echo "Synced CLAUDE.md → .github/copilot-instructions.md"
 
+# Sync agent configurations from .claude/agents/ to .github/agents/
+sync-agents:
+    @echo "Syncing agents from .claude/agents/ → .github/agents/..."
+    @cp .claude/agents/audit-docs.md .github/agents/audit-docs.agent.md
+    @cp .claude/agents/backtest-analyst.md .github/agents/backtest-analyst.agent.md
+    @cp .claude/agents/code-improvement.md .github/agents/code-improvement.agent.md
+    @cp .claude/agents/security-reviewer.md .github/agents/security-reviewer.agent.md
+    @cp .claude/agents/strategy-review.md .github/agents/strategy-review.agent.md
+    @cp .claude/agents/testing-debug.md .github/agents/testing-debug.agent.md
+    @echo "✅ All agents synced successfully"
+
+# Sync both CLAUDE.md and agents
+sync-all: sync-copilot sync-agents
+    @echo "✅ All documentation and agents synced"
+
 # Generate class diagrams using pyreverse
 diagrams:
     #!/usr/bin/env bash

@@ -330,14 +330,25 @@ Agents are specialized assistants designed for specific tasks. To use an agent e
 
 ## Agent File Locations
 
-All agent configurations are stored in `.claude/agents/`:
+Agent configurations are stored in two locations:
 
+**Local (Claude Desktop):**
 - `.claude/agents/audit-docs.md`
 - `.claude/agents/backtest-analyst.md`
 - `.claude/agents/code-improvement.md`
 - `.claude/agents/security-reviewer.md`
 - `.claude/agents/strategy-review.md`
 - `.claude/agents/testing-debug.md`
+
+**Version Controlled (GitHub):**
+- `.github/agents/audit-docs.agent.md`
+- `.github/agents/backtest-analyst.agent.md`
+- `.github/agents/code-improvement.agent.md`
+- `.github/agents/security-reviewer.agent.md`
+- `.github/agents/strategy-review.agent.md`
+- `.github/agents/testing-debug.agent.md`
+
+Use `just sync-agents` to sync from `.claude/agents/` → `.github/agents/`
 
 ## Key Documentation Files
 
@@ -355,4 +366,5 @@ When adding new agents:
 2. Follow the frontmatter format (name, description, tools, model)
 3. Clearly define capabilities and when to use the agent
 4. Update this AGENTS.md file with the new agent details
-5. Test the agent to ensure it works as expected
+5. Run `just sync-agents` to sync to `.github/agents/`
+6. Test the agent to ensure it works as expected
