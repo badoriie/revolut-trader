@@ -346,9 +346,12 @@ just format           # ruff format + ruff check --fix
 just typecheck        # pyright src/ cli/
 just check            # all of the above + tests
 just pre-commit       # run all pre-commit hooks
+just sync-all         # sync CLAUDE.md + agents to .github/
 just clean            # remove cache files
 just --list           # show all available commands
 ```
+
+**Note:** Pre-commit runs checks sequentially. Tests only run if formatting, linting, type checking, and security checks all pass first.
 
 Functional commands use `revt`:
 
