@@ -243,7 +243,7 @@ Per-strategy stop-loss / take-profit overrides (applied on top of the risk-level
 Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trade with, regardless of your account balance:
 
 ```bash
-revt config set MAX_CAPITAL 5000 --env prod
+revt config set MAX_CAPITAL 5000
 ```
 
 ## Trading Fees
@@ -328,9 +328,9 @@ revt db analytics     # trading analytics (default: 30 days, use --days flag)
 revt db backtests     # backtest results
 revt db report        # comprehensive analytics report with charts (--days 30)
 revt db export        # export data to CSV
-revt db encrypt-setup  # generate and store encryption key in 1Password
-revt db encrypt-status # check encryption status
 ```
+
+The database encryption key is auto-generated and stored in 1Password during `revt ops init`.
 
 See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 

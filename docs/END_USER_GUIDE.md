@@ -86,7 +86,7 @@ ______________________________________________________________________
 Create the configuration with safe defaults:
 
 ```bash
-revt config init
+revt ops init
 ```
 
 This creates:
@@ -315,7 +315,7 @@ op whoami                        # verify
 **Config not found:**
 
 ```bash
-revt config init --env prod  # create with defaults
+revt ops init  # create with defaults
 ```
 
 ### Bot Won't Start

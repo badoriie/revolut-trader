@@ -12,25 +12,25 @@ The backtesting system allows you to:
 - **Store results securely** in the encrypted SQLite database
 
 Results are persisted **exclusively to the encrypted database** — no plaintext JSON or log files are written.
-Use `revt db backtests` to view results and `revt db export-csv` to export when needed.
+Use `revt db backtests` to view results and `revt db export` to export when needed.
 
 ## Quick Start
 
 ```bash
 # Test market making strategy on BTC-EUR for 30 days
-revt backtest STRATEGY=market_making DAYS=30
+revt backtest --strategy market_making --days 30
 
 # Test momentum strategy with moderate risk
-revt backtest STRATEGY=momentum DAYS=60
+revt backtest --strategy momentum --days 60
 
 # High-frequency backtest with 1-minute candles (closest to live 5s polling)
-revt backtest-hf STRATEGY=breakout DAYS=7
+revt backtest --strategy breakout --interval 1 --days 7
 
 # View stored results
 revt db backtests
 
 # Export to CSV for spreadsheet analysis
-revt db export-csv
+revt db export
 ```
 
 ## High-Frequency Backtesting
@@ -40,8 +40,8 @@ The live bot polls the Revolut X API every 5 seconds to make trading decisions b
 To simulate the live bot's behavior as closely as possible, use **1-minute candles** — the highest granularity available:
 
 ```bash
-revt backtest-hf                           # 1-min candles, 7 days default
-revt backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
+revt backtest --interval 1                                 # 1-min candles, 7 days default
+revt backtest --interval 1 --strategy breakout --days 14   # specific strategy and period
 ```
 
 **Important differences between live and backtest:**
@@ -68,7 +68,7 @@ revt backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
 - **API limits**: Revolut X limits candle requests to 1,000 candles per call. The engine automatically paginates, but many requests may be needed for long periods.
 - **Not a perfect match**: 5-second polling can react to micro-movements that don't appear in 1-minute candle summaries. Backtest results remain an approximation.
 
-For longer-term strategy validation (30+ days), use hourly candles (`INTERVAL=60`) or the default settings. For short-term / high-frequency validation, use `revt backtest-hf`.
+For longer-term strategy validation (30+ days), use hourly candles (`--interval 60`) or the default settings. For short-term / high-frequency validation, use `revt backtest --interval 1`.
 
 ## Command Line Options
 
@@ -242,7 +242,7 @@ All results are stored in the encrypted database:
 revt db backtests
 
 # Export all data to dated CSV files in revt-data/exports/
-revt db export-csv
+revt db export
 
 # Analytics summary
 revt db analytics
@@ -253,35 +253,35 @@ revt db analytics
 ### 1. Test Multiple Time Periods
 
 ```bash
-revt backtest STRATEGY=momentum DAYS=30    # Recent performance
-revt backtest STRATEGY=momentum DAYS=90    # Quarterly
-revt backtest STRATEGY=momentum DAYS=180   # Semi-annual
+revt backtest --strategy momentum --days 30    # Recent performance
+revt backtest --strategy momentum --days 90    # Quarterly
+revt backtest --strategy momentum --days 180   # Semi-annual
 ```
 
 ### 2. Compare Different Strategies
 
 ```bash
 for strategy in market_making momentum mean_reversion multi_strategy breakout range_reversion; do
-  revt backtest STRATEGY=$strategy DAYS=90
+  revt backtest --strategy $strategy --days 90
 done
-revt db backtests LIMIT=20
+revt db backtests
 ```
 
 ### 3. Test Different Risk Levels
 
 ```bash
-revt backtest STRATEGY=momentum DAYS=60
-# Then change risk via: make opconfig-set KEY=RISK_LEVEL VALUE=aggressive
-revt backtest STRATEGY=momentum DAYS=60
+revt backtest --strategy momentum --days 60
+# Then change risk via: revt config set RISK_LEVEL aggressive
+revt backtest --strategy momentum --days 60 --risk aggressive
 ```
 
 ### 4. Optimize Timeframes
 
 ```bash
 # Test different candle intervals
-uv run python cli/backtest.py --interval 15   # 15-minute candles
-uv run python cli/backtest.py --interval 60   # 1-hour candles
-uv run python cli/backtest.py --interval 240  # 4-hour candles
+revt backtest --interval 15    # 15-minute candles
+revt backtest --interval 60    # 1-hour candles
+revt backtest --interval 240   # 4-hour candles
 ```
 
 ## Limitations & Considerations
@@ -312,7 +312,7 @@ uv run python cli/backtest.py --interval 240  # 4-hour candles
 ERROR | No historical data available
 ```
 
-**Solution**: Check your API credentials and ensure the symbol is correct (`make api-test`).
+**Solution**: Check your API credentials and ensure the symbol is correct (`revt api test`).
 
 ### Invalid Interval
 
@@ -334,19 +334,19 @@ WARNING | Retrieved only 50 candles
 
 After backtesting:
 
-1. **Review results**: `revt db backtests --limit 20`
+1. **Review results**: `revt db backtests`
 1. **Export for analysis**: `revt db export`
 1. **Generate report**: `revt db report --days 60` (creates charts and analytics)
 1. **Paper trade**: Test with live data in paper mode:
    ```bash
-   # Paper mode is the default
-   revt run --env prod
+   # Paper mode is the default (env is auto-detected)
+   revt run
    ```
 1. **Live trade**: Only after consistent positive results:
    ```bash
-   # Explicit opt-in required
-   revt config set TRADING_MODE live --env prod
-   revt run --env prod  # prompts "I UNDERSTAND"
+   # Explicit opt-in required - set TRADING_MODE=live in 1Password
+   revt config set TRADING_MODE live
+   revt run --mode live --confirm-live  # requires confirmation
    ```
 
 ______________________________________________________________________

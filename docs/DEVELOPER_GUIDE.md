@@ -103,14 +103,15 @@ This single command:
 
 ### Store your API key
 
-After `revt ops  # Note: Creates items if missing`, store the Revolut X API credentials for each environment you intend to use:
+After `revt ops init`, store the Revolut X API credentials (environment is auto-detected from your git context):
 
 ```bash
-# Store credentials for the int (paper trading) environment
-revt ops ENV=int
+# Environment is auto-detected:
+# - Feature branch → dev
+# - main branch → int
+# - Tagged commit → prod
 
-# Store credentials for prod (live trading)
-revt ops ENV=prod
+revt ops init   # Store API credentials for the current environment
 ```
 
 You will be prompted for:
@@ -121,7 +122,7 @@ You will be prompted for:
 Verify the values were stored correctly:
 
 ```bash
-revt opshow ENV=int
+revt ops --show
 ```
 
 ______________________________________________________________________
@@ -131,7 +132,7 @@ ______________________________________________________________________
 All trading configuration is stored in 1Password under `revolut-trader-config-{env}`. Set each value with:
 
 ```bash
-revt config set KEY=<key> VALUE=<value> ENV=<env>
+revt config set <key> <value>
 ```
 
 ### Required parameters
@@ -165,15 +166,15 @@ revt config set KEY=<key> VALUE=<value> ENV=<env>
 ### Example: full configuration for paper trading
 
 ```bash
-revt config set KEY=RISK_LEVEL            VALUE=conservative     ENV=int
-revt config set KEY=BASE_CURRENCY         VALUE=EUR              ENV=int
-revt config set KEY=TRADING_PAIRS         VALUE=BTC-EUR,ETH-EUR  ENV=int
-revt config set KEY=DEFAULT_STRATEGY      VALUE=momentum         ENV=int
-revt config set KEY=INITIAL_CAPITAL       VALUE=10000            ENV=int
-revt config set KEY=MAX_CAPITAL           VALUE=5000             ENV=int
+revt config set RISK_LEVEL conservative
+revt config set BASE_CURRENCY EUR
+revt config set TRADING_PAIRS BTC-EUR,ETH-EUR
+revt config set DEFAULT_STRATEGY momentum
+revt config set INITIAL_CAPITAL 10000
+revt config set MAX_CAPITAL 5000
 
 # Verify
-revt config show ENV=int
+revt config show
 ```
 
 ______________________________________________________________________
@@ -268,10 +269,11 @@ Each risk level's parameters are stored in a dedicated, environment-agnostic 1Pa
 
 ```bash
 # Example: tighten the conservative stop-loss to 1%
-revt config set KEY=STOP_LOSS_PCT VALUE=1.0 ENV=prod   # targets revolut-trader-risk-conservative
+op item edit revolut-trader-risk-conservative --vault revolut-trader \
+  STOP_LOSS_PCT[text]="1.0"
 
-# Or with the revt CLI:
-revt config set STOP_LOSS_PCT 1.0 --env prod
+# Or use the revt CLI to set it:
+revt config set STOP_LOSS_PCT 1.0
 ```
 
 > These items are shared across environments — you are tuning the risk profile itself, not an environment-specific setting.
@@ -350,7 +352,7 @@ revt backtest
 revt backtest --strategy momentum --days 90 --risk moderate
 
 # High-frequency test: 1-minute candles (closest to live 5 s polling)
-revt backtest --hf --strategy breakout --days 7
+revt backtest --strategy breakout --interval 1 --days 7
 
 # Compare all strategies side-by-side
 revt backtest --compare --days 30
@@ -434,8 +436,8 @@ The backtesting engine mirrors the live bot as closely as possible:
 ### Best practices
 
 1. **Test multiple time windows** — 30, 90, 180 days — to check consistency
-1. **Compare strategies** side-by-side with `revt backtest-compare`
-1. **Try all risk levels** with `revt backtest-matrix` before choosing
+1. **Compare strategies** side-by-side with `revt backtest --compare`
+1. **Try all risk levels** with `revt backtest --matrix` before choosing
 1. **Use out-of-sample testing** — backtest on a period you did not use to choose the strategy
 1. **Watch the fees** — a high trade count can eat into profits even with a high win rate
 
@@ -449,11 +451,11 @@ All data is stored in an encrypted SQLite database (`revt-data/dev.db`, `revt-da
 revt db               # overview: stats + recent analytics + backtest summary
 revt db stats         # database statistics (snapshot count, last trade)
 revt db analytics     # trading analytics (default: last 30 days)
-revt db analytics DAYS=7   # last 7 days
+revt db analytics --days 7   # last 7 days
 revt db backtests     # list recent backtest runs with metrics
-revt db export-csv    # export trades and snapshots to CSV files
+revt db export        # export trades and snapshots to CSV files
 revt db report        # comprehensive analytics report with charts (default: last 30 days)
-revt db report DAYS=7 DIR=revt-data/reports  # custom window and output directory
+revt db report --days 7      # custom window
 ```
 
 The basic `db-analytics` report shows:
@@ -471,7 +473,7 @@ The basic `db-analytics` report shows:
 uv sync --extra analytics
 
 # Generate the report (saves to revt-data/reports/):
-revt db report DAYS=30
+revt db report --days 30
 ```
 
 The report includes:
@@ -492,11 +494,7 @@ A `report.md` markdown file is also written to the output directory, making it e
 
 ### Verifying encryption
 
-```bash
-revt db encrypt-status
-```
-
-If encryption is not active, run `revt db encrypt-setup` to generate and store an encryption key in 1Password.
+The database is always encrypted using Fernet encryption. The encryption key is auto-generated and stored in 1Password during `revt ops init`.
 
 ______________________________________________________________________
 
@@ -513,10 +511,10 @@ Configure trailing stop on shutdown:
 
 ```bash
 # Wait for a 0.5% pullback from peak before closing profitable positions
-revt config set KEY=SHUTDOWN_TRAILING_STOP_PCT VALUE=0.5 ENV=int
+revt config set SHUTDOWN_TRAILING_STOP_PCT 0.5
 
 # Force-close after 3 minutes if trailing stop never triggers
-revt config set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=180 ENV=int
+revt config set SHUTDOWN_MAX_WAIT_SECONDS 180
 ```
 
 ______________________________________________________________________
@@ -560,11 +558,11 @@ While the bot is running it also **listens for commands** you send directly in t
 
 ### Store credentials in 1Password
 
-The bot token is stored as a concealed credential via `revt ops`; the chat ID is stored as a config value:
+The bot token is stored as a concealed credential via `revt ops init`; the chat ID is stored as a config value:
 
 ```bash
-revt ops ENV=prod                                          # prompts for Revolut API key and Telegram bot token
-revt config set KEY=TELEGRAM_CHAT_ID VALUE=<chat_id> ENV=prod
+revt ops init                              # prompts for Revolut API key and Telegram bot token
+revt config set TELEGRAM_CHAT_ID <chat_id>
 ```
 
 Both keys must be set — if either is missing, notifications are silently disabled.
@@ -600,10 +598,7 @@ Telegram failures never affect trading — errors are logged and discarded.
 The **Telegram Control Plane** is an always-on background process that lets you control the trading bot entirely through Telegram commands — even when the bot is not running. Start it once and leave it running; all bot lifecycle management happens from your phone.
 
 ```bash
-make telegram                  # start the control plane (env auto-detected)
-make telegram ENV=prod         # force production environment
-
-revt telegram start            # same via the revt binary
+revt telegram start            # start the control plane (env auto-detected)
 revt telegram start --env int  # paper trading
 ```
 
@@ -624,7 +619,7 @@ Additional commands available only through the control plane:
 The control plane and `revt run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
 
 - `revt run` — start the bot directly (command listener active while running), **or**
-- `make telegram` — start the control plane and use `/run` to start/stop the bot
+- `revt telegram start` — start the control plane and use `/run` to start/stop the bot
 
 ______________________________________________________________________
 
@@ -656,7 +651,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/revolut-trader
 Environment=OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...
-ExecStart=/home/pi/revolut-trader/.venv/bin/python cli/run.py
+ExecStart=/home/pi/revolut-trader/.venv/bin/python -m cli.revt run
 Restart=on-failure
 RestartSec=30
 
@@ -677,10 +672,10 @@ ______________________________________________________________________
 ### API connection issues
 
 ```bash
-revt opstatus           # check 1Password CLI is authenticated
-revt opshow ENV=int     # verify credentials are stored
-revt api test ENV=int   # test the Revolut X connection
-revt api ready ENV=int  # check view + trade permissions
+revt ops --status      # check 1Password CLI is authenticated
+revt ops --show        # verify credentials are stored
+revt api test          # test the Revolut X connection
+revt api ready         # check view + trade permissions
 ```
 
 ### "1Password is required but not available"
@@ -700,7 +695,7 @@ A required 1Password config key is missing. The error message tells you which ke
 
 ```
 RuntimeError: INITIAL_CAPITAL is required for paper mode.
-Fix: revt config set KEY=INITIAL_CAPITAL VALUE=10000 ENV=int
+Fix: revt config set INITIAL_CAPITAL 10000
 ```
 
 ### "No signals generated"
@@ -708,7 +703,7 @@ Fix: revt config set KEY=INITIAL_CAPITAL VALUE=10000 ENV=int
 Strategies need a warm-up period to build indicator history (typically 10–30 trading loop iterations). Wait a minute or two. If signals never appear:
 
 - Check `--log-level DEBUG` for details
-- Verify your trading pairs are active: `make api-currency-pairs ENV=int`
+- Verify your trading pairs are active: `revt api test`
 - Ensure your pairs match your `BASE_CURRENCY`
 
 ### Currency mismatch error
@@ -717,10 +712,10 @@ All pairs must end with your `BASE_CURRENCY`. If `BASE_CURRENCY=EUR`:
 
 ```bash
 # Wrong:
-revt config set KEY=TRADING_PAIRS VALUE=BTC-USD,ETH-USD ENV=int
+revt config set TRADING_PAIRS BTC-USD,ETH-USD
 
 # Correct:
-revt config set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR ENV=int
+revt config set TRADING_PAIRS BTC-EUR,ETH-EUR
 ```
 
 ### Live trading is not available
@@ -728,10 +723,10 @@ revt config set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR ENV=int
 Your API key must have **Trade** permission. Check:
 
 ```bash
-revt api ready ENV=prod
+revt api ready
 ```
 
-If the output shows `Trade (place orders): FAIL`, re-generate your Revolut X API key with trading permission and re-run `revt ops ENV=prod`.
+If the output shows `Trade (place orders): FAIL`, re-generate your Revolut X API key with trading permission and re-run `revt ops init`.
 
 ### Candle interval invalid
 
@@ -754,7 +749,7 @@ On the next start, the bot reads its position state from the database and resume
 Set `MAX_CAPITAL`. Even if your account holds €50,000, you can limit the bot to trading with only €5,000:
 
 ```bash
-revt config set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
+revt config set MAX_CAPITAL 5000
 ```
 
 **Q: Are fees included in backtest results?**
@@ -776,16 +771,15 @@ These are overridable with `--interval <seconds>`.
 Yes. Use the API testing commands:
 
 ```bash
-make api-balance ENV=int
-make api-ticker SYMBOL=BTC-EUR ENV=int
-make api-order-book SYMBOL=BTC-EUR ENV=int
+revt api test
+revt api ready
 ```
 
 **Q: What is pre-existing crypto protection?**
 The bot will never sell a cryptocurrency it did not purchase itself. If you hold BTC in your account from before you started the bot, the bot will not touch it.
 
 **Q: Which environments use real money?**
-Only `prod` (`revt run ENV=prod` / `revt run`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
+Only `prod` (`revt run --mode live --confirm-live`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
 
 ______________________________________________________________________
 
