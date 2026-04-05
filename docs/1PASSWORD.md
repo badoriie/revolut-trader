@@ -47,7 +47,7 @@ Verify:
 
 ```bash
 op whoami
-revt opstatus
+revt ops --status
 ```
 
 ______________________________________________________________________
@@ -55,13 +55,13 @@ ______________________________________________________________________
 ## Quick Start
 
 ```bash
-revt ops       # create vault, items, generate keys (int/prod only), install deps
-make run         # start with mock API on feature branches (no credentials needed)
+revt ops init   # create vault, items, generate keys (int/prod only), install deps
+revt run        # start with mock API on feature branches (no credentials needed)
 
-# For real API:
-revt ops ENV=int  # store your Revolut API credentials
-revt opshow       # verify stored values (masked)
-make run ENV=int  # start with real API in paper mode
+# For real API (env is auto-detected from git context):
+revt ops init   # store your Revolut API credentials
+revt ops --show # verify stored values (masked)
+revt run        # start with real API in paper mode
 ```
 
 ______________________________________________________________________
@@ -162,15 +162,15 @@ op item edit revolut-trader-config-int \
 ```
 
 5. **Verify:**
-   - Run `make telegram ENV=int` to start the Telegram control plane
-   - Run `make run` or `make run ENV=int` and check for Telegram notifications
+   - Run `revt telegram start` to start the Telegram control plane
+   - Run `revt run` and check for Telegram notifications
    - Use `/status`, `/balance`, `/report` commands in your Telegram chat
    - Type `/` in your Telegram chat to see the autocomplete menu with all bot commands
 
 ### How the Bot Uses Telegram Config
 
 - Sends trade notifications, analytics reports, and error alerts to the configured chat
-- Enables the always-on Telegram Control Plane (`make telegram` / `revt telegram start`)
+- Enables the always-on Telegram Control Plane (`revt telegram start`)
 - Delivers analytics reports as PDF (if `fpdf2` is installed) or as a text summary
 - Only sends messages if `TELEGRAM_REPORTS_ENABLED` is `true`
 
@@ -184,8 +184,8 @@ op item edit revolut-trader-config-int \
   - Make sure the bot is added to the group and is not blocked
   - Verify the chat ID matches the group or user
 - **Field not found:**
-  - Run `revt config set KEY=TELEGRAM_BOT_TOKEN VALUE=...`
-  - Run `revt config set KEY=TELEGRAM_CHAT_ID VALUE=...`
+  - Run `revt config set TELEGRAM_BOT_TOKEN <token>`
+  - Run `revt config set TELEGRAM_CHAT_ID <chat_id>`
 
 For more details, see [`END_USER_GUIDE.md`](END_USER_GUIDE.md) and [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
 
@@ -197,7 +197,7 @@ If any required field is missing, the bot refuses to start with an actionable er
 
 ```
 RuntimeError: RISK_LEVEL not found in 1Password config.
-Run: make opconfig-init
+Run: revt ops init
 ```
 
 ### Risk Level Configuration (`revolut-trader-risk-{level}`)
@@ -230,17 +230,14 @@ ______________________________________________________________________
 
 ## Commands
 
-| Command                         | Description                                      |
-| ------------------------------- | ------------------------------------------------ |
-| `revt ops`                      | Full first-time setup (vault, items, keys, deps) |
-| `revt ops`                      | Store API key credentials                        |
-| `revt opshow`                   | Show all stored values (masked)                  |
-| `revt opstatus`                 | Check 1Password authentication and vault status  |
-| `make opdelete`                 | Delete credentials item (requires confirmation)  |
-| `revt config show`              | Show trading configuration                       |
-| `revt config set KEY=X VALUE=Y` | Update a config field                            |
-| `make opconfig-delete KEY=X`    | Remove a config field                            |
-| `make opconfig-init`            | (Re-)create config item with defaults            |
+| Command                    | Description                                      |
+| -------------------------- | ------------------------------------------------ |
+| `revt ops init`            | Full first-time setup (vault, items, keys, deps) |
+| `revt ops --show`          | Show all stored values (masked)                  |
+| `revt ops --status`        | Check 1Password authentication and vault status  |
+| `revt config show`         | Show trading configuration                       |
+| `revt config set KEY VALUE`| Update a config field                            |
+| `revt config delete KEY`   | Remove a config field                            |
 
 ### Using the CLI directly
 
@@ -324,8 +321,8 @@ Install the CLI (see Prerequisites above).
 Run `revt opstatus` to diagnose, then `revt ops` or `revt ops` to recreate.
 
 **Field not found at runtime**
-Run `revt config set KEY=<field> VALUE=<value>` to add the missing field,
-or `make opconfig-init` to recreate the full config item with defaults.
+Run `revt config set <field> <value>` to add the missing field,
+or `revt ops init` to recreate the full config item with defaults.
 
 **Bot fails with "1Password required"**
 
@@ -347,4 +344,4 @@ The bot fails to start immediately with a clear error message.
 No. They are loaded directly into memory from 1Password.
 
 **Q: How do I switch back to USD?**
-`revt config set KEY=BASE_CURRENCY VALUE=USD` and update your trading pairs accordingly.
+`revt config set BASE_CURRENCY USD` and update your trading pairs accordingly.
