@@ -1,4 +1,4 @@
-# Security Audit Prompts
+# Security Audit Guide
 
 ## Quick Check
 
@@ -22,16 +22,15 @@ Audit across these areas and report issues by severity (critical / high / medium
 
 ## Pre-Deployment Checklist
 
-- [ ] 1Password credentials valid and tested
+- [ ] 1Password credentials valid and tested (`revt ops --status`, `revt api ready`)
 - [ ] No credentials in code or logs
-- [ ] All financial calculations validated (Decimal, not float)
-- [ ] Order size limits enforced
+- [ ] All financial calculations use `Decimal`, not `float`
+- [ ] Order size limits enforced (MIN_ORDER_VALUE, MAX_ORDER_VALUE)
 - [ ] Stop losses and risk limits tested and cannot be bypassed
 - [ ] Error handling comprehensive in critical paths
 - [ ] API auth tested, rate limits respected, timeouts handled
-- [ ] All tests pass, type checks pass, code formatted
+- [ ] All tests pass (`just check`)
 - [ ] Paper mode validated, emergency shutdown tested
-- [ ] Security tests cover edge cases
 
 ## Component Reviews
 

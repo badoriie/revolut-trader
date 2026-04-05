@@ -1,3 +1,7 @@
+______________________________________________________________________
+
+## name: audit-docs description: Comprehensive documentation audit agent. Explores the actual codebase, finds inaccuracies in README.md, CLAUDE.md, and docs/, then fixes them. Use when documentation may be stale or out of sync with the code.
+
 Perform a comprehensive review and improvement of the project documentation and structure. This is a thorough audit — find issues and fix them.
 
 ## 1. Verify Project Structure
@@ -16,10 +20,9 @@ Read `README.md` and check for:
 
 - **Accuracy**: Does the project structure tree match reality? Are all workflows, CLI files, test directories, and docs listed?
 - **Badges**: Are all badges working and relevant?
-- **Commands**: Do the documented `make` commands match the actual `Makefile`?
+- **Commands**: Do the documented commands match the actual `justfile` and `revt` CLI?
 - **Features**: Do listed features, strategies, and risk levels match the code?
 - **Documentation links**: Do all referenced docs actually exist?
-- **Secrets section**: Are all required GitHub secrets documented?
 
 Fix any inaccuracies, missing items, or outdated information.
 
@@ -27,11 +30,10 @@ Fix any inaccuracies, missing items, or outdated information.
 
 Read `CLAUDE.md` and check for:
 
-- **Commands section**: Do all commands match the actual `Makefile`?
-- **Architecture section**: Does it accurately describe the current codebase? Are all components mentioned?
-- **Key Files table**: Are all important files listed? Are any listed files missing from the repo? Are descriptions accurate?
+- **Commands section**: Do all commands match the actual `justfile` and `revt` CLI?
+- **Architecture section**: Does it accurately describe the current codebase?
+- **Key Files table**: Are all important files listed? Are any listed files missing from the repo?
 - **Mandatory Rules**: Are they still relevant and complete?
-- **Test section**: Does it reflect the actual test structure?
 
 Fix any inaccuracies, missing components, or outdated information.
 
@@ -44,15 +46,7 @@ Read each file in `docs/` and verify:
 - Content matches current implementation
 - No stale/outdated information
 
-## 5. Review Makefile
-
-Read the `Makefile` and check:
-
-- `.PHONY` line includes all targets
-- `help` target lists all available commands
-- No dead/broken targets
-
-## 6. Review Workflows
+## 5. Review Workflows
 
 Read each workflow in `.github/workflows/` and check:
 
@@ -60,6 +54,6 @@ Read each workflow in `.github/workflows/` and check:
 - Permissions are correct
 - Environment variables match the project
 
-## 7. Summary
+## 6. Summary
 
 After all fixes, provide a summary of what was found and fixed.
