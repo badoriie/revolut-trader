@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: Project-level configuration only description: All Claude Code settings, hooks, agents, skills, rules, and memories must be stored at the project level, never globally. type: feedback
+---
+name: Project-level configuration only
+description: All Claude Code settings, hooks, agents, skills, rules, and memories must stay in .claude/, never in global ~/.claude/.
+type: feedback
+---
 
 Keep everything at the project level, not global.
 

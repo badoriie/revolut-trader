@@ -1,6 +1,8 @@
-______________________________________________________________________
-
-## name: audit-docs description: Comprehensive documentation audit agent. Explores the actual codebase, finds inaccuracies in README.md, CLAUDE.md, and docs/, then fixes them. Use when documentation may be stale or out of sync with the code.
+---
+name: audit-docs
+description: Documentation audit agent. Explores codebase, finds inaccuracies in README.md, CLAUDE.md, and docs/, then fixes them. Use when docs may be stale or out of sync with code.
+tools: Read Glob Grep Bash Write Edit
+---
 
 Perform a comprehensive review and improvement of the project documentation and structure. This is a thorough audit — find issues and fix them.
 
@@ -28,14 +30,14 @@ Fix any inaccuracies, missing items, or outdated information.
 
 ## 3. Review CLAUDE.md
 
-Read `CLAUDE.md` and check for:
+Read `.claude/CLAUDE.md` and check for:
 
 - **Commands section**: Do all commands match the actual `justfile` and `revt` CLI?
 - **Architecture section**: Does it accurately describe the current codebase?
 - **Key Files table**: Are all important files listed? Are any listed files missing from the repo?
-- **Mandatory Rules**: Are they still relevant and complete?
+- **Rules**: Are they still relevant and complete?
 
-Fix any inaccuracies, missing components, or outdated information.
+Fix any inaccuracies, missing components, or outdated information. After any changes, run `just sync-copilot`.
 
 ## 4. Review docs/ Files
 

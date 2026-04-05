@@ -1,10 +1,19 @@
-# Revolut X REST API Reference
+---
+name: revolut-api
+description: Revolut X REST API reference. Use when working with API endpoints, authentication, orders, trades, candles, or integration code. Covers all 17 endpoints.
+tools: Read
+paths:
+  - "src/api/**/*.py"
+  - "tests/test_api*"
+  - "tests/integration*"
+user-invocable: true
+---
 
 Read `docs/revolut-x-api-docs.md` for the full documentation. Use the structured reference below as a precise quick-reference for all 17 endpoints.
 
 If `$ARGUMENTS` is provided, show only the section(s) matching that keyword (e.g., `orders`, `trades`, `market`, `balance`, `config`, `auth`, `errors`, `models`).
 
-______________________________________________________________________
+---
 
 ## Base URL
 
@@ -12,7 +21,7 @@ ______________________________________________________________________
 https://revx.revolut.com/api/1.0
 ```
 
-______________________________________________________________________
+---
 
 ## Authentication
 
@@ -32,7 +41,7 @@ Every authenticated request requires three headers:
 
 Public endpoints (`/public/...`) do **not** require auth headers.
 
-______________________________________________________________________
+---
 
 ## Error Response Format
 
@@ -50,7 +59,7 @@ ______________________________________________________________________
 | `429` | Rate Limit Exceeded                             |
 | `5XX` | Server Error                                    |
 
-______________________________________________________________________
+---
 
 ## Endpoint Summary
 

@@ -81,7 +81,7 @@ All user values → 1Password. No code defaults (except `ENVIRONMENT` from env).
 
 ### Documentation
 
-Every change updates: `README.md`, docstrings, `CLAUDE.md`, `.github/copilot-instructions.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`
+Every change updates: `README.md`, docstrings, `.claude/CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`. Run `just sync-copilot` after CLAUDE.md changes.
 
 ## Key Files
 
@@ -102,11 +102,3 @@ Every change updates: `README.md`, docstrings, `CLAUDE.md`, `.github/copilot-ins
 | `tests/`                              | Tests (≥97% coverage)                                                                                                |
 | `docs/revolut-x-api-docs.md`          | **API reference**                                                                                                    |
 | `docs/`                               | ARCHITECTURE, DEVELOPMENT_GUIDELINES, BACKTESTING, END_USER_GUIDE, DEVELOPER_GUIDE, 1PASSWORD, TELEGRAM_BOT_COMMANDS |
-
-## .claude/ Resources
-
-| Folder    | Contents                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------- |
-| `skills/` | `revolut-api` — API quick reference                                                                           |
-| `rules/`  | `deployment-check.md`, `security-audit.md` — checklists                                                       |
-| `agents/` | `audit-docs`, `code-improvement`, `strategy-review`, `testing-debug`, `backtest-analyst`, `security-reviewer` |
