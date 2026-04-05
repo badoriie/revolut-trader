@@ -398,15 +398,15 @@ class TestEnvironmentAwareDbUrl:
     def test_db_url_includes_environment(self):
         from src.models.db import get_db_url
 
-        assert get_db_url("dev") == "sqlite:///data/dev.db"
-        assert get_db_url("int") == "sqlite:///data/int.db"
-        assert get_db_url("prod") == "sqlite:///data/prod.db"
+        assert get_db_url("dev") == "sqlite:///revt-data/dev.db"
+        assert get_db_url("int") == "sqlite:///revt-data/int.db"
+        assert get_db_url("prod") == "sqlite:///revt-data/prod.db"
 
     def test_db_url_defaults_to_env_var(self, monkeypatch):
         from src.models.db import get_db_url
 
         monkeypatch.setenv("ENVIRONMENT", "int")
-        assert get_db_url() == "sqlite:///data/int.db"
+        assert get_db_url() == "sqlite:///revt-data/int.db"
 
 
 # ---------------------------------------------------------------------------

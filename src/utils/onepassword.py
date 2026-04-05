@@ -18,10 +18,12 @@ Public API:
     is_available()    - True if 1Password CLI is installed and authenticated
     set_credential(item, field, value) - store a value (used for setup only)
     invalidate_cache()  - force refresh on next access
+    get_install_instructions() - Get OS-specific installation instructions
 """
 
 import json
 import os
+import platform
 import subprocess
 from threading import Lock
 
@@ -108,6 +110,33 @@ def get_config_item(env: str | None = None) -> str:
     if env is None:
         env = os.environ.get("ENVIRONMENT", "dev")
     return f"revolut-trader-config-{env}"
+
+
+def get_install_instructions() -> str:
+    """Get OS-specific installation instructions for 1Password CLI.
+
+    Returns:
+        Multi-line installation command string appropriate for the current OS.
+    """
+    system = platform.system()
+    if system == "Darwin":  # macOS
+        return "brew install --cask 1password-cli"
+    if system == "Linux":
+        # Provide comprehensive Linux instructions (works for most Debian/Ubuntu-based distros)
+        return (
+            "curl -sS https://downloads.1password.com/linux/keys/1password.asc | \\\n"
+            "  sudo gpg --dearmor --output /usr/share/keyrings/1password-archive-keyring.gpg\n"
+            'echo "deb [arch=$(dpkg --print-architecture) '
+            "signed-by=/usr/share/keyrings/1password-archive-keyring.gpg] "
+            'https://downloads.1password.com/linux/debian/$(dpkg --print-architecture) stable main" | \\\n'
+            "  sudo tee /etc/apt/sources.list.d/1password.list\n"
+            "sudo apt-get update && sudo apt-get install -y 1password-cli"
+        )
+    # Generic fallback for other systems
+    return (
+        f"# Detected OS: {system}\n"
+        "# Visit https://developer.1password.com/docs/cli/get-started/ for installation instructions"
+    )
 
 
 def _fetch_item_fields(item_name: str) -> dict[str, str]:
@@ -199,9 +228,10 @@ class _VaultCache:
     def _refresh(self) -> None:
         """Batch-fetch all fields from both vault items (environment-aware)."""
         if not self.is_available():
+            install_cmd = get_install_instructions()
             raise RuntimeError(
                 "1Password is required but not available.\n"
-                "1. Install: brew install --cask 1password-cli\n"
+                f"1. Install: {install_cmd}\n"
                 "2. Set:     export OP_SERVICE_ACCOUNT_TOKEN=ops_xxxx...\n"
                 "3. Setup:   make ops"
             )

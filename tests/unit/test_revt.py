@@ -22,10 +22,8 @@ from cli.revt import (
     _check_for_updates,
     _check_op,
     _config_delete,
-    _config_init,
     _config_set,
     _config_show,
-    _detect_env,
     _env_badge,
     _get_binary_name_for_platform,
     _get_current_version_from_pyproject,
@@ -41,7 +39,6 @@ from cli.revt import (
     _ops_status,
     _print_run_config,
     _read_update_cache,
-    _resolve_env,
     _run_compare_cli,
     _setup_logger,
     _show_update_notification,
@@ -60,6 +57,7 @@ from cli.revt import (
     cmd_update,
     main,
 )
+from cli.utils.env_detect import detect_env
 
 # ---------------------------------------------------------------------------
 # Helpers to build argparse.Namespace objects quickly
@@ -72,21 +70,21 @@ def _ns(**kwargs) -> argparse.Namespace:
 
 
 # ---------------------------------------------------------------------------
-# _detect_env
+# detect_env
 # ---------------------------------------------------------------------------
 
 
 class TestDetectEnv:
-    """Tests for _detect_env() — auto-detection of environment."""
+    """Tests for detect_env() — auto-detection of environment."""
 
     def test_frozen_binary_returns_prod(self, monkeypatch):
         monkeypatch.setattr(sys, "frozen", True, raising=False)
-        assert _detect_env() == "prod"
+        assert detect_env() == "prod"
 
     def test_feature_branch_returns_dev(self):
         result = MagicMock(returncode=0, stdout="feature/foo\n")
         with patch("subprocess.run", return_value=result):
-            assert _detect_env() == "dev"
+            assert detect_env() == "dev"
 
     def test_main_branch_no_tag_returns_int(self):
         branch_result = MagicMock(returncode=0, stdout="main\n")
@@ -98,7 +96,7 @@ class TestDetectEnv:
             return tag_result
 
         with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "int"
+            assert detect_env() == "int"
 
     def test_main_branch_with_tag_returns_prod(self):
         branch_result = MagicMock(returncode=0, stdout="main\n")
@@ -110,70 +108,35 @@ class TestDetectEnv:
             return tag_result
 
         with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
-    def test_master_branch_with_tag_returns_prod(self):
-        branch_result = MagicMock(returncode=0, stdout="master\n")
-        tag_result = MagicMock(returncode=0, stdout="v1.0.0\n")
+    def test_feature_branch_with_tag_returns_dev(self):
+        """Tags on non-main branches are not treated as releases — branch wins."""
+        branch_result = MagicMock(returncode=0, stdout="feature/my-feature\n")
 
-        def side_effect(cmd, **kw):
-            if "rev-parse" in cmd:
-                return branch_result
-            return tag_result
-
-        with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "prod"
+        with patch("subprocess.run", return_value=branch_result):
+            assert detect_env() == "dev"
 
     def test_git_not_installed_returns_prod(self):
         with patch("subprocess.run", side_effect=OSError("no git")):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_git_timeout_returns_prod(self):
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 5)):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_unexpected_exception_returns_prod(self):
         with patch("subprocess.run", side_effect=RuntimeError("boom")):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_git_rev_parse_fails_returns_prod(self):
         result = MagicMock(returncode=128, stdout="")
         with patch("subprocess.run", return_value=result):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
 
 # ---------------------------------------------------------------------------
-# _resolve_env
-# ---------------------------------------------------------------------------
-
-
-class TestResolveEnv:
-    """Tests for _resolve_env() — pick environment from args or detect."""
-
-    def test_explicit_env_from_args(self, monkeypatch):
-        monkeypatch.delenv("ENVIRONMENT", raising=False)
-        args = _ns(env="int")
-        result = _resolve_env(args)
-        assert result == "int"
-        import os
-
-        assert os.environ["ENVIRONMENT"] == "int"
-
-    def test_falls_back_to_detect_when_no_arg(self):
-        args = _ns(env=None)
-        with patch("cli.revt._detect_env", return_value="dev"):
-            result = _resolve_env(args)
-        assert result == "dev"
-
-    def test_no_env_attr_falls_back(self):
-        args = _ns()  # no env attribute at all
-        with patch("cli.revt._detect_env", return_value="prod"):
-            result = _resolve_env(args)
-        assert result == "prod"
-
-
-# ---------------------------------------------------------------------------
-# _env_badge
+# detect_env — tested separately (environment is now auto-detected only, not overridable)
 # ---------------------------------------------------------------------------
 
 
@@ -602,13 +565,13 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("cli.revt.TradingMode", create=True),
             patch("cli.revt.settings", create=True),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=mock_run_bot)}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=mock_run_bot)}),
             patch("asyncio.run"),
         ):
             cmd_run(args)
@@ -626,8 +589,8 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch("cli.validators.validate_trading_pairs", return_value=(False, "bad pairs")),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.validators.validate_trading_pairs", return_value=(False, "bad pairs")),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_run(args)
@@ -648,12 +611,12 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("src.config.settings", mock_settings),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=mock_run_bot)}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=mock_run_bot)}),
             patch("asyncio.run"),
         ):
             cmd_run(args)
@@ -672,13 +635,13 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("cli.revt.TradingMode", create=True),
             patch("cli.revt.settings", create=True),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=MagicMock())}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=MagicMock())}),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
         ):
             cmd_run(args)
@@ -705,7 +668,6 @@ class TestCmdBacktest:
             "interval": 60,
             "capital": None,
             "log_level": None,
-            "hf": False,
             "compare": False,
             "matrix": False,
         }
@@ -716,29 +678,18 @@ class TestCmdBacktest:
         args = self._base_args()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._backtest_single") as mock_single,
             patch("loguru.logger"),
         ):
             cmd_backtest(args)
         mock_single.assert_called_once_with(args)
 
-    def test_hf_backtest(self):
-        args = self._base_args(hf=True)
-        with (
-            patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch("cli.revt._backtest_single") as mock_single,
-            patch("loguru.logger"),
-        ):
-            cmd_backtest(args)
-        mock_single.assert_called_once_with(args, interval_override=1)
-
     def test_compare_backtest(self):
         args = self._base_args(compare=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -749,7 +700,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -762,7 +713,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -774,7 +725,7 @@ class TestCmdBacktest:
         args = self._base_args(compare=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -798,7 +749,9 @@ class TestBacktestSingle:
         )
         mock_run_backtest = MagicMock()
         with (
-            patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.backtest": MagicMock(run_backtest=mock_run_backtest)}
+            ),
             patch("asyncio.run"),
         ):
             from cli.revt import _backtest_single
@@ -817,7 +770,9 @@ class TestBacktestSingle:
         )
         mock_run_backtest = MagicMock()
         with (
-            patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.backtest": MagicMock(run_backtest=mock_run_backtest)}
+            ),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
         ):
             from cli.revt import _backtest_single
@@ -833,7 +788,7 @@ class TestRunCompareCli:
     def test_delegates_to_backtest_compare(self):
         mock_run = MagicMock()
         mock_module = MagicMock(run_compare_cli=mock_run)
-        with patch.dict("sys.modules", {"cli.backtest_compare": mock_module}):
+        with patch.dict("sys.modules", {"cli.commands.backtest_compare": mock_module}):
             _run_compare_cli(
                 days=30,
                 interval=60,
@@ -858,7 +813,7 @@ class TestCmdOps:
     def test_status(self):
         args = _ns(env="dev", status=True, show=False)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_status") as mock_status,
         ):
             cmd_ops(args)
@@ -867,20 +822,29 @@ class TestCmdOps:
     def test_show(self):
         args = _ns(env="dev", status=False, show=True)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_show") as mock_show,
         ):
             cmd_ops(args)
         mock_show.assert_called_once_with("dev")
 
     def test_default_set_creds(self):
-        args = _ns(env="int", status=False, show=False)
+        args = _ns(status=False, show=False)
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch("cli.revt._ops_set_creds") as mock_set,
         ):
             cmd_ops(args)
         mock_set.assert_called_once_with("int")
+
+    def test_init_subcommand(self):
+        args = _ns(ops_cmd="init", status=False, show=False)
+        with (
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
+            patch("cli.revt._ops_init") as mock_init,
+        ):
+            cmd_ops(args)
+        mock_init.assert_called_once_with("int")
 
 
 # ---------------------------------------------------------------------------
@@ -917,6 +881,252 @@ class TestOpsStatus:
             _ops_status("dev")
         out = capsys.readouterr().out
         assert "Authenticated    yes" in out
+
+
+# ---------------------------------------------------------------------------
+# _ops_init
+# ---------------------------------------------------------------------------
+
+
+class TestOpsInit:
+    """Tests for _ops_init() — 'revt ops init'."""
+
+    def test_op_not_available_exits(self):
+        from cli.revt import _ops_init
+
+        with (
+            patch("cli.revt._check_op", return_value=False),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _ops_init("int")
+        assert exc_info.value.code == 1
+
+    def test_dev_creates_placeholder_without_keypair(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=1),  # item get creds → not found
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults") as mock_cfg,
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+        ):
+            _ops_init("dev")
+
+        mock_creds.assert_called_once_with("dev", "revolut-trader-credentials-dev")
+        mock_cfg.assert_called_once_with("dev", "revolut-trader-config-dev")
+        assert "Dev is ready" in capsys.readouterr().out
+
+    def test_int_creates_creds_and_config(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=1),  # item get creds → not found
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults") as mock_cfg,
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_called_once_with("int", "revolut-trader-credentials-int")
+        mock_cfg.assert_called_once_with("int", "revolut-trader-config-int")
+        assert "Next steps" in capsys.readouterr().out
+
+    def test_existing_creds_item_skipped_on_no_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=0),  # item get creds → exists
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults"),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", return_value="n"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_not_called()
+
+    def test_existing_creds_item_reset_on_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=0),  # item get creds → exists
+            MagicMock(returncode=0),  # item delete creds
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults"),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", return_value="y"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_called_once()
+
+    def test_keyboard_interrupt_on_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+        ):
+            _ops_init("int")  # should skip credentials and continue, not raise
+        out = capsys.readouterr().out
+        assert "Skipping credentials item" in out
+
+
+class TestCreateCredsItem:
+    """Tests for _create_creds_item() — keypair generation + 1Password write."""
+
+    def test_dev_creates_placeholder_no_keypair(self, capsys):
+        from cli.revt import _create_creds_item
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            _create_creds_item("dev", "revolut-trader-credentials-dev")
+
+        call_args = mock_run.call_args[0][0]
+        assert "op" in call_args
+        assert "item" in call_args
+        assert "create" in call_args
+        # No private/public key fields for dev; Telegram placeholder present
+        full_cmd = " ".join(call_args)
+        assert "REVOLUT_PRIVATE_KEY" not in full_cmd
+        assert "REVOLUT_PUBLIC_KEY" not in full_cmd
+        assert "TELEGRAM_BOT_TOKEN" in full_cmd
+        assert "✓" in capsys.readouterr().out
+
+    def test_int_generates_ed25519_keypair(self, capsys):
+        from cli.revt import _create_creds_item
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            _create_creds_item("int", "revolut-trader-credentials-int")
+
+        call_args = mock_run.call_args[0][0]
+        full_cmd = " ".join(call_args)
+        assert "REVOLUT_PRIVATE_KEY" in full_cmd
+        assert "REVOLUT_PUBLIC_KEY" in full_cmd
+        assert "TELEGRAM_BOT_TOKEN" in full_cmd
+        out = capsys.readouterr().out
+        assert "PUBLIC KEY" in out
+        assert "BEGIN PUBLIC KEY" in out
+        assert "✓" in out
+
+    def test_subprocess_failure_exits(self):
+        from cli.revt import _create_creds_item
+
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="error")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_creds_item("int", "revolut-trader-credentials-int")
+        assert exc_info.value.code == 1
+
+
+class TestCreateRiskItems:
+    """Tests for _create_risk_items()."""
+
+    def test_creates_all_three_when_missing(self, capsys):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),  # all missing
+            patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run,
+        ):
+            _create_risk_items()
+
+        assert mock_run.call_count == 3
+        out = capsys.readouterr().out
+        assert "conservative" in out
+        assert "moderate" in out
+        assert "aggressive" in out
+
+    def test_skips_existing_items(self, capsys):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),  # all exist
+            patch("subprocess.run") as mock_run,
+        ):
+            _create_risk_items()
+
+        mock_run.assert_not_called()
+        assert "skipped" in capsys.readouterr().out
+
+    def test_exits_on_failure(self):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="err")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_risk_items()
+        assert exc_info.value.code == 1
+
+
+class TestCreateStrategyItems:
+    """Tests for _create_strategy_items()."""
+
+    def test_creates_all_six_when_missing(self, capsys):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),  # all missing
+            patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run,
+        ):
+            _create_strategy_items()
+
+        assert mock_run.call_count == 6
+        out = capsys.readouterr().out
+        assert "market_making" in out
+        assert "multi_strategy" in out
+
+    def test_skips_existing_items(self, capsys):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),  # all exist
+            patch("subprocess.run") as mock_run,
+        ):
+            _create_strategy_items()
+
+        mock_run.assert_not_called()
+        assert "skipped" in capsys.readouterr().out
+
+    def test_exits_on_failure(self):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="err")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_strategy_items()
+        assert exc_info.value.code == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1034,7 +1244,7 @@ class TestCmdConfig:
     def test_show(self):
         args = _ns(env="dev", config_cmd="show")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1043,25 +1253,16 @@ class TestCmdConfig:
     def test_set(self):
         args = _ns(env="dev", config_cmd="set", key="RISK_LEVEL", value="aggressive")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_set") as mock_set,
         ):
             cmd_config(args)
         mock_set.assert_called_once_with("dev", "RISK_LEVEL", "aggressive")
 
-    def test_init(self):
-        args = _ns(env="dev", config_cmd="init")
-        with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch("cli.revt._config_init") as mock_init,
-        ):
-            cmd_config(args)
-        mock_init.assert_called_once_with("dev")
-
     def test_delete(self):
         args = _ns(env="dev", config_cmd="delete", key="MAX_CAPITAL")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_delete") as mock_del,
         ):
             cmd_config(args)
@@ -1070,7 +1271,7 @@ class TestCmdConfig:
     def test_default_is_show(self):
         args = _ns(env="dev", config_cmd=None)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1120,7 +1321,7 @@ class TestConfigSet:
     def test_validation_failure_exits(self, capsys):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(False, "bad value")),
+            patch("cli.utils.validators.validate_config_value", return_value=(False, "bad value")),
             pytest.raises(SystemExit),
         ):
             _config_set("dev", "KEY", "VAL")
@@ -1128,7 +1329,7 @@ class TestConfigSet:
     def test_successful_set(self, capsys):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(True, None)),
+            patch("cli.utils.validators.validate_config_value", return_value=(True, None)),
             patch("cli.revt._op", return_value=MagicMock(returncode=0)),
         ):
             _config_set("dev", "RISK_LEVEL", "aggressive")
@@ -1138,113 +1339,11 @@ class TestConfigSet:
     def test_op_edit_failure_exits(self):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(True, None)),
+            patch("cli.utils.validators.validate_config_value", return_value=(True, None)),
             patch("cli.revt._op", return_value=MagicMock(returncode=1, stderr="error")),
             pytest.raises(SystemExit),
         ):
             _config_set("dev", "RISK_LEVEL", "aggressive")
-
-
-# ---------------------------------------------------------------------------
-# _config_init
-# ---------------------------------------------------------------------------
-
-
-class TestConfigInit:
-    """Tests for _config_init()."""
-
-    def test_op_not_available_exits(self):
-        with (
-            patch("cli.revt._check_op", return_value=False),
-            pytest.raises(SystemExit),
-        ):
-            _config_init("dev")
-
-    def test_item_exists_user_cancels(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", return_value="n"),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_item_exists_user_confirms_reset(self, capsys):
-        op_results = [
-            MagicMock(returncode=0),  # item get (exists)
-            MagicMock(returncode=0),  # item delete
-        ]
-        op_idx = 0
-
-        def mock_op(*args):
-            nonlocal op_idx
-            r = op_results[min(op_idx, len(op_results) - 1)]
-            op_idx += 1
-            return r
-
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", side_effect=mock_op),
-            patch("builtins.input", return_value="y"),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Config item created" in out
-
-    def test_item_exists_keyboard_interrupt(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", side_effect=KeyboardInterrupt),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_item_exists_eof_error(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", side_effect=EOFError),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_new_item_created_non_prod(self, capsys):
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Config item created" in out
-
-    def test_new_item_created_prod_shows_tip(self, capsys):
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("prod")
-        out = capsys.readouterr().out
-        assert "Tip" in out
-        assert "MAX_CAPITAL" in out
-
-    def test_create_failure_exits(self):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="fail")),
-            pytest.raises(SystemExit),
-        ):
-            _config_init("dev")
 
 
 # ---------------------------------------------------------------------------
@@ -1289,75 +1388,34 @@ class TestCmdApi:
     """Tests for cmd_api() — the 'revt api' command."""
 
     def test_dev_env_blocked(self, capsys):
-        args = _ns(env="dev", api_cmd="balance")
+        args = _ns(env="dev", api_cmd="test")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_api(args)
         assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "mock" in out
+        assert "mock" in capsys.readouterr().out
 
     def test_test_command_delegates(self):
-        args = _ns(env="int", api_cmd="test")
+        args = _ns(api_cmd="test")
         mock_run = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
+            patch.dict("sys.modules", {"cli.commands.api": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("test")
 
     def test_ready_command_delegates(self):
-        args = _ns(env="int", api_cmd="ready")
+        args = _ns(api_cmd="ready")
         mock_run = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
+            patch.dict("sys.modules", {"cli.commands.api": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("trade-ready")
-
-    def test_balance_command_delegates_to_endpoint(self):
-        args = _ns(
-            env="int",
-            api_cmd="balance",
-            symbol=None,
-            symbols=None,
-            order_id=None,
-            interval=60,
-            limit=20,
-            depth=20,
-        )
-        mock_endpoint = MagicMock()
-        with (
-            patch("cli.revt._resolve_env", return_value="int"),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
-        ):
-            cmd_api(args)
-        mock_endpoint.assert_called_once()
-
-    def test_pairs_command_maps_name(self):
-        args = _ns(
-            env="int",
-            api_cmd="pairs",
-            symbol=None,
-            symbols=None,
-            order_id=None,
-            interval=60,
-            limit=20,
-            depth=20,
-        )
-        mock_endpoint = MagicMock()
-        with (
-            patch("cli.revt._resolve_env", return_value="int"),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
-        ):
-            cmd_api(args)
-        mock_endpoint.assert_called_once()
-        # Check that 'pairs' was mapped to 'currency-pairs'
-        assert mock_endpoint.call_args.kwargs["command"] == "currency-pairs"
 
 
 # ---------------------------------------------------------------------------
@@ -1372,11 +1430,11 @@ class TestCmdTelegram:
         args = _ns(env="dev", telegram_cmd="start")
         mock_run_control_plane = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._show_update_notification"),
             patch.dict(
                 "sys.modules",
-                {"cli.telegram_control": MagicMock(run_control_plane=mock_run_control_plane)},
+                {"cli.commands.telegram": MagicMock(run_control_plane=mock_run_control_plane)},
             ),
         ):
             cmd_telegram(args)
@@ -1388,7 +1446,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = None
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit) as exc_info,
@@ -1404,7 +1462,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = "token123"
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit),
@@ -1419,7 +1477,7 @@ class TestCmdTelegram:
         mock_notifier.send_test = MagicMock()
         # Patch settings attributes on the real singleton and TelegramNotifier at its source
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1434,7 +1492,7 @@ class TestCmdTelegram:
         mock_notifier = MagicMock()
         mock_notifier.send_test = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1456,8 +1514,8 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="stats")
         mock_show_stats = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
         mock_show_stats.assert_called_once()
@@ -1466,9 +1524,9 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="analytics", days=60)
         mock_show_analytics = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.db_manage": MagicMock(show_analytics=mock_show_analytics)}
+                "sys.modules", {"cli.commands.db": MagicMock(show_analytics=mock_show_analytics)}
             ),
         ):
             cmd_db(args)
@@ -1478,9 +1536,9 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="backtests", limit=5)
         mock_show = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.db_manage": MagicMock(show_backtest_results=mock_show)}
+                "sys.modules", {"cli.commands.db": MagicMock(show_backtest_results=mock_show)}
             ),
         ):
             cmd_db(args)
@@ -1490,8 +1548,8 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="export")
         mock_export = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(export_csv=mock_export)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(export_csv=mock_export)}),
         ):
             cmd_db(args)
         mock_export.assert_called_once()
@@ -1500,49 +1558,21 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="report", days=30, output_dir="data/reports")
         mock_generate = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.analytics_report": MagicMock(generate_report=mock_generate)}
+                "sys.modules",
+                {"cli.utils.analytics_report": MagicMock(generate_report=mock_generate)},
             ),
         ):
             cmd_db(args)
         mock_generate.assert_called_once()
 
-    def test_encrypt_setup(self):
-        args = _ns(env="dev", db_cmd="encrypt-setup")
-        mock_setup = MagicMock()
-        with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch.dict(
-                "sys.modules",
-                {"src.utils.db_encryption": MagicMock(setup_database_encryption=mock_setup)},
-            ),
-        ):
-            cmd_db(args)
-        mock_setup.assert_called_once()
-
-    def test_encrypt_status(self, capsys):
-        args = _ns(env="dev", db_cmd="encrypt-status")
-        mock_enc = MagicMock()
-        mock_enc.is_enabled = True
-        mock_enc_class = MagicMock(return_value=mock_enc)
-        with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch.dict(
-                "sys.modules",
-                {"src.utils.db_encryption": MagicMock(DatabaseEncryption=mock_enc_class)},
-            ),
-        ):
-            cmd_db(args)
-        out = capsys.readouterr().out
-        assert "enabled" in out
-
     def test_default_is_stats(self):
         args = _ns(env="dev", db_cmd=None)
         mock_show_stats = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
         mock_show_stats.assert_called_once()
@@ -1843,9 +1873,8 @@ class TestBuildParser:
 
     def test_backtest_subcommand(self):
         parser = _build_parser()
-        args = parser.parse_args(["backtest", "--days", "60", "--hf"])
+        args = parser.parse_args(["backtest", "--days", "60"])
         assert args.days == 60
-        assert args.hf is True
         assert args.func == cmd_backtest
 
     def test_ops_subcommand(self):
@@ -1864,9 +1893,8 @@ class TestBuildParser:
 
     def test_api_subcommand(self):
         parser = _build_parser()
-        args = parser.parse_args(["api", "balance", "--env", "int"])
-        assert args.api_cmd == "balance"
-        assert args.env == "int"
+        args = parser.parse_args(["api", "test"])
+        assert args.api_cmd == "test"
         assert args.func == cmd_api
 
     def test_db_subcommand(self):

@@ -16,10 +16,16 @@ The control plane never exits on its own; stop it with Ctrl-C or SIGTERM.
 
 import asyncio
 import contextlib
-import os
 import signal
 import sys
 from decimal import Decimal
+
+from cli.utils.env_detect import set_env as _set_env
+
+# ENVIRONMENT must be set before src.config is imported — Settings() is created
+# at import time.  Environment is locked to git branch/tag or frozen binary.
+_set_env()
+
 
 from loguru import logger
 
@@ -398,7 +404,7 @@ class TelegramControlPlane:
         # Bot is not running — generate full PDF report
         from pathlib import Path
 
-        from cli.analytics_report import generate_report_data
+        from cli.utils.analytics_report import generate_report_data
 
         try:
             await self.notifier.reply(f"📊 Generating {days}-day analytics report...")
@@ -406,7 +412,7 @@ class TelegramControlPlane:
             # Generate report data and PDF (safe to call from async context)
             result = generate_report_data(
                 days=days,
-                output_dir=Path("data/reports"),
+                output_dir=Path("revt-data/reports"),
             )
 
             if not result.get("pdf_bytes"):
@@ -497,11 +503,4 @@ def run_control_plane() -> None:
 
 
 if __name__ == "__main__":
-    # Set ENVIRONMENT from CLI arg --env before Settings singleton is created.
-    for i, arg in enumerate(sys.argv[1:], 1):
-        if arg == "--env" and i < len(sys.argv):
-            os.environ["ENVIRONMENT"] = sys.argv[i + 1]
-        elif arg.startswith("--env="):
-            os.environ["ENVIRONMENT"] = arg.split("=", 1)[1]
-
     run_control_plane()

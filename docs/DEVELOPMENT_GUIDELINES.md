@@ -237,7 +237,7 @@ ______________________________________________________________________
 
 All trading config MUST be in 1Password. No code defaults.
 
-**Exception:** `TRADING_MODE` is derived from the environment (dev/int → paper, prod → live) and is not stored in 1Password. `INITIAL_CAPITAL` is only required for paper mode (dev/int).
+**Exception:** `TRADING_MODE` defaults to `paper` in all environments and is stored in 1Password (set `TRADING_MODE=live` for prod to enable live trading). `INITIAL_CAPITAL` is only required for paper mode.
 
 ```python
 # WRONG - has code default
@@ -272,11 +272,11 @@ ______________________________________________________________________
 Before committing code:
 
 - [ ] Tests written BEFORE code implementation
-- [ ] All tests pass (`make test`)
+- [ ] All tests pass (`just test`)
 - [ ] No floating-point arithmetic for financial calculations
 - [ ] Type hints on all functions
 - [ ] Critical tests documented with WHY and context
-- [ ] Pre-commit hooks pass (`make pre-commit`)
+- [ ] Pre-commit hooks pass (`just pre-commit`)
 - [ ] No secrets in code (use 1Password)
 - [ ] Documentation updated if needed
 
@@ -296,15 +296,15 @@ ______________________________________________________________________
 
 The project uses three deployment environments with full isolation:
 
-| Environment | API                  | Trading Mode | DB File        | 1Password Items                        |
-| ----------- | -------------------- | ------------ | -------------- | -------------------------------------- |
-| `dev`       | Mock (no real calls) | Paper only   | `data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
-| `int`       | Real Revolut X API   | Paper only   | `data/int.db`  | `*-credentials-int` / `*-config-int`   |
-| `prod`      | Real Revolut X API   | Live only    | `data/prod.db` | `*-credentials-prod` / `*-config-prod` |
+| Environment | API                  | Trading Mode           | DB File             | 1Password Items                        |
+| ----------- | -------------------- | ---------------------- | ------------------- | -------------------------------------- |
+| `dev`       | Mock (no real calls) | Paper only             | `revt-data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
+| `int`       | Real Revolut X API   | Paper only             | `revt-data/int.db`  | `*-credentials-int` / `*-config-int`   |
+| `prod`      | Real Revolut X API   | Paper (default) / Live | `revt-data/prod.db` | `*-credentials-prod` / `*-config-prod` |
 
 ### Key rules
 
-- **`ENVIRONMENT` must be set** before any Python process that imports `src.config`. The Makefile sets it automatically; for manual runs use `--env` or `export ENVIRONMENT=dev`.
+- **`ENVIRONMENT` is auto-detected** from the git branch (`main` → `int`, feature branch → `dev`, tagged commit → `prod`) or from the frozen binary (`prod`). Override with `--env` or `export ENVIRONMENT=dev|int|prod`.
 - **`TRADING_MODE` is stored in 1Password** and defaults to `paper` if not set. Must be explicitly set to `live` for real-money trading.
 - **`INITIAL_CAPITAL` is required for paper mode**, not required for live mode (fetches real balance from API).
 - **Separate API keys per environment** — if a dev key leaks, prod is unaffected.
@@ -313,10 +313,10 @@ The project uses three deployment environments with full isolation:
 ### Running in each environment
 
 ```bash
-make run              # env auto-detected from git branch (feature → dev, main → int)
-make run ENV=dev      # mock API, no credentials needed
-make run ENV=int      # real API, paper mode (no real trades)
-make run ENV=prod     # real API, live trading (requires confirmation)
+revt run              # env auto-detected from git branch (feature → dev, main → int)
+revt run ENV=dev      # mock API, no credentials needed
+revt run ENV=int      # real API, paper mode (no real trades)
+revt run ENV=prod     # real API, live trading (requires confirmation)
 ```
 
 ### Branches & CI flow

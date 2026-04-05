@@ -47,7 +47,7 @@ Verify:
 
 ```bash
 op whoami
-make opstatus
+revt opstatus
 ```
 
 ______________________________________________________________________
@@ -55,12 +55,12 @@ ______________________________________________________________________
 ## Quick Start
 
 ```bash
-make setup       # create vault, items, generate keys (int/prod only), install deps
+revt ops       # create vault, items, generate keys (int/prod only), install deps
 make run         # start with mock API on feature branches (no credentials needed)
 
 # For real API:
-make ops ENV=int  # store your Revolut API credentials
-make opshow       # verify stored values (masked)
+revt ops ENV=int  # store your Revolut API credentials
+revt opshow       # verify stored values (masked)
 make run ENV=int  # start with real API in paper mode
 ```
 
@@ -184,12 +184,12 @@ op item edit revolut-trader-config-int \
   - Make sure the bot is added to the group and is not blocked
   - Verify the chat ID matches the group or user
 - **Field not found:**
-  - Run `make opconfig-set KEY=TELEGRAM_BOT_TOKEN VALUE=...`
-  - Run `make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=...`
+  - Run `revt config set KEY=TELEGRAM_BOT_TOKEN VALUE=...`
+  - Run `revt config set KEY=TELEGRAM_CHAT_ID VALUE=...`
 
 For more details, see [`END_USER_GUIDE.md`](END_USER_GUIDE.md) and [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
 
-> **TRADING_MODE is not stored in 1Password.** It is derived from the environment: dev/int → paper, prod → live. This is intentionally non-configurable.
+> **TRADING_MODE** defaults to `paper` in all environments (dev, int, and prod). To enable live trading, set `TRADING_MODE=live` in 1Password for the `prod` environment. Live trading is rejected in dev and int regardless of this setting.
 >
 > **INITIAL_CAPITAL** is only needed for paper mode (dev/int). In prod the real balance is fetched from the Revolut API.
 
@@ -214,7 +214,7 @@ Items: `revolut-trader-risk-conservative`, `revolut-trader-risk-moderate`, `revo
 | `TAKE_PROFIT_PCT`       | text | `2.5`        | `4.0`    | `7.0`      | Take-profit % per position         |
 | `MAX_OPEN_POSITIONS`    | text | `3`          | `5`      | `8`        | Maximum concurrent open positions  |
 
-`make setup` creates all three items with the defaults shown above. To customise:
+`revt ops` creates all three items with the defaults shown above. To customise:
 
 ```bash
 # Tighten the conservative stop-loss to 1%
@@ -230,17 +230,17 @@ ______________________________________________________________________
 
 ## Commands
 
-| Command                           | Description                                      |
-| --------------------------------- | ------------------------------------------------ |
-| `make setup`                      | Full first-time setup (vault, items, keys, deps) |
-| `make ops`                        | Store API key credentials                        |
-| `make opshow`                     | Show all stored values (masked)                  |
-| `make opstatus`                   | Check 1Password authentication and vault status  |
-| `make opdelete`                   | Delete credentials item (requires confirmation)  |
-| `make opconfig-show`              | Show trading configuration                       |
-| `make opconfig-set KEY=X VALUE=Y` | Update a config field                            |
-| `make opconfig-delete KEY=X`      | Remove a config field                            |
-| `make opconfig-init`              | (Re-)create config item with defaults            |
+| Command                         | Description                                      |
+| ------------------------------- | ------------------------------------------------ |
+| `revt ops`                      | Full first-time setup (vault, items, keys, deps) |
+| `revt ops`                      | Store API key credentials                        |
+| `revt opshow`                   | Show all stored values (masked)                  |
+| `revt opstatus`                 | Check 1Password authentication and vault status  |
+| `make opdelete`                 | Delete credentials item (requires confirmation)  |
+| `revt config show`              | Show trading configuration                       |
+| `revt config set KEY=X VALUE=Y` | Update a config field                            |
+| `make opconfig-delete KEY=X`    | Remove a config field                            |
+| `make opconfig-init`            | (Re-)create config item with defaults            |
 
 ### Using the CLI directly
 
@@ -321,17 +321,17 @@ Set `OP_SERVICE_ACCOUNT_TOKEN` and run `op whoami` to verify.
 Install the CLI (see Prerequisites above).
 
 **Vault or item not found**
-Run `make opstatus` to diagnose, then `make setup` or `make ops` to recreate.
+Run `revt opstatus` to diagnose, then `revt ops` or `revt ops` to recreate.
 
 **Field not found at runtime**
-Run `make opconfig-set KEY=<field> VALUE=<value>` to add the missing field,
+Run `revt config set KEY=<field> VALUE=<value>` to add the missing field,
 or `make opconfig-init` to recreate the full config item with defaults.
 
 **Bot fails with "1Password required"**
 
 1. Verify token is set: `echo $OP_SERVICE_ACCOUNT_TOKEN`
 1. Verify CLI works: `op whoami`
-1. Verify credentials exist: `make opstatus`
+1. Verify credentials exist: `revt opstatus`
 
 ______________________________________________________________________
 
@@ -347,4 +347,4 @@ The bot fails to start immediately with a clear error message.
 No. They are loaded directly into memory from 1Password.
 
 **Q: How do I switch back to USD?**
-`make opconfig-set KEY=BASE_CURRENCY VALUE=USD` and update your trading pairs accordingly.
+`revt config set KEY=BASE_CURRENCY VALUE=USD` and update your trading pairs accordingly.

@@ -97,27 +97,29 @@ The `update` command:
 
 - **Binary users**: Downloads and replaces the binary with the latest release
 - **Source users**: Pulls latest changes from git and updates dependencies
-- **Safe**: Never touches `data/` folder or 1Password configuration
+- **Safe**: Never touches `revt-data/` folder or 1Password configuration
 
 ### Run from source (developers)
 
 ```bash
 uv sync --extra dev
-make run              # paper trading (env auto-detected from git context)
-make run MODE=live    # live trading (requires confirmation)
+revt run              # paper trading (env auto-detected from git context)
+revt run --mode live  # live trading (requires confirmation)
 ```
+
+For development tasks (tests, linting, formatting), use `just` commands. See [Development](#development).
 
 ## Usage
 
 ### Backtesting
 
 ```bash
-make backtest                              # 30 days, default strategy
-make backtest STRATEGY=momentum DAYS=90    # specific strategy and period
-make backtest-hf                           # high-frequency: 1-min candles (closest to live 5s polling)
-make backtest-hf STRATEGY=breakout DAYS=7  # high-frequency with specific strategy
-make db-backtests                          # view stored results
-make db-export-csv                         # export to CSV
+revt backtest                                  # 30 days, default strategy
+revt backtest --strategy momentum --days 90    # specific strategy and period
+revt backtest --hf                             # high-frequency: 1-min candles (closest to live 5s polling)
+revt backtest --hf --strategy breakout --days 7 # high-frequency with specific strategy
+revt db backtests                              # view stored results
+revt db export                                 # export to CSV
 ```
 
 See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and best practices.
@@ -126,11 +128,11 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 The project uses three environments, each with separate credentials and databases:
 
-| Environment | API                  | Default Mode | DB File        | Purpose                          |
-| ----------- | -------------------- | ------------ | -------------- | -------------------------------- |
-| **dev**     | Mock (no real calls) | Paper        | `data/dev.db`  | Development & testing            |
-| **int**     | Real Revolut X API   | Paper        | `data/int.db`  | Pre-production validation        |
-| **prod**    | Real Revolut X API   | Paper        | `data/prod.db` | Production (live opt-in allowed) |
+| Environment | API                  | Default Mode | DB File             | Purpose                          |
+| ----------- | -------------------- | ------------ | ------------------- | -------------------------------- |
+| **dev**     | Mock (no real calls) | Paper        | `revt-data/dev.db`  | Development & testing            |
+| **int**     | Real Revolut X API   | Paper        | `revt-data/int.db`  | Pre-production validation        |
+| **prod**    | Real Revolut X API   | Paper        | `revt-data/prod.db` | Production (live opt-in allowed) |
 
 Each environment has its own 1Password items:
 
@@ -144,18 +146,18 @@ Each environment has its own 1Password items:
 - Other branches → `dev`
 - Binary → `prod` (always)
 
-Override with `--env dev|int|prod` or `ENV=...` make variable when needed.
+Override with `--env dev|int|prod` flag when needed.
 
 ### Mock Trading (dev)
 
 ```bash
-make run             # on a feature branch, env auto-detects to dev — mock API, no credentials needed
+revt run             # on a feature branch, env auto-detects to dev — mock API, no credentials needed
 ```
 
 ### Paper Trading (int)
 
 ```bash
-make run             # on main branch, env auto-detects to int — real API, simulated trades
+revt run             # on main branch, env auto-detects to int — real API, simulated trades
 ```
 
 ### Enabling Live Trading
@@ -191,11 +193,11 @@ revt config set TRADING_MODE paper   # back to safe default
 ### API Testing
 
 ```bash
-make api-test            # authenticated connection test
-make api-ready           # check API permissions (view + trade)
-make telegram-test       # verify Telegram is configured
+revt api test                              # authenticated connection test
+revt api ready                             # check API permissions (view + trade)
+revt telegram test                         # verify Telegram is configured
 
-# Via revt CLI (for additional endpoints):
+# Additional API endpoints:
 revt api balance                           # account balances
 revt api ticker --symbol BTC-EUR           # single ticker
 revt api tickers --symbols BTC-EUR,ETH-EUR # multiple tickers
@@ -241,7 +243,7 @@ Per-strategy stop-loss / take-profit overrides (applied on top of the risk-level
 Additionally, you can set `MAX_CAPITAL` to limit how much money the bot can trade with, regardless of your account balance:
 
 ```bash
-make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
+revt config set MAX_CAPITAL 5000 --env prod
 ```
 
 ## Trading Fees
@@ -302,7 +304,7 @@ revolut-trader/
 │   └── mocks/                # Mock 1Password for testing
 ├── docs/                     # Documentation
 │   ├── END_USER_GUIDE.md         # Quick start: download binary, configure, trade
-│   ├── DEVELOPER_GUIDE.md        # Development setup, advanced usage, make commands
+│   ├── DEVELOPER_GUIDE.md        # Development setup, advanced usage, just/revt commands
 │   ├── ARCHITECTURE.md           # Component details and data flow
 │   ├── BACKTESTING.md            # Backtesting guide
 │   ├── DEVELOPMENT_GUIDELINES.md # TDD, coding standards, contribution rules
@@ -310,36 +312,49 @@ revolut-trader/
 │   ├── TELEGRAM_BOT_COMMANDS.md  # BotFather command list (copy-paste ready)
 │   ├── revolut-x-api-docs.md     # Revolut X API reference (source of truth)
 │   └── README.md                 # Documentation index
-└── Makefile                  # All project commands
+└── justfile                  # Development commands
 ```
 
 ## Database & Monitoring
 
-Trading data is stored in an encrypted SQLite database per environment (`data/dev.db`, `data/int.db`, `data/prod.db`).
+Trading data is stored in an encrypted SQLite database per environment (`revt-data/dev.db`, `revt-data/int.db`, `revt-data/prod.db`).
 
 ```bash
-make db               # database overview (stats + analytics + recent backtests)
-make db-stats         # database statistics
-make db-analytics     # trading analytics (DAYS=30)
-make db-backtests     # backtest results
-make db-report        # comprehensive analytics report with charts (DAYS=30)
-make db-export        # export data to a directory
-make db-export-csv    # export to CSV
-make db-encrypt-setup  # generate and store encryption key in 1Password
-make db-encrypt-status # check encryption status
+revt db stats         # database statistics
+revt db analytics     # trading analytics (default: 30 days, use --days flag)
+revt db backtests     # backtest results
+revt db report        # comprehensive analytics report with charts (--days 30)
+revt db export        # export data to CSV
+revt db encrypt-setup  # generate and store encryption key in 1Password
+revt db encrypt-status # check encryption status
 ```
 
 See [Architecture](docs/ARCHITECTURE.md) for component details and data flow.
 
 ## Development
 
+Development commands use `just` (install: `brew install just` or `cargo install just`):
+
 ```bash
-make test             # run tests with coverage
-make lint             # ruff check
-make format           # ruff format + ruff check --fix
-make typecheck        # pyright src/ cli/
-make check            # all of the above + tests
-make pre-commit       # run all pre-commit hooks
+just install          # install/update dependencies
+just test             # run tests with coverage
+just lint             # ruff check
+just format           # ruff format + ruff check --fix
+just typecheck        # pyright src/ cli/
+just check            # all of the above + tests
+just pre-commit       # run all pre-commit hooks
+just clean            # remove cache files
+just --list           # show all available commands
+```
+
+Functional commands use `revt`:
+
+```bash
+revt run              # start trading
+revt backtest         # backtest strategies
+revt ops              # manage credentials
+revt db stats         # database management
+revt --help           # show all revt commands
 ```
 
 ### CI Pipeline
@@ -392,7 +407,7 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `perf`, `ci`, `style`
 
 Use `uv run cz commit` for an interactive prompt, or write the message manually — the hook validates it on `git commit`.
 
-After cloning, run `make pre-commit-install` to register both the `pre-commit` and `commit-msg` hooks.
+After cloning, run `just install` to install dependencies and git hooks.
 
 See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, coding standards, and contribution rules.
 
@@ -401,9 +416,9 @@ See [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) for TDD workflow, c
 **API connection issues:**
 
 ```bash
-make opstatus   # check 1Password auth
-make opshow     # verify credentials
-make api-test   # test API connectivity
+revt ops --status   # check 1Password auth
+revt ops --show     # verify credentials
+revt api test       # test API connectivity
 ```
 
 **No signals generated:** Strategies need warmup time to collect data. Check logs and verify trading pairs.
@@ -413,7 +428,7 @@ make api-test   # test API connectivity
 | Document                                                 | Purpose                                                |
 | -------------------------------------------------------- | ------------------------------------------------------ |
 | [End User Guide](docs/END_USER_GUIDE.md)                 | Quick start: download binary, configure, start trading |
-| [Developer Guide](docs/DEVELOPER_GUIDE.md)               | Development setup, advanced usage, make commands       |
+| [Developer Guide](docs/DEVELOPER_GUIDE.md)               | Development setup, advanced usage, just/revt commands  |
 | [Architecture](docs/ARCHITECTURE.md)                     | Component details and data flow                        |
 | [Backtesting Guide](docs/BACKTESTING.md)                 | Metrics, interpretation, best practices                |
 | [Development Guidelines](docs/DEVELOPMENT_GUIDELINES.md) | TDD workflow, coding standards, contribution rules     |

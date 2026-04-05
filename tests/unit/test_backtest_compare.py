@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.backtest_compare import (
+from cli.commands.backtest_compare import (
     ALL_RISK_LEVELS,
     ALL_STRATEGIES,
     _persist_result,
@@ -119,13 +119,13 @@ def _make_row(
 class TestSetupLogging:
     """Tests for setup_logging function."""
 
-    @patch("cli.backtest_compare.logger")
+    @patch("cli.commands.backtest_compare.logger")
     def test_removes_existing_handlers(self, mock_logger: MagicMock) -> None:
         """setup_logging removes previous loguru handlers."""
         setup_logging("INFO")
         mock_logger.remove.assert_called_once()
 
-    @patch("cli.backtest_compare.logger")
+    @patch("cli.commands.backtest_compare.logger")
     def test_adds_stderr_handler(self, mock_logger: MagicMock) -> None:
         """setup_logging adds a stderr handler at the requested level."""
         setup_logging("DEBUG")
@@ -133,7 +133,7 @@ class TestSetupLogging:
         call_kwargs = mock_logger.add.call_args
         assert call_kwargs[1]["level"] == "DEBUG" or call_kwargs[0][1:] == ()
 
-    @patch("cli.backtest_compare.logger")
+    @patch("cli.commands.backtest_compare.logger")
     def test_warning_level(self, mock_logger: MagicMock) -> None:
         """setup_logging respects the WARNING level."""
         setup_logging("WARNING")
@@ -298,10 +298,10 @@ class TestRunCompare:
     """Tests for the async run_compare function."""
 
     @pytest.mark.asyncio
-    @patch("cli.backtest_compare.DatabasePersistence")
-    @patch("cli.backtest_compare.BacktestEngine")
-    @patch("cli.backtest_compare.create_api_client")
-    @patch("cli.backtest_compare._print_comparison_table")
+    @patch("cli.commands.backtest_compare.DatabasePersistence")
+    @patch("cli.commands.backtest_compare.BacktestEngine")
+    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_with_custom_args(
         self,
         mock_print_table: MagicMock,
@@ -355,10 +355,10 @@ class TestRunCompare:
         assert rows[0]["strategy"] == "momentum"
 
     @pytest.mark.asyncio
-    @patch("cli.backtest_compare.DatabasePersistence")
-    @patch("cli.backtest_compare.BacktestEngine")
-    @patch("cli.backtest_compare.create_api_client")
-    @patch("cli.backtest_compare._print_comparison_table")
+    @patch("cli.commands.backtest_compare.DatabasePersistence")
+    @patch("cli.commands.backtest_compare.BacktestEngine")
+    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_defaults_use_all_strategies(
         self,
         mock_print_table: MagicMock,
@@ -394,10 +394,10 @@ class TestRunCompare:
         assert mock_engine_cls.call_count == len(ALL_STRATEGIES)
 
     @pytest.mark.asyncio
-    @patch("cli.backtest_compare.DatabasePersistence")
-    @patch("cli.backtest_compare.BacktestEngine")
-    @patch("cli.backtest_compare.create_api_client")
-    @patch("cli.backtest_compare._print_comparison_table")
+    @patch("cli.commands.backtest_compare.DatabasePersistence")
+    @patch("cli.commands.backtest_compare.BacktestEngine")
+    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_multiple_risk_levels(
         self,
         mock_print_table: MagicMock,
@@ -433,10 +433,10 @@ class TestRunCompare:
         assert mock_engine_cls.call_count == 4
 
     @pytest.mark.asyncio
-    @patch("cli.backtest_compare.DatabasePersistence")
-    @patch("cli.backtest_compare.BacktestEngine")
-    @patch("cli.backtest_compare.create_api_client")
-    @patch("cli.backtest_compare._print_comparison_table")
+    @patch("cli.commands.backtest_compare.DatabasePersistence")
+    @patch("cli.commands.backtest_compare.BacktestEngine")
+    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_api_client_closed_on_error(
         self,
         mock_print_table: MagicMock,
@@ -478,8 +478,8 @@ class TestRunCompare:
 class TestRunCompareCli:
     """Tests for the synchronous run_compare_cli wrapper."""
 
-    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
-    @patch("cli.backtest_compare.setup_logging")
+    @patch("cli.commands.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
+    @patch("cli.commands.backtest_compare.setup_logging")
     def test_success(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Successful run calls asyncio.run and setup_logging."""
         run_compare_cli(strategies="momentum", days=7)
@@ -487,27 +487,28 @@ class TestRunCompareCli:
         mock_asyncio_run.assert_called_once()
 
     @patch(
-        "cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+        "cli.commands.backtest_compare.asyncio.run",
+        side_effect=_make_asyncio_run_mock(KeyboardInterrupt()),
     )
-    @patch("cli.backtest_compare.setup_logging")
+    @patch("cli.commands.backtest_compare.setup_logging")
     def test_keyboard_interrupt(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """KeyboardInterrupt is caught gracefully (no sys.exit)."""
         # Should NOT raise
         run_compare_cli(strategies="momentum")
 
     @patch(
-        "cli.backtest_compare.asyncio.run",
+        "cli.commands.backtest_compare.asyncio.run",
         side_effect=_make_asyncio_run_mock(ValueError("bad config")),
     )
-    @patch("cli.backtest_compare.setup_logging")
+    @patch("cli.commands.backtest_compare.setup_logging")
     def test_exception_exits(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Unhandled exception triggers sys.exit(1)."""
         with pytest.raises(SystemExit) as exc_info:
             run_compare_cli(strategies="momentum")
         assert exc_info.value.code == 1
 
-    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
-    @patch("cli.backtest_compare.setup_logging")
+    @patch("cli.commands.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
+    @patch("cli.commands.backtest_compare.setup_logging")
     def test_default_log_level_from_settings(
         self, mock_setup: MagicMock, mock_asyncio_run: MagicMock
     ) -> None:
@@ -517,8 +518,8 @@ class TestRunCompareCli:
         call_arg = mock_setup.call_args[0][0]
         assert isinstance(call_arg, str)
 
-    @patch("cli.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
-    @patch("cli.backtest_compare.setup_logging")
+    @patch("cli.commands.backtest_compare.asyncio.run", side_effect=_make_asyncio_run_mock())
+    @patch("cli.commands.backtest_compare.setup_logging")
     def test_explicit_log_level(self, mock_setup: MagicMock, mock_asyncio_run: MagicMock) -> None:
         """Explicit log_level is forwarded to setup_logging."""
         run_compare_cli(log_level="DEBUG")
@@ -533,7 +534,7 @@ class TestRunCompareCli:
 class TestMain:
     """Tests for the main() CLI entry point."""
 
-    @patch("cli.backtest_compare.run_compare_cli")
+    @patch("cli.commands.backtest_compare.run_compare_cli")
     def test_default_args(self, mock_cli: MagicMock) -> None:
         """main() with no CLI args dispatches to run_compare_cli with defaults."""
         with patch("sys.argv", ["backtest_compare"]):
@@ -549,7 +550,7 @@ class TestMain:
             log_level=None,
         )
 
-    @patch("cli.backtest_compare.run_compare_cli")
+    @patch("cli.commands.backtest_compare.run_compare_cli")
     def test_custom_args(self, mock_cli: MagicMock) -> None:
         """main() forwards parsed flags to run_compare_cli."""
         with patch(
@@ -584,7 +585,7 @@ class TestMain:
             log_level="DEBUG",
         )
 
-    @patch("cli.backtest_compare.run_compare_cli")
+    @patch("cli.commands.backtest_compare.run_compare_cli")
     def test_risk_levels_flag(self, mock_cli: MagicMock) -> None:
         """main() passes --risk-levels to run_compare_cli."""
         with patch(

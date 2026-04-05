@@ -47,7 +47,7 @@ venv/
 /logs/
 
 # Runtime trading data (NOT src/data/ which contains code)
-/data/
+/revt-data/
 
 # Private keys and credentials
 config/*.pem

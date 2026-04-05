@@ -751,7 +751,7 @@ class DatabasePersistence:
     # CSV export
     # ---------------------------------------------------------------------------
 
-    def export_to_csv(self, output_dir: Path = Path("data/exports")) -> None:
+    def export_to_csv(self, output_dir: Path = Path("revt-data/exports")) -> None:
         """Export all trades and portfolio snapshots to dated CSV files.
 
         Files are written to *output_dir* and named with today's date

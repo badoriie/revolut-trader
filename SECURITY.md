@@ -87,7 +87,7 @@ When using Revolut Trader, we recommend:
 - **Monitor logs**: Check `make logs` regularly for warnings and errors
 - **Enable Telegram notifications**: Get real-time alerts for trading activity
 - **Review analytics**: Use `make db-analytics` and `make db-report` to monitor performance
-- **Backup your database**: The encrypted database in `data/{env}.db` contains your trading history
+- **Backup your database**: The encrypted database in `revt-data/{env}.db` contains your trading history
 
 ### Code Security
 

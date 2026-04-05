@@ -10,6 +10,8 @@ import sys
 
 from loguru import logger
 
+from cli.utils.env_detect import detect_env as _detect_env
+
 
 def setup_logging(log_level: str) -> None:
     """Configure console-only logging (no plaintext log files)."""
@@ -43,7 +45,7 @@ async def run_bot(args):
     logger.info(f"Environment: {env}")
     logger.info(f"Strategy: {strategy_type.value}")
     logger.info(f"Risk Level: {risk_level.value}")
-    logger.info(f"Trading Mode: {settings.trading_mode.value} (derived from environment)")
+    logger.info(f"Trading Mode: {settings.trading_mode.value}")
     interval_label = (
         f"{effective_interval}s" if effective_interval is not None else "strategy-dependent"
     )
@@ -74,35 +76,29 @@ def main():
         description="Professional Algorithmic Trading Bot for Revolut Crypto",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Environment is auto-detected from git branch (no override):
+  feature branch → dev  (mock API, paper mode)
+  main branch    → int  (real API, paper mode)
+  tagged commit  → prod (real API, paper by default)
+  frozen binary  → prod
+
 Examples:
-  # Run in dev environment (mock API, paper mode)
-  python run.py --env dev --strategy market_making
+  # On a feature branch (auto: dev, mock API, paper mode)
+  python run.py --strategy market_making
 
-  # Run in int environment (real API, paper mode — staging ground)
-  python run.py --env int --strategy momentum
+  # On main branch (auto: int, real API, paper mode)
+  python run.py --strategy momentum
 
-  # Run in prod environment (live trading — real money)
-  python run.py --env prod --strategy momentum --risk moderate
+  # On a tagged commit (auto: prod, paper by default)
+  python run.py --strategy momentum --risk moderate
 
-  # Run multi-strategy with custom pairs
-  python run.py --env dev --strategy multi_strategy --pairs BTC-EUR,ETH-EUR,SOL-EUR
+  # Override interval (strategy-dependent by default)
+  python run.py --strategy momentum --interval 30
 
-  # Override interval (strategy-dependent by default; market_making=5s, momentum=10s, mean_reversion=15s)
-  python run.py --env dev --strategy momentum --interval 30
-
-Trading mode is derived from environment:
-  dev/int → paper (simulated)
-  prod    → live  (real money)
+Trading mode: paper by default in all environments.
+  Live trading requires TRADING_MODE=live in 1Password and is only
+  permitted in prod (tagged commit or frozen binary).
         """,
-    )
-
-    parser.add_argument(
-        "--env",
-        "-e",
-        type=str,
-        choices=["dev", "int", "prod"],
-        default=None,
-        help="Environment (dev, int, prod). Overrides ENVIRONMENT env var.",
     )
 
     parser.add_argument(
@@ -161,13 +157,10 @@ Trading mode is derived from environment:
 
     args = parser.parse_args()
 
-    # Set ENVIRONMENT early — before any import of src.config (which creates
-    # the Settings singleton).  CLI --env takes priority over the env var.
-    if args.env:
-        os.environ["ENVIRONMENT"] = args.env
-    elif "ENVIRONMENT" not in os.environ:
-        logger.error("ENVIRONMENT not set. Use --env or export ENVIRONMENT=dev|int|prod")
-        sys.exit(1)
+    # Detect environment from git branch/tag or frozen binary.
+    # ENVIRONMENT must be set before src.config is imported (Settings singleton).
+    if "ENVIRONMENT" not in os.environ:
+        os.environ["ENVIRONMENT"] = _detect_env()
 
     # Bootstrap logging at INFO; run_bot reconfigures once settings are loaded.
     setup_logging(args.log_level or "INFO")
@@ -175,12 +168,21 @@ Trading mode is derived from environment:
     env = os.environ["ENVIRONMENT"]
     logger.info(f"Environment: {env}")
 
-    # Safety confirmation for prod (live trading)
-    if env == "prod":
-        logger.warning("⚠️  LIVE TRADING MODE - PRODUCTION - REAL MONEY AT RISK ⚠️")
-        response = input("Are you sure you want to trade with real money? (yes/no): ")
-        if response.lower() != "yes":
-            logger.info("Aborting live trading")
+    # Import settings now that ENVIRONMENT is set.
+    # Check actual trading mode — paper is the default everywhere; live is prod-only.
+    from src.config import TradingMode, settings
+
+    if settings.trading_mode == TradingMode.LIVE:
+        warning = settings.get_mode_warning()
+        if warning:
+            logger.warning(warning)
+        try:
+            response = input("Type 'I UNDERSTAND' to continue with live trading: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            logger.info("Aborting.")
+            sys.exit(0)
+        if response != "I UNDERSTAND":
+            logger.info("Aborting.")
             sys.exit(0)
 
     # Run the bot

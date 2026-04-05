@@ -2,18 +2,18 @@
 """revt — Revolut Trader CLI.
 
 The polished, user-facing entry point replacing all non-development make targets.
-Environment is auto-detected from the git branch (mirrors Makefile logic) and can
-always be overridden with ``--env``.
+Environment is strictly auto-detected from the git branch / tag / binary type.
+No override is permitted.
 
 Usage
 -----
     revt run                   Start the trading bot
-    revt backtest              Run backtests  (--hf · --compare · --matrix)
-    revt ops                   Manage API credentials in 1Password
+    revt backtest              Run backtests  (--compare · --matrix)
+    revt ops init|--show       Manage API credentials in 1Password
     revt config                View / update trading configuration
-    revt api <endpoint>        Call Revolut X API endpoints
+    revt api test|ready        Check API connectivity and permissions
     revt db  <subcommand>      Database management and analytics
-    revt update                Update revt (preserves data/ and config)
+    revt update                Update revt (preserves revt-data/ and config)
 """
 
 from __future__ import annotations
@@ -28,76 +28,16 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _OP_VAULT = "revolut-trader"
+_OP_CATEGORY = "Secure Note"
 _CANCELLED = "\nCancelled."
 _DAYS_HELP = "Look-back days (default: 30)"
 
 
 # ---------------------------------------------------------------------------
-# Environment helpers
+# Environment helpers — detection delegated to cli.env_detect
 # ---------------------------------------------------------------------------
 
-
-def _detect_env() -> str:
-    """Determine the default environment.
-
-    * Frozen binary (release build via PyInstaller) → always ``prod``.
-      End users download the binary to trade with real money; ``prod`` is the
-      only meaningful default.
-    * Running from source → mirror Makefile logic: tagged commit → ``prod``,
-      ``main`` branch → ``int``, any other branch → ``dev``.
-    """
-    # PyInstaller sets sys.frozen when running as a packaged binary
-    if getattr(sys, "frozen", False):
-        return "prod"
-
-    try:
-        # Check branch first (faster than checking for tags)
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_ROOT,
-            timeout=5,
-        )
-        if branch.returncode != 0:
-            return "prod"  # not a git repo
-
-        branch_name = branch.stdout.strip()
-
-        # Only check for tags on main branch (optimization)
-        if branch_name in {"main", "master"}:
-            tag = subprocess.run(
-                ["git", "describe", "--exact-match", "HEAD"],
-                capture_output=True,
-                text=True,
-                cwd=_ROOT,
-                timeout=5,
-            )
-            if tag.returncode == 0:
-                return "prod"  # on a tagged release
-
-        return "int" if branch_name == "main" else "dev"
-    except subprocess.TimeoutExpired:
-        # Git command timed out - likely repo issues
-        return "prod"  # safe fallback
-    except OSError:
-        # Git not installed, not a git repo, or other OS-level error
-        # (FileNotFoundError is a subclass of OSError, so this catches both)
-        return "prod"  # safe fallback
-    except Exception:
-        # Unexpected error
-        return "prod"  # safe fallback
-
-
-def _resolve_env(args: argparse.Namespace) -> str:
-    """Pick environment from ``--env`` flag or auto-detect, then export it.
-
-    ENVIRONMENT must be set before any ``src.config`` import because the
-    Settings singleton is created at import time.
-    """
-    env = getattr(args, "env", None) or _detect_env()
-    os.environ["ENVIRONMENT"] = env
-    return env
+from cli.utils.env_detect import set_env as _set_env  # noqa: E402
 
 
 def _env_badge(env: str) -> str:
@@ -105,7 +45,7 @@ def _env_badge(env: str) -> str:
     labels = {
         "dev": "dev  (mock API · paper mode)",
         "int": "int  (real API · paper mode)",
-        "prod": "prod (real API · paper mode by default)",
+        "prod": "prod (real API · paper mode unless TRADING_MODE=live in 1Password)",
     }
     return labels.get(env, env)
 
@@ -259,7 +199,7 @@ def _check_for_updates() -> tuple[str, str] | None:
     if os.environ.get("REVT_SKIP_UPDATE_CHECK"):
         return None
 
-    cache_file = _ROOT / "data" / ".update_check_cache"
+    cache_file = _ROOT / "revt-data" / ".update_check_cache"
     cache_ttl = 86400  # 24 hours in seconds
 
     # Check cache first
@@ -378,13 +318,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Check for updates (non-blocking, cached)
     _show_update_notification()
 
-    env = _resolve_env(args)
+    env = _set_env()
     mode_override = getattr(args, "mode", None)
     confirm_live = getattr(args, "confirm_live", False)
 
     # Validate trading pairs if provided
     if args.pairs:
-        from cli.validators import validate_trading_pairs
+        from cli.utils.validators import validate_trading_pairs
 
         is_valid, error = validate_trading_pairs(args.pairs)
         if not is_valid:
@@ -405,7 +345,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     _setup_logger(args.log_level)
 
     # Deferred import — ENVIRONMENT must be set before src.config is loaded.
-    from cli.run import run_bot
+    from cli.commands.run import run_bot
 
     class _RunArgs:
         strategy = args.strategy
@@ -426,14 +366,14 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_backtest(args: argparse.Namespace) -> None:
-    """Run a backtest — single strategy, high-frequency, compare, or matrix.
+    """Run a backtest — single strategy, compare, or matrix.
 
     Sets ENVIRONMENT then delegates to the appropriate backtest CLI function.
     """
     # Check for updates (non-blocking, cached)
     _show_update_notification()
 
-    _resolve_env(args)
+    _set_env()
 
     # Validate conflicting flags
     if args.matrix and (args.strategy or args.strategies):
@@ -474,10 +414,6 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             strategies=getattr(args, "strategies", None),
             log_level=args.log_level,
         )
-    elif args.hf:
-        print("\n  HIGH-FREQUENCY BACKTEST (1-minute candles)")
-        print("  Note: live bot polls every 5s; 1-min is the highest API granularity.\n")
-        _backtest_single(args, interval_override=1)
     else:
         _backtest_single(args)
 
@@ -487,7 +423,7 @@ def _backtest_single(
     interval_override: int | None = None,
 ) -> None:
     """Run a single-strategy backtest by calling ``cli.backtest.run_backtest``."""
-    from cli.backtest import run_backtest
+    from cli.commands.backtest import run_backtest
 
     class _BArgs:
         strategy = args.strategy
@@ -519,7 +455,7 @@ def _run_compare_cli(
 
     No more sys.argv patching - calls the function directly.
     """
-    from cli.backtest_compare import run_compare_cli
+    from cli.commands.backtest_compare import run_compare_cli
 
     run_compare_cli(
         days=days,
@@ -540,9 +476,11 @@ def _run_compare_cli(
 
 def cmd_ops(args: argparse.Namespace) -> None:
     """Manage Revolut X API credentials stored in 1Password."""
-    env = _resolve_env(args)
+    env = _set_env()
 
-    if args.status:
+    if getattr(args, "ops_cmd", None) == "init":
+        _ops_init(env)
+    elif args.status:
         _ops_status(env)
     elif args.show:
         _ops_show(env)
@@ -552,13 +490,18 @@ def cmd_ops(args: argparse.Namespace) -> None:
 
 def _ops_status(env: str) -> None:
     """Print 1Password CLI and vault/item status for the given environment."""
+    from src.utils.onepassword import get_install_instructions
+
     print("=== 1Password Status ===\n")
 
     r = _op("--version")
     if r.returncode == 0:
         print(f"  CLI              {r.stdout.strip()}")
     else:
-        print("  CLI              not installed  (brew install --cask 1password-cli)")
+        install_cmd = get_install_instructions()
+        print(
+            f"  CLI              not installed\n\n  Install with:\n  {install_cmd.replace(chr(10), chr(10) + '  ')}"
+        )
         return
 
     r = _op("whoami")
@@ -699,6 +642,413 @@ def _ops_set_creds(env: str) -> None:
     print("\nDone. Run 'revt ops --show' to verify.")
 
 
+def _ops_init(env: str) -> None:
+    """Create credentials and config placeholders in 1Password.
+
+    For int/prod environments an Ed25519 keypair is generated automatically.
+    The public key is printed so the user can register it in Revolut X.
+    The credentials item is created (or reset) with placeholders; the user
+    only needs to fill in ``REVOLUT_API_KEY`` after registering the public key.
+
+    For dev the keypair is skipped — the mock API needs no real credentials.
+    """
+    if not _check_op():
+        sys.exit(1)
+
+    print(f"\n  Initialising revolut-trader for env: {_env_badge(env)}\n")
+
+    # ── Step 1: credentials item ─────────────────────────────────────────────
+    creds_item = _op_creds_item(env)
+    r = _op("item", "get", creds_item, "--vault", _OP_VAULT)
+    if r.returncode == 0:
+        print(f"  Credentials item already exists: {creds_item}")
+        try:
+            confirm = input("  Reset it? This will overwrite stored keys. (y/N): ").strip()
+        except (KeyboardInterrupt, EOFError):
+            confirm = ""
+        if confirm.lower() == "y":
+            _op("item", "delete", creds_item, "--vault", _OP_VAULT)
+            _create_creds_item(env, creds_item)
+        else:
+            print("  Skipping credentials item.")
+    else:
+        _create_creds_item(env, creds_item)
+
+    # ── Step 2: config item ──────────────────────────────────────────────────
+    cfg_item = _op_config_item(env)
+    r = _op("item", "get", cfg_item, "--vault", _OP_VAULT)
+    if r.returncode == 0:
+        print(f"\n  Config item already exists: {cfg_item}  (skipped)")
+    else:
+        _create_config_item_defaults(env, cfg_item)
+
+    # ── Step 3: risk level items (shared, no env suffix) ─────────────────────
+    print()
+    _create_risk_items()
+
+    # ── Step 4: strategy items (shared, no env suffix) ───────────────────────
+    print()
+    _create_strategy_items()
+
+    # ── Step 5: next steps ───────────────────────────────────────────────────
+    print("\n  ─────────────────────────────────────────────────")
+    if env == "dev":
+        print("  Dev is ready — no API credentials required.")
+        print("  Run: revt run")
+    else:
+        print("  Next steps:")
+        print("  1. Log in to Revolut X → Settings → API → Add new key")
+        print("  2. Paste the PUBLIC KEY printed above")
+        print("  3. Copy the API key ID shown by Revolut X")
+        print(f"  4. Run: revt ops  (to store the API key ID for {env})")
+        print("  5. Run: revt api ready  (to verify)")
+        print()
+        print("  Optional — Telegram notifications:")
+        print("  6. Create a bot via @BotFather and get the token")
+        print(f"  7. revt config set TELEGRAM_BOT_TOKEN <token>  (env: {env})")
+        print(f"  8. revt config set TELEGRAM_CHAT_ID <chat_id>  (env: {env})")
+    print()
+
+
+_RISK_ITEMS: dict[str, list[str]] = {
+    "conservative": [
+        "MAX_POSITION_SIZE_PCT[text]=1.5",
+        "MAX_DAILY_LOSS_PCT[text]=3.0",
+        "STOP_LOSS_PCT[text]=1.5",
+        "TAKE_PROFIT_PCT[text]=2.5",
+        "MAX_OPEN_POSITIONS[text]=3",
+    ],
+    "moderate": [
+        "MAX_POSITION_SIZE_PCT[text]=3.0",
+        "MAX_DAILY_LOSS_PCT[text]=5.0",
+        "STOP_LOSS_PCT[text]=2.5",
+        "TAKE_PROFIT_PCT[text]=4.0",
+        "MAX_OPEN_POSITIONS[text]=5",
+    ],
+    "aggressive": [
+        "MAX_POSITION_SIZE_PCT[text]=5.0",
+        "MAX_DAILY_LOSS_PCT[text]=10.0",
+        "STOP_LOSS_PCT[text]=4.0",
+        "TAKE_PROFIT_PCT[text]=7.0",
+        "MAX_OPEN_POSITIONS[text]=8",
+    ],
+}
+
+_ORDER_TYPE_LIMIT = "ORDER_TYPE[text]=limit"
+_ORDER_TYPE_MARKET = "ORDER_TYPE[text]=market"
+
+_STRATEGY_ITEMS: dict[str, list[str]] = {
+    "market_making": [
+        "INTERVAL[text]=5",
+        "MIN_SIGNAL_STRENGTH[text]=0.3",
+        _ORDER_TYPE_LIMIT,
+        "STOP_LOSS_PCT[text]=0.5",
+        "TAKE_PROFIT_PCT[text]=0.3",
+        "SPREAD_THRESHOLD[text]=0.0005",
+        "INVENTORY_TARGET[text]=0.5",
+    ],
+    "momentum": [
+        "INTERVAL[text]=10",
+        "MIN_SIGNAL_STRENGTH[text]=0.6",
+        _ORDER_TYPE_MARKET,
+        "STOP_LOSS_PCT[text]=2.5",
+        "TAKE_PROFIT_PCT[text]=4.0",
+        "RSI_PERIOD[text]=14",
+        "RSI_OVERBOUGHT[text]=70.0",
+        "RSI_OVERSOLD[text]=30.0",
+        "FAST_PERIOD[text]=12",
+        "SLOW_PERIOD[text]=26",
+    ],
+    "mean_reversion": [
+        "INTERVAL[text]=15",
+        "MIN_SIGNAL_STRENGTH[text]=0.5",
+        _ORDER_TYPE_LIMIT,
+        "STOP_LOSS_PCT[text]=1.0",
+        "TAKE_PROFIT_PCT[text]=1.5",
+        "LOOKBACK_PERIOD[text]=20",
+        "NUM_STD_DEV[text]=2.0",
+        "MIN_DEVIATION[text]=0.01",
+    ],
+    "breakout": [
+        "INTERVAL[text]=5",
+        "MIN_SIGNAL_STRENGTH[text]=0.7",
+        _ORDER_TYPE_MARKET,
+        "STOP_LOSS_PCT[text]=3.0",
+        "TAKE_PROFIT_PCT[text]=5.0",
+        "RSI_PERIOD[text]=14",
+        "RSI_OVERBOUGHT[text]=70.0",
+        "RSI_OVERSOLD[text]=30.0",
+        "LOOKBACK_PERIOD[text]=20",
+        "BREAKOUT_THRESHOLD[text]=0.002",
+    ],
+    "range_reversion": [
+        "INTERVAL[text]=15",
+        "MIN_SIGNAL_STRENGTH[text]=0.5",
+        _ORDER_TYPE_LIMIT,
+        "STOP_LOSS_PCT[text]=1.0",
+        "TAKE_PROFIT_PCT[text]=1.5",
+        "RSI_PERIOD[text]=7",
+        "BUY_ZONE[text]=0.20",
+        "SELL_ZONE[text]=0.80",
+        "RSI_CONFIRMATION_OVERSOLD[text]=40.0",
+        "RSI_CONFIRMATION_OVERBOUGHT[text]=60.0",
+        "MIN_RANGE_PCT[text]=0.01",
+    ],
+    "multi_strategy": [
+        "INTERVAL[text]=10",
+        "MIN_SIGNAL_STRENGTH[text]=0.55",
+        _ORDER_TYPE_LIMIT,
+        "MIN_CONSENSUS[text]=0.6",
+        "WEIGHT_MOMENTUM[text]=0.30",
+        "WEIGHT_BREAKOUT[text]=0.25",
+        "WEIGHT_MARKET_MAKING[text]=0.20",
+        "WEIGHT_MEAN_REVERSION[text]=0.15",
+        "WEIGHT_RANGE_REVERSION[text]=0.10",
+    ],
+}
+
+
+def _create_risk_items() -> None:
+    """Create the three risk-level items in 1Password (shared, no env suffix).
+
+    Skips items that already exist.
+    """
+    for level, fields in _RISK_ITEMS.items():
+        item_name = f"revolut-trader-risk-{level}"
+        r = _op("item", "get", item_name, "--vault", _OP_VAULT)
+        if r.returncode == 0:
+            print(f"  Risk item already exists: {item_name}  (skipped)")
+            continue
+        r = subprocess.run(
+            [
+                "op",
+                "item",
+                "create",
+                "--category",
+                _OP_CATEGORY,
+                "--vault",
+                _OP_VAULT,
+                "--title",
+                item_name,
+                *fields,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if r.returncode == 0:
+            print(f"  ✓  Risk item created: {item_name}")
+        else:
+            print(f"  ✗  Failed to create {item_name}: {r.stderr.strip()}")
+            sys.exit(1)
+
+
+def _create_strategy_items() -> None:
+    """Create the six strategy items in 1Password (shared, no env suffix).
+
+    Skips items that already exist.
+    """
+    for strategy, fields in _STRATEGY_ITEMS.items():
+        item_name = f"revolut-trader-strategy-{strategy}"
+        r = _op("item", "get", item_name, "--vault", _OP_VAULT)
+        if r.returncode == 0:
+            print(f"  Strategy item already exists: {item_name}  (skipped)")
+            continue
+        r = subprocess.run(
+            [
+                "op",
+                "item",
+                "create",
+                "--category",
+                _OP_CATEGORY,
+                "--vault",
+                _OP_VAULT,
+                "--title",
+                item_name,
+                *fields,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if r.returncode == 0:
+            print(f"  ✓  Strategy item created: {item_name}")
+        else:
+            print(f"  ✗  Failed to create {item_name}: {r.stderr.strip()}")
+            sys.exit(1)
+
+
+def _create_creds_item(env: str, creds_item: str) -> None:
+    """Create the credentials 1Password item, generating keypair for int/prod."""
+    if env == "dev":
+        # Dev uses mock API — create placeholder item with no real keys
+        fields = [
+            "REVOLUT_API_KEY[concealed]=placeholder",
+            "TELEGRAM_BOT_TOKEN[concealed]=placeholder",
+        ]
+        r = subprocess.run(
+            [
+                "op",
+                "item",
+                "create",
+                "--category",
+                _OP_CATEGORY,
+                "--vault",
+                _OP_VAULT,
+                "--title",
+                creds_item,
+                *fields,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if r.returncode == 0:
+            print(f"  ✓  Credentials item created: {creds_item}")
+            print("     (dev uses mock API — no real Revolut keys needed)")
+        else:
+            print(f"  ✗  Failed: {r.stderr.strip()}")
+            sys.exit(1)
+        return
+
+    # int / prod — generate Ed25519 keypair
+    print("  Generating Ed25519 keypair…")
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            NoEncryption,
+            PrivateFormat,
+            PublicFormat,
+        )
+    except ImportError:
+        print("  ✗  Missing dependency: pip install cryptography")
+        sys.exit(1)
+
+    private_key = Ed25519PrivateKey.generate()
+    private_pem = private_key.private_bytes(
+        encoding=Encoding.PEM,
+        format=PrivateFormat.PKCS8,
+        encryption_algorithm=NoEncryption(),
+    ).decode()
+    public_pem = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=Encoding.PEM,
+            format=PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode()
+    )
+
+    print("  ✓  Keypair generated\n")
+    print("  ┌─ PUBLIC KEY — paste this into Revolut X ──────────────────────")
+    for line in public_pem.strip().splitlines():
+        print(f"  │  {line}")
+    print("  └───────────────────────────────────────────────────────────────\n")
+
+    fields = [
+        "REVOLUT_API_KEY[concealed]=placeholder",
+        f"REVOLUT_PRIVATE_KEY[concealed]={private_pem}",
+        f"REVOLUT_PUBLIC_KEY[concealed]={public_pem}",
+        "TELEGRAM_BOT_TOKEN[concealed]=placeholder",
+    ]
+    r = subprocess.run(
+        [
+            "op",
+            "item",
+            "create",
+            "--category",
+            _OP_CATEGORY,
+            "--vault",
+            _OP_VAULT,
+            "--title",
+            creds_item,
+            *fields,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if r.returncode == 0:
+        print(f"  ✓  Credentials item created: {creds_item}")
+        print("     Private key stored in 1Password — not written to disk.")
+    else:
+        print(f"  ✗  Failed: {r.stderr.strip()}")
+        sys.exit(1)
+
+
+def _create_config_item_defaults(env: str, cfg_item: str) -> None:
+    """Create the config 1Password item with all fields from config.py.
+
+    Required fields are pre-filled with safe defaults.
+    Optional fields are set to their default values so users can see and
+    adjust every knob without needing to know the field names.
+    """
+    fields = [
+        # ── Required ──────────────────────────────────────────────────────────
+        "RISK_LEVEL[text]=conservative",
+        "BASE_CURRENCY[text]=EUR",
+        "TRADING_PAIRS[text]=BTC-EUR,ETH-EUR",
+        "DEFAULT_STRATEGY[text]=market_making",
+        # ── Trading mode ──────────────────────────────────────────────────────
+        # paper (safe default) or live (prod only, requires confirmation)
+        "TRADING_MODE[text]=paper",
+        # ── Capital limits ────────────────────────────────────────────────────
+        # Maximum capital the bot may use across all positions (leave blank = no cap)
+        "MAX_CAPITAL[text]=",
+        # ── Shutdown behaviour ────────────────────────────────────────────────
+        # Trailing stop % applied to profitable positions on graceful shutdown
+        "SHUTDOWN_TRAILING_STOP_PCT[text]=",
+        # Hard timeout (seconds) before force-closing trailing positions on shutdown
+        "SHUTDOWN_MAX_WAIT_SECONDS[text]=120",
+        # ── Backtest defaults ─────────────────────────────────────────────────
+        "BACKTEST_DAYS[text]=30",
+        # Candle width in minutes: 1 5 15 30 60 240 1440
+        "BACKTEST_INTERVAL[text]=60",
+        # ── Logging ───────────────────────────────────────────────────────────
+        # DEBUG INFO WARNING ERROR
+        "LOG_LEVEL[text]=INFO",
+        # ── Trading loop interval override ────────────────────────────────────
+        # Override strategy interval (seconds); leave blank = use strategy default
+        "INTERVAL[text]=",
+        # ── Fees ──────────────────────────────────────────────────────────────
+        "MAKER_FEE_PCT[text]=0.0",
+        "TAKER_FEE_PCT[text]=0.0009",
+        # ── Order size limits ─────────────────────────────────────────────────
+        "MAX_ORDER_VALUE[text]=10000",
+        "MIN_ORDER_VALUE[text]=10",
+        # ── Telegram ──────────────────────────────────────────────────────────
+        "TELEGRAM_CHAT_ID[text]=",
+    ]
+    if env != "prod":
+        fields.insert(4, "INITIAL_CAPITAL[text]=10000")
+
+    r = subprocess.run(
+        [
+            "op",
+            "item",
+            "create",
+            "--category",
+            _OP_CATEGORY,
+            "--vault",
+            _OP_VAULT,
+            "--title",
+            cfg_item,
+            *fields,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if r.returncode == 0:
+        print(f"\n  ✓  Config item created: {cfg_item}")
+        if env == "prod":
+            print("     Tip: set a capital cap — revt config set MAX_CAPITAL 5000")
+    else:
+        print(f"\n  ✗  Failed to create config: {r.stderr.strip()}")
+        sys.exit(1)
+
+
 # ---------------------------------------------------------------------------
 # cmd: config
 # ---------------------------------------------------------------------------
@@ -706,15 +1056,13 @@ def _ops_set_creds(env: str) -> None:
 
 def cmd_config(args: argparse.Namespace) -> None:
     """View and manage trading configuration stored in 1Password."""
-    env = _resolve_env(args)
+    env = _set_env()
     sub = getattr(args, "config_cmd", None) or "show"
 
     if sub == "show":
         _config_show(env)
     elif sub == "set":
         _config_set(env, args.key, args.value)
-    elif sub == "init":
-        _config_init(env)
     elif sub == "delete":
         _config_delete(env, args.key)
 
@@ -749,12 +1097,12 @@ def _config_set(env: str, key: str, value: str) -> None:
         sys.exit(1)
 
     # Validate the value before setting
-    from cli.validators import validate_config_value
+    from cli.utils.validators import validate_config_value
 
     is_valid, error = validate_config_value(key, value)
     if not is_valid:
         print(f"  ✗  Validation error: {error}")
-        print(f"     Use 'revt config show --env {env}' to see current values")
+        print("     Use 'revt config show' to see current values")
         sys.exit(1)
 
     r = _op(
@@ -769,60 +1117,7 @@ def _config_set(env: str, key: str, value: str) -> None:
         print(f"  ✓  {key} = {value}")
     else:
         print(f"  ✗  Failed: {r.stderr.strip()}")
-        print(f"     Run 'revt config init --env {env}' to create the config item first.")
-        sys.exit(1)
-
-
-def _config_init(env: str) -> None:
-    """Create a config item in 1Password with safe defaults."""
-    if not _check_op():
-        sys.exit(1)
-
-    r = _op("item", "get", _op_config_item(env), "--vault", _OP_VAULT)
-    if r.returncode == 0:
-        print(f"Config item already exists: {_op_config_item(env)}")
-        try:
-            confirm = input("Reset to defaults? (y/N): ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print(_CANCELLED)
-            return
-        if confirm.lower() != "y":
-            print("Cancelled.")
-            return
-        _op("item", "delete", _op_config_item(env), "--vault", _OP_VAULT)
-
-    fields = [
-        "RISK_LEVEL[text]=conservative",
-        "BASE_CURRENCY[text]=EUR",
-        "TRADING_PAIRS[text]=BTC-EUR,ETH-EUR",
-        "DEFAULT_STRATEGY[text]=market_making",
-    ]
-    if env != "prod":
-        fields.append("INITIAL_CAPITAL[text]=10000")
-
-    r = subprocess.run(
-        [
-            "op",
-            "item",
-            "create",
-            "--category",
-            "Secure Note",
-            "--vault",
-            _OP_VAULT,
-            "--title",
-            _op_config_item(env),
-            *fields,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15,
-    )
-    if r.returncode == 0:
-        print(f"  ✓  Config item created: {_op_config_item(env)}")
-        if env == "prod":
-            print("  Tip: cap trading capital: revt config set MAX_CAPITAL 5000 --env prod")
-    else:
-        print(f"  ✗  Failed: {r.stderr.strip()}")
+        print("     Run 'revt ops init' to create the config item first.")
         sys.exit(1)
 
 
@@ -843,53 +1138,24 @@ def _config_delete(env: str, key: str) -> None:
 # cmd: api
 # ---------------------------------------------------------------------------
 
+
 # Friendly revt names → api_test.py command strings
-_API_CMD_MAP: dict[str, str] = {
-    "ready": "trade-ready",
-    "pairs": "currency-pairs",
-    "orders": "historical-orders",
-    "last-trades": "last-public-trades",
-}
-
-
 def cmd_api(args: argparse.Namespace) -> None:
-    """Call a Revolut X API endpoint and display the result.
+    """Check Revolut X API connectivity and permissions.
 
-    Translates user-friendly ``revt api`` command names to the underlying
-    ``cli.api_test`` command names, then delegates to that module's ``main()``.
     Dev environment is blocked — it uses a local mock with no real endpoints.
     """
-    env = _resolve_env(args)
+    env = _set_env()
     if env == "dev":
         print("⚠️   API commands require a real API environment.")
         print("    Dev uses a local mock — no network calls are made.")
-        print("    Use --env int or --env prod.")
+        print("    Switch to the main branch (int) or a tagged commit (prod).")
         sys.exit(1)
 
-    raw_cmd: str = args.api_cmd
-    api_cmd: str = _API_CMD_MAP.get(raw_cmd, raw_cmd)
+    from cli.commands.api import run_api_command
 
-    # Delegate to api_test — validation of required args happens there
-    if raw_cmd in {"test", "ready"}:
-        from cli.api_test import run_api_command
-
-        # Map friendly names to api_test command names
-        cmd_map = {"ready": "trade-ready", "test": "test"}
-        run_api_command(cmd_map.get(raw_cmd, raw_cmd))
-        return
-
-    # For all other API endpoints, call them directly via the API client
-    from cli.api_test import run_api_endpoint
-
-    run_api_endpoint(
-        command=api_cmd,
-        symbol=getattr(args, "symbol", None),
-        symbols=getattr(args, "symbols", None),
-        order_id=getattr(args, "order_id", None),
-        interval=getattr(args, "interval", None),
-        limit=getattr(args, "limit", None),
-        depth=getattr(args, "depth", None),
-    )
+    cmd_map = {"ready": "trade-ready", "test": "test"}
+    run_api_command(cmd_map[args.api_cmd])
 
 
 # ---------------------------------------------------------------------------
@@ -904,7 +1170,7 @@ def cmd_telegram(args: argparse.Namespace) -> None:
       test   — send a test message to verify Telegram is configured correctly
       start  — start the always-on Telegram Control Plane process
     """
-    env = _resolve_env(args)
+    env = _set_env()
     sub_cmd = getattr(args, "telegram_cmd", None) or "test"
 
     if sub_cmd == "start":
@@ -912,7 +1178,7 @@ def cmd_telegram(args: argparse.Namespace) -> None:
         _show_update_notification()
 
         # Deferred import — ENVIRONMENT must be set before src.config is loaded.
-        from cli.telegram_control import run_control_plane
+        from cli.commands.telegram import run_control_plane
 
         print(f"\n  Environment : {_env_badge(env)}")
         print("  Starting Telegram Control Plane…")
@@ -964,49 +1230,37 @@ def cmd_db(args: argparse.Namespace) -> None:
     function based on the subcommand.
     """
     # Resolve environment and set ENVIRONMENT variable for database selection
-    _resolve_env(args)
+    _set_env()
 
     sub = getattr(args, "db_cmd", None) or "stats"
 
     if sub == "stats":
-        from cli.db_manage import show_stats
+        from cli.commands.db import show_stats
 
         show_stats()
 
     elif sub == "analytics":
-        from cli.db_manage import show_analytics
+        from cli.commands.db import show_analytics
 
         show_analytics(days=getattr(args, "days", 30))
 
     elif sub == "backtests":
-        from cli.db_manage import show_backtest_results
+        from cli.commands.db import show_backtest_results
 
         show_backtest_results(limit=getattr(args, "limit", 10))
 
     elif sub == "export":
-        from cli.db_manage import export_csv
+        from cli.commands.db import export_csv
 
         export_csv()
 
     elif sub == "report":
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         generate_report(
             days=getattr(args, "days", 30),
-            output_dir=Path(getattr(args, "output_dir", "data/reports")),
+            output_dir=Path(getattr(args, "output_dir", "revt-data/reports")),
         )
-
-    elif sub == "encrypt-setup":
-        from src.utils.db_encryption import setup_database_encryption
-
-        setup_database_encryption()
-
-    elif sub == "encrypt-status":
-        from src.utils.db_encryption import DatabaseEncryption
-
-        enc = DatabaseEncryption()
-        status = "enabled ✓" if enc.is_enabled else "DISABLED ✗"
-        print(f"Database encryption: {status}")
 
 
 def _get_binary_name_for_platform() -> str:
@@ -1340,7 +1594,7 @@ def _update_from_source() -> None:
     print()
     print("✅ Update complete!")
     print()
-    print("ℹ️  Your data/ folder and 1Password config are untouched.")
+    print("ℹ️  Your revt-data/ folder and 1Password config are untouched.")
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -1359,7 +1613,7 @@ def cmd_update(args: argparse.Namespace) -> None:
         - Replaces the current binary
         - Preserves all data, config, and 1Password credentials
 
-    The data/ folder and all 1Password configuration remain untouched.
+    The revt-data/ folder and all 1Password configuration remain untouched.
     """
     # Check if running as frozen binary
     if getattr(sys, "frozen", False):
@@ -1375,20 +1629,6 @@ def cmd_update(args: argparse.Namespace) -> None:
 _SUBCOMMAND_METAVAR = "<subcommand>"
 
 
-def _add_env_arg(p: argparse.ArgumentParser) -> None:
-    """Add the standard --env argument to a subparser."""
-    p.add_argument(
-        "--env",
-        "-e",
-        choices=["dev", "int", "prod"],
-        help=(
-            "Environment. Auto-detected from git branch (tagged→prod, main→int, other→dev) when running from source, "
-            "or defaults to prod when frozen binary. Override with --env. "
-            "Use --env int for paper trading with real market data."
-        ),
-    )
-
-
 def _build_parser() -> argparse.ArgumentParser:
     """Build and return the full ``revt`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -1398,6 +1638,7 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 examples:
   # Credentials & Configuration
+  revt ops init                               create credentials + config; generate keypair
   revt ops                                    store your Revolut API key
   revt ops --show                             show credentials + config (masked)
   revt ops --status                           check 1Password connection
@@ -1405,56 +1646,47 @@ examples:
   revt config set RISK_LEVEL aggressive       change risk level
   revt config set MAX_CAPITAL 5000            cap how much the bot can trade
   revt config delete MAX_CAPITAL              remove capital cap
-  revt config --env dev init                  create config with safe defaults
 
-  # Note: For nested commands (config, db, telegram), --env must come before the subcommand:
-  # ✓ revt config --env dev show
-  # ✗ revt config show --env dev
-
-  # Trading & Backtesting
+  # Trading & Backtesting (env auto-detected from git branch)
   revt run                                    start trading (paper mode by default)
   revt run --strategy momentum --risk moderate
-  revt run --env int                          paper trading with real market data
-  revt run --mode live --confirm-live         LIVE TRADING (requires confirmation)
+  revt run --mode live --confirm-live         LIVE TRADING — only on tagged/prod commit
   revt backtest                               30-day backtest
-  revt backtest --hf                          high-frequency (1-min candles)
   revt backtest --compare                     compare all strategies side-by-side
   revt backtest --matrix                      all strategies × all risk levels
 
-  # API Commands (requires --env int or prod)
-  revt api balance                            account balances
-  revt api ready                              check API permissions
-  revt api ticker --symbol BTC-EUR            get ticker for specific symbol
-  revt api tickers --symbols BTC-EUR,ETH-EUR  get multiple tickers
-  revt api all-tickers                        get all available tickers
-  revt api order-book --symbol BTC-EUR        order book depth
+  # API Commands (requires int or prod env — switch to main or tagged commit)
+  revt api test                               verify API connection is working
+  revt api ready                              check API permissions (view + trade)
 
   # Database & Analytics
-  revt db --env dev stats                     database overview
-  revt db --env dev analytics --days 60       trading analytics
+  revt db stats                               database overview
+  revt db analytics --days 60                 trading analytics
   revt db backtests                           view backtest results
   revt db export                              export all data to CSV
   revt db report                              full analytics report + charts
-  revt db encrypt-setup                       set up database encryption
-  revt db encrypt-status                      check encryption status
 
   # Telegram Control Plane
   revt telegram test                          verify Telegram is configured
   revt telegram start                         start always-on control plane
 
   # Updates
-  revt update                                 update revt (preserves data/ and config)
+  revt update                                 update revt (preserves revt-data/ and config)
 
 environment variables:
   REVT_SKIP_UPDATE_CHECK=1                    disable update notifications
-  ENVIRONMENT                                 override env detection (dev/int/prod)
+
+environment detection (run / telegram — not overridable):
+  tagged commit on main → prod  (real API, paper by default)
+  main branch           → int   (real API, paper mode)
+  feature branch        → dev   (mock API, paper mode)
+  frozen binary         → prod
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     # ── run ──────────────────────────────────────────────────────────────────
     p_run = sub.add_parser("run", help="Start the trading bot")
-    _add_env_arg(p_run)
     p_run.add_argument(
         "--strategy",
         "-s",
@@ -1510,12 +1742,6 @@ environment variables:
 
     # ── backtest ──────────────────────────────────────────────────────────────
     p_bt = sub.add_parser("backtest", help="Backtest strategies on historical data")
-    _add_env_arg(p_bt)
-    p_bt.add_argument(
-        "--hf",
-        action="store_true",
-        help="High-frequency mode (1-min candles, closest to live 5s polling)",
-    )
     p_bt.add_argument("--compare", action="store_true", help="Compare all strategies side-by-side")
     p_bt.add_argument(
         "--matrix", action="store_true", help="All strategies × all risk levels matrix"
@@ -1583,7 +1809,11 @@ environment variables:
 
     # ── ops ───────────────────────────────────────────────────────────────────
     p_ops = sub.add_parser("ops", help="Manage API credentials in 1Password")
-    _add_env_arg(p_ops)
+    ops_sub = p_ops.add_subparsers(dest="ops_cmd", metavar=_SUBCOMMAND_METAVAR)
+    ops_sub.add_parser(
+        "init",
+        help="Create credentials + config placeholders; auto-generate Ed25519 keypair",
+    )
     ops_grp = p_ops.add_mutually_exclusive_group()
     ops_grp.add_argument(
         "--show", action="store_true", help="Show stored credentials + config (secrets masked)"
@@ -1595,7 +1825,6 @@ environment variables:
 
     # ── config ────────────────────────────────────────────────────────────────
     p_cfg = sub.add_parser("config", help="View / update trading configuration in 1Password")
-    _add_env_arg(p_cfg)
     cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     cfg_sub.add_parser("show", help="Show current configuration")
@@ -1603,8 +1832,6 @@ environment variables:
     p_cfg_set = cfg_sub.add_parser("set", help="Set a configuration value")
     p_cfg_set.add_argument("key", help="Config key, e.g. RISK_LEVEL")
     p_cfg_set.add_argument("value", help="New value")
-
-    cfg_sub.add_parser("init", help="Create config item with safe defaults")
 
     p_cfg_del = cfg_sub.add_parser("delete", help="Remove a configuration key")
     p_cfg_del.add_argument("key", help="Config key to remove")
@@ -1614,54 +1841,18 @@ environment variables:
     # ── api ───────────────────────────────────────────────────────────────────
     p_api = sub.add_parser(
         "api",
-        help="Call Revolut X API endpoints (requires --env int or prod)",
+        help="Check API connectivity and permissions (requires int or prod env)",
     )
-    _add_env_arg(p_api)
     p_api.add_argument(
         "api_cmd",
-        metavar="<endpoint>",
-        choices=[
-            "test",
-            "ready",
-            "balance",
-            "ticker",
-            "tickers",
-            "all-tickers",
-            "currencies",
-            "pairs",
-            "last-trades",
-            "order-book",
-            "candles",
-            "open-orders",
-            "orders",
-            "trades",
-            "public-trades",
-            "order",
-        ],
-        help=(
-            "test · ready · balance · ticker · tickers · all-tickers · "
-            "currencies · pairs · last-trades · order-book · candles · "
-            "open-orders · orders · trades · public-trades · order"
-        ),
+        metavar="<command>",
+        choices=["test", "ready"],
+        help="test — verify connection · ready — check view + trade permissions",
     )
-    p_api.add_argument("--symbol", "-s", help="Trading pair, e.g. BTC-EUR")
-    p_api.add_argument("--symbols", help="Comma-separated pairs, e.g. BTC-EUR,ETH-EUR")
-    p_api.add_argument("--order-id", dest="order_id", help="Order UUID")
-    p_api.add_argument(
-        "--interval",
-        "-i",
-        type=int,
-        default=60,
-        choices=[1, 5, 15, 30, 60, 240, 1440],
-        help="Candle interval in minutes (default: 60)",
-    )
-    p_api.add_argument("--limit", "-l", type=int, default=20, help="Result limit (default: 20)")
-    p_api.add_argument("--depth", type=int, default=20, help="Order book depth (default: 20)")
     p_api.set_defaults(func=cmd_api)
 
     # ── db ────────────────────────────────────────────────────────────────────
     p_db = sub.add_parser("db", help="Database management and analytics")
-    _add_env_arg(p_db)
     db_sub = p_db.add_subparsers(dest="db_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     db_sub.add_parser("stats", help="Database statistics overview")
@@ -1681,18 +1872,14 @@ environment variables:
     p_db_rep.add_argument(
         "--output-dir",
         dest="output_dir",
-        default="data/reports",
-        help="Output directory (default: data/reports)",
+        default="revt-data/reports",
+        help="Output directory (default: revt-data/reports)",
     )
-
-    db_sub.add_parser("encrypt-setup", help="Generate and store the DB encryption key in 1Password")
-    db_sub.add_parser("encrypt-status", help="Check whether DB encryption is active")
 
     p_db.set_defaults(func=cmd_db)
 
     # ── telegram ──────────────────────────────────────────────────────────────
     p_tg = sub.add_parser("telegram", help="Telegram bot utilities and always-on control plane")
-    _add_env_arg(p_tg)
     tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar=_SUBCOMMAND_METAVAR)
     tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
     tg_sub.add_parser(
@@ -1707,7 +1894,7 @@ environment variables:
     # ── update ────────────────────────────────────────────────────────────────
     p_update = sub.add_parser(
         "update",
-        help="Update revt to the latest version (preserves data/ folder and 1Password config)",
+        help="Update revt to the latest version (preserves revt-data/ folder and 1Password config)",
     )
     p_update.set_defaults(func=cmd_update)
 

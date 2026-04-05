@@ -511,7 +511,7 @@ class TestComparisonTable:
 
     def test_print_comparison_table_sorts_by_return(self, capsys):
         """Rows are sorted by return_pct descending."""
-        from cli.backtest_compare import _print_comparison_table
+        from cli.commands.backtest_compare import _print_comparison_table
 
         rows = [
             {
@@ -552,7 +552,7 @@ class TestComparisonTable:
 
     def test_print_comparison_table_empty(self, capsys):
         """Empty list prints a 'no results' message."""
-        from cli.backtest_compare import _print_comparison_table
+        from cli.commands.backtest_compare import _print_comparison_table
 
         _print_comparison_table([])
         output = capsys.readouterr().out
@@ -560,7 +560,7 @@ class TestComparisonTable:
 
     def test_print_comparison_table_shows_best_and_worst(self, capsys):
         """Summary shows best and worst strategies."""
-        from cli.backtest_compare import _print_comparison_table
+        from cli.commands.backtest_compare import _print_comparison_table
 
         rows = [
             {

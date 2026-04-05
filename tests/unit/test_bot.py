@@ -1231,7 +1231,7 @@ class TestTelegramCommandListener:
         assert "BTC-EUR" in text
 
     @pytest.mark.asyncio
-    @patch("cli.analytics_report.generate_report_data")
+    @patch("cli.utils.analytics_report.generate_report_data")
     async def test_report_command_sends_pdf_when_available(
         self, mock_gen_report, bot, mock_persistence
     ):
@@ -1256,7 +1256,7 @@ class TestTelegramCommandListener:
         assert call_kwargs["filename"] == "analytics_report.pdf"
 
     @pytest.mark.asyncio
-    @patch("cli.analytics_report.generate_report_data")
+    @patch("cli.utils.analytics_report.generate_report_data")
     async def test_report_command_falls_back_to_text_when_no_pdf(
         self, mock_gen_report, bot, mock_persistence
     ):
@@ -1279,7 +1279,7 @@ class TestTelegramCommandListener:
         bot.notifier.send_document.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("cli.analytics_report.generate_report_data")
+    @patch("cli.utils.analytics_report.generate_report_data")
     async def test_report_command_no_data_message(self, mock_gen_report, bot, mock_persistence):
         """_cmd_report replies with no-data message when DB has no trades."""
         mock_gen_report.return_value = {"pdf_bytes": None, "metrics": {}}
@@ -1296,7 +1296,7 @@ class TestTelegramCommandListener:
         bot.notifier.notify_report_ready.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @patch("cli.analytics_report.generate_report_data")
+    @patch("cli.utils.analytics_report.generate_report_data")
     async def test_report_command_handles_exception(self, mock_gen_report, bot, mock_persistence):
         """_cmd_report sends error message when generate_report_data raises."""
         mock_gen_report.side_effect = RuntimeError("DB connection failed")
@@ -1308,7 +1308,7 @@ class TestTelegramCommandListener:
         assert "Failed to generate report" in reply_text
 
     @pytest.mark.asyncio
-    @patch("cli.analytics_report.generate_report_data")
+    @patch("cli.utils.analytics_report.generate_report_data")
     async def test_report_command_uses_days_arg(self, mock_gen_report, bot, mock_persistence):
         """_cmd_report passes the days argument from /report command."""
         mock_gen_report.return_value = {
