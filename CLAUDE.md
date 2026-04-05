@@ -81,7 +81,7 @@ All user values → 1Password. No code defaults (except `ENVIRONMENT` from env).
 
 ### Documentation
 
-Every change updates: `README.md`, docstrings, `.claude/CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`. Run `just sync-copilot` after CLAUDE.md changes.
+Every change updates: `README.md`, docstrings, `CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`. Run `just sync-copilot` after CLAUDE.md changes.
 
 ## Key Files
 

@@ -105,8 +105,8 @@ env:
 
 # Sync CLAUDE.md to .github/copilot-instructions.md
 sync-copilot:
-    @cp .claude/CLAUDE.md .github/copilot-instructions.md
-    @echo "Synced .claude/CLAUDE.md → .github/copilot-instructions.md"
+    @cp CLAUDE.md .github/copilot-instructions.md
+    @echo "Synced CLAUDE.md → .github/copilot-instructions.md"
 
 # Generate class diagrams using pyreverse
 diagrams:
