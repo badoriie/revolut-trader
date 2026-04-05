@@ -11,6 +11,10 @@ from typing import Any
 
 from loguru import logger
 
+from cli.env_detect import set_env as _set_env
+
+_set_env()
+
 from src.api.client import RevolutAPIClient
 
 _VIEW_ERROR_HINTS: dict[str, str] = {

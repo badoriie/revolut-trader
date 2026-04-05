@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cli.env_detect import detect_env
 from cli.revt import (
     _build_parser,
     _check_binary_version,
@@ -25,7 +26,6 @@ from cli.revt import (
     _config_init,
     _config_set,
     _config_show,
-    _detect_env,
     _env_badge,
     _get_binary_name_for_platform,
     _get_current_version_from_pyproject,
@@ -41,7 +41,6 @@ from cli.revt import (
     _ops_status,
     _print_run_config,
     _read_update_cache,
-    _resolve_env,
     _run_compare_cli,
     _setup_logger,
     _show_update_notification,
@@ -72,21 +71,21 @@ def _ns(**kwargs) -> argparse.Namespace:
 
 
 # ---------------------------------------------------------------------------
-# _detect_env
+# detect_env
 # ---------------------------------------------------------------------------
 
 
 class TestDetectEnv:
-    """Tests for _detect_env() — auto-detection of environment."""
+    """Tests for detect_env() — auto-detection of environment."""
 
     def test_frozen_binary_returns_prod(self, monkeypatch):
         monkeypatch.setattr(sys, "frozen", True, raising=False)
-        assert _detect_env() == "prod"
+        assert detect_env() == "prod"
 
     def test_feature_branch_returns_dev(self):
         result = MagicMock(returncode=0, stdout="feature/foo\n")
         with patch("subprocess.run", return_value=result):
-            assert _detect_env() == "dev"
+            assert detect_env() == "dev"
 
     def test_main_branch_no_tag_returns_int(self):
         branch_result = MagicMock(returncode=0, stdout="main\n")
@@ -98,7 +97,7 @@ class TestDetectEnv:
             return tag_result
 
         with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "int"
+            assert detect_env() == "int"
 
     def test_main_branch_with_tag_returns_prod(self):
         branch_result = MagicMock(returncode=0, stdout="main\n")
@@ -110,70 +109,35 @@ class TestDetectEnv:
             return tag_result
 
         with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
-    def test_master_branch_with_tag_returns_prod(self):
-        branch_result = MagicMock(returncode=0, stdout="master\n")
-        tag_result = MagicMock(returncode=0, stdout="v1.0.0\n")
+    def test_feature_branch_with_tag_returns_dev(self):
+        """Tags on non-main branches are not treated as releases — branch wins."""
+        branch_result = MagicMock(returncode=0, stdout="feature/my-feature\n")
 
-        def side_effect(cmd, **kw):
-            if "rev-parse" in cmd:
-                return branch_result
-            return tag_result
-
-        with patch("subprocess.run", side_effect=side_effect):
-            assert _detect_env() == "prod"
+        with patch("subprocess.run", return_value=branch_result):
+            assert detect_env() == "dev"
 
     def test_git_not_installed_returns_prod(self):
         with patch("subprocess.run", side_effect=OSError("no git")):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_git_timeout_returns_prod(self):
         with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 5)):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_unexpected_exception_returns_prod(self):
         with patch("subprocess.run", side_effect=RuntimeError("boom")):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
     def test_git_rev_parse_fails_returns_prod(self):
         result = MagicMock(returncode=128, stdout="")
         with patch("subprocess.run", return_value=result):
-            assert _detect_env() == "prod"
+            assert detect_env() == "prod"
 
 
 # ---------------------------------------------------------------------------
-# _resolve_env
-# ---------------------------------------------------------------------------
-
-
-class TestResolveEnv:
-    """Tests for _resolve_env() — pick environment from args or detect."""
-
-    def test_explicit_env_from_args(self, monkeypatch):
-        monkeypatch.delenv("ENVIRONMENT", raising=False)
-        args = _ns(env="int")
-        result = _resolve_env(args)
-        assert result == "int"
-        import os
-
-        assert os.environ["ENVIRONMENT"] == "int"
-
-    def test_falls_back_to_detect_when_no_arg(self):
-        args = _ns(env=None)
-        with patch("cli.revt._detect_env", return_value="dev"):
-            result = _resolve_env(args)
-        assert result == "dev"
-
-    def test_no_env_attr_falls_back(self):
-        args = _ns()  # no env attribute at all
-        with patch("cli.revt._detect_env", return_value="prod"):
-            result = _resolve_env(args)
-        assert result == "prod"
-
-
-# ---------------------------------------------------------------------------
-# _env_badge
+# detect_env — tested separately (environment is now auto-detected only, not overridable)
 # ---------------------------------------------------------------------------
 
 
@@ -602,7 +566,7 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
@@ -626,7 +590,7 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.validators.validate_trading_pairs", return_value=(False, "bad pairs")),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -648,7 +612,7 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
@@ -672,7 +636,7 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
@@ -716,7 +680,7 @@ class TestCmdBacktest:
         args = self._base_args()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._backtest_single") as mock_single,
             patch("loguru.logger"),
         ):
@@ -727,7 +691,7 @@ class TestCmdBacktest:
         args = self._base_args(hf=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._backtest_single") as mock_single,
             patch("loguru.logger"),
         ):
@@ -738,7 +702,7 @@ class TestCmdBacktest:
         args = self._base_args(compare=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -749,7 +713,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -762,7 +726,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -774,7 +738,7 @@ class TestCmdBacktest:
         args = self._base_args(compare=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -858,7 +822,7 @@ class TestCmdOps:
     def test_status(self):
         args = _ns(env="dev", status=True, show=False)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_status") as mock_status,
         ):
             cmd_ops(args)
@@ -867,16 +831,16 @@ class TestCmdOps:
     def test_show(self):
         args = _ns(env="dev", status=False, show=True)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_show") as mock_show,
         ):
             cmd_ops(args)
         mock_show.assert_called_once_with("dev")
 
     def test_default_set_creds(self):
-        args = _ns(env="int", status=False, show=False)
+        args = _ns(status=False, show=False)
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch("cli.revt._ops_set_creds") as mock_set,
         ):
             cmd_ops(args)
@@ -1034,7 +998,7 @@ class TestCmdConfig:
     def test_show(self):
         args = _ns(env="dev", config_cmd="show")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1043,7 +1007,7 @@ class TestCmdConfig:
     def test_set(self):
         args = _ns(env="dev", config_cmd="set", key="RISK_LEVEL", value="aggressive")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_set") as mock_set,
         ):
             cmd_config(args)
@@ -1052,7 +1016,7 @@ class TestCmdConfig:
     def test_init(self):
         args = _ns(env="dev", config_cmd="init")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_init") as mock_init,
         ):
             cmd_config(args)
@@ -1061,7 +1025,7 @@ class TestCmdConfig:
     def test_delete(self):
         args = _ns(env="dev", config_cmd="delete", key="MAX_CAPITAL")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_delete") as mock_del,
         ):
             cmd_config(args)
@@ -1070,7 +1034,7 @@ class TestCmdConfig:
     def test_default_is_show(self):
         args = _ns(env="dev", config_cmd=None)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1291,7 +1255,7 @@ class TestCmdApi:
     def test_dev_env_blocked(self, capsys):
         args = _ns(env="dev", api_cmd="balance")
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_api(args)
@@ -1300,20 +1264,20 @@ class TestCmdApi:
         assert "mock" in out
 
     def test_test_command_delegates(self):
-        args = _ns(env="int", api_cmd="test")
+        args = _ns(api_cmd="test")
         mock_run = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("test")
 
     def test_ready_command_delegates(self):
-        args = _ns(env="int", api_cmd="ready")
+        args = _ns(api_cmd="ready")
         mock_run = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
@@ -1321,7 +1285,6 @@ class TestCmdApi:
 
     def test_balance_command_delegates_to_endpoint(self):
         args = _ns(
-            env="int",
             api_cmd="balance",
             symbol=None,
             symbols=None,
@@ -1332,7 +1295,7 @@ class TestCmdApi:
         )
         mock_endpoint = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
         ):
             cmd_api(args)
@@ -1340,7 +1303,6 @@ class TestCmdApi:
 
     def test_pairs_command_maps_name(self):
         args = _ns(
-            env="int",
             api_cmd="pairs",
             symbol=None,
             symbols=None,
@@ -1351,7 +1313,7 @@ class TestCmdApi:
         )
         mock_endpoint = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="int"),
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
             patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
         ):
             cmd_api(args)
@@ -1372,7 +1334,7 @@ class TestCmdTelegram:
         args = _ns(env="dev", telegram_cmd="start")
         mock_run_control_plane = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._show_update_notification"),
             patch.dict(
                 "sys.modules",
@@ -1388,7 +1350,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = None
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit) as exc_info,
@@ -1404,7 +1366,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = "token123"
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit),
@@ -1419,7 +1381,7 @@ class TestCmdTelegram:
         mock_notifier.send_test = MagicMock()
         # Patch settings attributes on the real singleton and TelegramNotifier at its source
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1434,7 +1396,7 @@ class TestCmdTelegram:
         mock_notifier = MagicMock()
         mock_notifier.send_test = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1456,7 +1418,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="stats")
         mock_show_stats = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
@@ -1466,7 +1428,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="analytics", days=60)
         mock_show_analytics = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules", {"cli.db_manage": MagicMock(show_analytics=mock_show_analytics)}
             ),
@@ -1478,7 +1440,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="backtests", limit=5)
         mock_show = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules", {"cli.db_manage": MagicMock(show_backtest_results=mock_show)}
             ),
@@ -1490,7 +1452,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="export")
         mock_export = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict("sys.modules", {"cli.db_manage": MagicMock(export_csv=mock_export)}),
         ):
             cmd_db(args)
@@ -1500,7 +1462,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="report", days=30, output_dir="data/reports")
         mock_generate = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules", {"cli.analytics_report": MagicMock(generate_report=mock_generate)}
             ),
@@ -1512,7 +1474,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="encrypt-setup")
         mock_setup = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules",
                 {"src.utils.db_encryption": MagicMock(setup_database_encryption=mock_setup)},
@@ -1527,7 +1489,7 @@ class TestCmdDb:
         mock_enc.is_enabled = True
         mock_enc_class = MagicMock(return_value=mock_enc)
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules",
                 {"src.utils.db_encryption": MagicMock(DatabaseEncryption=mock_enc_class)},
@@ -1541,7 +1503,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd=None)
         mock_show_stats = MagicMock()
         with (
-            patch("cli.revt._resolve_env", return_value="dev"),
+            patch("cli.env_detect.detect_env", return_value="dev"),
             patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
@@ -1864,9 +1826,8 @@ class TestBuildParser:
 
     def test_api_subcommand(self):
         parser = _build_parser()
-        args = parser.parse_args(["api", "balance", "--env", "int"])
+        args = parser.parse_args(["api", "balance"])
         assert args.api_cmd == "balance"
-        assert args.env == "int"
         assert args.func == cmd_api
 
     def test_db_subcommand(self):

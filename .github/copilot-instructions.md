@@ -7,12 +7,16 @@
 
 **Package manager: `uv`** — always prefix Python commands with `uv run`.
 
+**Development commands**: Use `just` (install: `brew install just`)
+
+**Functional commands**: Use `revt` CLI
+
 ```bash
 # Install dependencies
 uv sync --extra dev
 
 # Run tests with coverage
-make test                    # or: uv run pytest --cov=src --cov-report=term-missing
+just test                    # or: uv run pytest --cov=src --cov-report=term-missing
 
 # Run a single test file
 uv run pytest tests/unit/test_risk_manager.py -v
@@ -21,53 +25,54 @@ uv run pytest tests/unit/test_risk_manager.py -v
 uv run pytest tests/unit/test_risk_manager.py::TestClassName::test_name -v
 
 # Lint, format, type-check, security
-make lint                    # ruff check
-make format                  # ruff format + ruff check --fix
-make typecheck               # pyright src/ cli/
-make security                # bandit static security analysis
-make check                   # all of the above + tests
+just lint                    # ruff check
+just format                  # ruff format + ruff check --fix
+just typecheck               # pyright src/ cli/
+just security                # bandit static security analysis
+just check                   # all of the above + tests
 
 # Run pre-commit hooks on all files
-make pre-commit
+just pre-commit
 
 # Run the bot (env auto-detected: tagged commit→prod, main→int, other branch→dev)
 # All environments default to paper mode; live trading requires explicit opt-in
-make run                     # env auto-detected; STRATEGY=... RISK=... PAIRS=... INTERVAL=...
-make run ENV=dev             # force dev (mock API, no credentials needed)
-make run ENV=int             # force int (paper trading by default)
-make run ENV=prod            # force prod (paper trading by default)
-make run ENV=prod MODE=live  # LIVE TRADING with real money — requires confirmation
+revt run                     # env auto-detected
+revt run --strategy momentum --risk moderate --pairs BTC-EUR,ETH-EUR
+revt run --env dev           # force dev (mock API, no credentials needed)
+revt run --env int           # force int (paper trading by default)
+revt run --env prod          # force prod (paper trading by default)
+revt run --env prod --mode live  # LIVE TRADING with real money — requires confirmation
 
 # Backtesting (results saved to encrypted DB, not files)
-make backtest                # STRATEGY=momentum DAYS=30 (env auto-detected: main→int, other branches→dev)
-make backtest-hf             # high-frequency: 1-min candles (closest to live 5s polling)
-make backtest-compare        # compare all strategies side-by-side (DAYS=... RISK=...)
-make backtest-matrix         # all strategies × all risk levels matrix
-make db-backtests            # view stored results (uses ENV)
-make db-export-csv           # export results to CSV
+revt backtest                         # 30 days, default strategy
+revt backtest --strategy momentum --days 30
+revt backtest --hf                    # high-frequency: 1-min candles
+revt backtest --compare               # compare all strategies side-by-side
+revt backtest --matrix                # all strategies × all risk levels matrix
+revt db backtests                     # view stored results
+revt db export                        # export results to CSV
 
 # Logs (decrypted from database)
-make logs                    # view recent WARNING+ logs (LIMIT=50 LEVEL=... SESSION=...)
+# Note: logs command not yet in revt, use: uv run python cli/view_logs.py
 
 # Database (per environment: data/dev.db, data/int.db, data/prod.db)
-make db                      # show database overview (ENV=dev)
-make db-stats                # show database statistics
-make db-analytics            # trading analytics (DAYS=30)
-make db-encrypt-setup        # generate and store encryption key in 1Password
-make db-encrypt-status       # check if encryption is active
-make db-report               # comprehensive analytics report with charts (DAYS=30, DIR=data/reports)
+revt db stats                # show database statistics
+revt db analytics --days 30  # trading analytics
+revt db encrypt-setup        # generate and store encryption key in 1Password
+revt db encrypt-status       # check if encryption is active
+revt db report --days 30     # comprehensive analytics report with charts
 
-# API utilities (use ENV to select API keys)
-make api-test ENV=int
-make api-ready ENV=int       # check API permissions (view + trade)
+# API utilities (env auto-detected or use --env flag)
+revt api test                # test authenticated connection
+revt api ready               # check API permissions (view + trade)
 
 # 1Password / credential management (per environment)
-make setup                   # first-time setup: creates items for dev/int/prod
-make ops ENV=dev             # interactively set API key for dev environment
-make opshow ENV=dev          # show stored values for dev (masked)
-make opstatus                # check 1Password CLI status
-make opconfig-show ENV=dev   # show trading configuration for dev
-make opconfig-set KEY=RISK_LEVEL VALUE=moderate ENV=dev
+# First-time setup command not yet in revt, use: uv run revt ops (creates items if missing)
+revt ops                     # interactively set credentials for current env
+revt ops --show              # show stored values (masked)
+revt ops --status            # check 1Password CLI status
+revt config show             # show trading configuration
+revt config set RISK_LEVEL moderate
 ```
 
 ## Architecture

@@ -2,8 +2,8 @@
 """revt — Revolut Trader CLI.
 
 The polished, user-facing entry point replacing all non-development make targets.
-Environment is auto-detected from the git branch (mirrors Makefile logic) and can
-always be overridden with ``--env``.
+Environment is strictly auto-detected from the git branch / tag / binary type.
+No override is permitted.
 
 Usage
 -----
@@ -33,71 +33,10 @@ _DAYS_HELP = "Look-back days (default: 30)"
 
 
 # ---------------------------------------------------------------------------
-# Environment helpers
+# Environment helpers — detection delegated to cli.env_detect
 # ---------------------------------------------------------------------------
 
-
-def _detect_env() -> str:
-    """Determine the default environment.
-
-    * Frozen binary (release build via PyInstaller) → always ``prod``.
-      End users download the binary to trade with real money; ``prod`` is the
-      only meaningful default.
-    * Running from source → mirror Makefile logic: tagged commit → ``prod``,
-      ``main`` branch → ``int``, any other branch → ``dev``.
-    """
-    # PyInstaller sets sys.frozen when running as a packaged binary
-    if getattr(sys, "frozen", False):
-        return "prod"
-
-    try:
-        # Check branch first (faster than checking for tags)
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True,
-            text=True,
-            cwd=_ROOT,
-            timeout=5,
-        )
-        if branch.returncode != 0:
-            return "prod"  # not a git repo
-
-        branch_name = branch.stdout.strip()
-
-        # Only check for tags on main branch (optimization)
-        if branch_name in {"main", "master"}:
-            tag = subprocess.run(
-                ["git", "describe", "--exact-match", "HEAD"],
-                capture_output=True,
-                text=True,
-                cwd=_ROOT,
-                timeout=5,
-            )
-            if tag.returncode == 0:
-                return "prod"  # on a tagged release
-
-        return "int" if branch_name == "main" else "dev"
-    except subprocess.TimeoutExpired:
-        # Git command timed out - likely repo issues
-        return "prod"  # safe fallback
-    except OSError:
-        # Git not installed, not a git repo, or other OS-level error
-        # (FileNotFoundError is a subclass of OSError, so this catches both)
-        return "prod"  # safe fallback
-    except Exception:
-        # Unexpected error
-        return "prod"  # safe fallback
-
-
-def _resolve_env(args: argparse.Namespace) -> str:
-    """Pick environment from ``--env`` flag or auto-detect, then export it.
-
-    ENVIRONMENT must be set before any ``src.config`` import because the
-    Settings singleton is created at import time.
-    """
-    env = getattr(args, "env", None) or _detect_env()
-    os.environ["ENVIRONMENT"] = env
-    return env
+from cli.env_detect import set_env as _set_env  # noqa: E402
 
 
 def _env_badge(env: str) -> str:
@@ -105,7 +44,7 @@ def _env_badge(env: str) -> str:
     labels = {
         "dev": "dev  (mock API · paper mode)",
         "int": "int  (real API · paper mode)",
-        "prod": "prod (real API · paper mode by default)",
+        "prod": "prod (real API · paper mode unless TRADING_MODE=live in 1Password)",
     }
     return labels.get(env, env)
 
@@ -378,7 +317,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Check for updates (non-blocking, cached)
     _show_update_notification()
 
-    env = _resolve_env(args)
+    env = _set_env()
     mode_override = getattr(args, "mode", None)
     confirm_live = getattr(args, "confirm_live", False)
 
@@ -433,7 +372,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     # Check for updates (non-blocking, cached)
     _show_update_notification()
 
-    _resolve_env(args)
+    _set_env()
 
     # Validate conflicting flags
     if args.matrix and (args.strategy or args.strategies):
@@ -540,7 +479,7 @@ def _run_compare_cli(
 
 def cmd_ops(args: argparse.Namespace) -> None:
     """Manage Revolut X API credentials stored in 1Password."""
-    env = _resolve_env(args)
+    env = _set_env()
 
     if args.status:
         _ops_status(env)
@@ -706,7 +645,7 @@ def _ops_set_creds(env: str) -> None:
 
 def cmd_config(args: argparse.Namespace) -> None:
     """View and manage trading configuration stored in 1Password."""
-    env = _resolve_env(args)
+    env = _set_env()
     sub = getattr(args, "config_cmd", None) or "show"
 
     if sub == "show":
@@ -754,7 +693,7 @@ def _config_set(env: str, key: str, value: str) -> None:
     is_valid, error = validate_config_value(key, value)
     if not is_valid:
         print(f"  ✗  Validation error: {error}")
-        print(f"     Use 'revt config show --env {env}' to see current values")
+        print("     Use 'revt config show' to see current values")
         sys.exit(1)
 
     r = _op(
@@ -769,7 +708,7 @@ def _config_set(env: str, key: str, value: str) -> None:
         print(f"  ✓  {key} = {value}")
     else:
         print(f"  ✗  Failed: {r.stderr.strip()}")
-        print(f"     Run 'revt config init --env {env}' to create the config item first.")
+        print("     Run 'revt config init' to create the config item first.")
         sys.exit(1)
 
 
@@ -820,7 +759,7 @@ def _config_init(env: str) -> None:
     if r.returncode == 0:
         print(f"  ✓  Config item created: {_op_config_item(env)}")
         if env == "prod":
-            print("  Tip: cap trading capital: revt config set MAX_CAPITAL 5000 --env prod")
+            print("  Tip: cap trading capital: revt config set MAX_CAPITAL 5000")
     else:
         print(f"  ✗  Failed: {r.stderr.strip()}")
         sys.exit(1)
@@ -859,11 +798,11 @@ def cmd_api(args: argparse.Namespace) -> None:
     ``cli.api_test`` command names, then delegates to that module's ``main()``.
     Dev environment is blocked — it uses a local mock with no real endpoints.
     """
-    env = _resolve_env(args)
+    env = _set_env()
     if env == "dev":
         print("⚠️   API commands require a real API environment.")
         print("    Dev uses a local mock — no network calls are made.")
-        print("    Use --env int or --env prod.")
+        print("    Switch to the main branch (int) or a tagged commit (prod).")
         sys.exit(1)
 
     raw_cmd: str = args.api_cmd
@@ -904,7 +843,7 @@ def cmd_telegram(args: argparse.Namespace) -> None:
       test   — send a test message to verify Telegram is configured correctly
       start  — start the always-on Telegram Control Plane process
     """
-    env = _resolve_env(args)
+    env = _set_env()
     sub_cmd = getattr(args, "telegram_cmd", None) or "test"
 
     if sub_cmd == "start":
@@ -964,7 +903,7 @@ def cmd_db(args: argparse.Namespace) -> None:
     function based on the subcommand.
     """
     # Resolve environment and set ENVIRONMENT variable for database selection
-    _resolve_env(args)
+    _set_env()
 
     sub = getattr(args, "db_cmd", None) or "stats"
 
@@ -1375,20 +1314,6 @@ def cmd_update(args: argparse.Namespace) -> None:
 _SUBCOMMAND_METAVAR = "<subcommand>"
 
 
-def _add_env_arg(p: argparse.ArgumentParser) -> None:
-    """Add the standard --env argument to a subparser."""
-    p.add_argument(
-        "--env",
-        "-e",
-        choices=["dev", "int", "prod"],
-        help=(
-            "Environment. Auto-detected from git branch (tagged→prod, main→int, other→dev) when running from source, "
-            "or defaults to prod when frozen binary. Override with --env. "
-            "Use --env int for paper trading with real market data."
-        ),
-    )
-
-
 def _build_parser() -> argparse.ArgumentParser:
     """Build and return the full ``revt`` argument parser."""
     parser = argparse.ArgumentParser(
@@ -1405,23 +1330,18 @@ examples:
   revt config set RISK_LEVEL aggressive       change risk level
   revt config set MAX_CAPITAL 5000            cap how much the bot can trade
   revt config delete MAX_CAPITAL              remove capital cap
-  revt config --env dev init                  create config with safe defaults
+  revt config init                            create config with safe defaults
 
-  # Note: For nested commands (config, db, telegram), --env must come before the subcommand:
-  # ✓ revt config --env dev show
-  # ✗ revt config show --env dev
-
-  # Trading & Backtesting
+  # Trading & Backtesting (env auto-detected from git branch)
   revt run                                    start trading (paper mode by default)
   revt run --strategy momentum --risk moderate
-  revt run --env int                          paper trading with real market data
-  revt run --mode live --confirm-live         LIVE TRADING (requires confirmation)
+  revt run --mode live --confirm-live         LIVE TRADING — only on tagged/prod commit
   revt backtest                               30-day backtest
   revt backtest --hf                          high-frequency (1-min candles)
   revt backtest --compare                     compare all strategies side-by-side
   revt backtest --matrix                      all strategies × all risk levels
 
-  # API Commands (requires --env int or prod)
+  # API Commands (requires int or prod env — switch to main or tagged commit)
   revt api balance                            account balances
   revt api ready                              check API permissions
   revt api ticker --symbol BTC-EUR            get ticker for specific symbol
@@ -1430,8 +1350,8 @@ examples:
   revt api order-book --symbol BTC-EUR        order book depth
 
   # Database & Analytics
-  revt db --env dev stats                     database overview
-  revt db --env dev analytics --days 60       trading analytics
+  revt db stats                               database overview
+  revt db analytics --days 60                 trading analytics
   revt db backtests                           view backtest results
   revt db export                              export all data to CSV
   revt db report                              full analytics report + charts
@@ -1447,14 +1367,18 @@ examples:
 
 environment variables:
   REVT_SKIP_UPDATE_CHECK=1                    disable update notifications
-  ENVIRONMENT                                 override env detection (dev/int/prod)
+
+environment detection (run / telegram — not overridable):
+  tagged commit on main → prod  (real API, paper by default)
+  main branch           → int   (real API, paper mode)
+  feature branch        → dev   (mock API, paper mode)
+  frozen binary         → prod
 """,
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     # ── run ──────────────────────────────────────────────────────────────────
     p_run = sub.add_parser("run", help="Start the trading bot")
-    _add_env_arg(p_run)
     p_run.add_argument(
         "--strategy",
         "-s",
@@ -1510,7 +1434,6 @@ environment variables:
 
     # ── backtest ──────────────────────────────────────────────────────────────
     p_bt = sub.add_parser("backtest", help="Backtest strategies on historical data")
-    _add_env_arg(p_bt)
     p_bt.add_argument(
         "--hf",
         action="store_true",
@@ -1583,7 +1506,6 @@ environment variables:
 
     # ── ops ───────────────────────────────────────────────────────────────────
     p_ops = sub.add_parser("ops", help="Manage API credentials in 1Password")
-    _add_env_arg(p_ops)
     ops_grp = p_ops.add_mutually_exclusive_group()
     ops_grp.add_argument(
         "--show", action="store_true", help="Show stored credentials + config (secrets masked)"
@@ -1595,7 +1517,6 @@ environment variables:
 
     # ── config ────────────────────────────────────────────────────────────────
     p_cfg = sub.add_parser("config", help="View / update trading configuration in 1Password")
-    _add_env_arg(p_cfg)
     cfg_sub = p_cfg.add_subparsers(dest="config_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     cfg_sub.add_parser("show", help="Show current configuration")
@@ -1614,9 +1535,8 @@ environment variables:
     # ── api ───────────────────────────────────────────────────────────────────
     p_api = sub.add_parser(
         "api",
-        help="Call Revolut X API endpoints (requires --env int or prod)",
+        help="Call Revolut X API endpoints (requires int or prod env)",
     )
-    _add_env_arg(p_api)
     p_api.add_argument(
         "api_cmd",
         metavar="<endpoint>",
@@ -1661,7 +1581,6 @@ environment variables:
 
     # ── db ────────────────────────────────────────────────────────────────────
     p_db = sub.add_parser("db", help="Database management and analytics")
-    _add_env_arg(p_db)
     db_sub = p_db.add_subparsers(dest="db_cmd", metavar=_SUBCOMMAND_METAVAR)
 
     db_sub.add_parser("stats", help="Database statistics overview")
@@ -1692,7 +1611,6 @@ environment variables:
 
     # ── telegram ──────────────────────────────────────────────────────────────
     p_tg = sub.add_parser("telegram", help="Telegram bot utilities and always-on control plane")
-    _add_env_arg(p_tg)
     tg_sub = p_tg.add_subparsers(dest="telegram_cmd", metavar=_SUBCOMMAND_METAVAR)
     tg_sub.add_parser("test", help="Send a test message to verify Telegram is configured correctly")
     tg_sub.add_parser(

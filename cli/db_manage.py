@@ -2,12 +2,14 @@
 """Database management CLI tool."""
 
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from loguru import logger
 
+from cli.env_detect import detect_env as _detect_env
 from src.utils.db_persistence import DatabasePersistence
 
 
@@ -151,6 +153,9 @@ def show_backtest_results(limit: int = 10):
 
 
 def main():
+    if "ENVIRONMENT" not in os.environ:
+        os.environ["ENVIRONMENT"] = _detect_env()
+
     if len(sys.argv) < 2:
         print("Usage: python cli/db_manage.py <command> [options]")
         print("\nCommands:")

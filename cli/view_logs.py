@@ -15,11 +15,13 @@ Examples:
 """
 
 import argparse
+import os
 import time
 from datetime import datetime
 
 from loguru import logger
 
+from cli.env_detect import detect_env as _detect_env
 from src.utils.db_persistence import DatabasePersistence
 
 # Suppress decryption warnings when viewing logs - they're expected for old test data
@@ -158,6 +160,9 @@ def follow_logs(
 
 def main() -> None:
     """Parse arguments and display logs."""
+    if "ENVIRONMENT" not in os.environ:
+        os.environ["ENVIRONMENT"] = _detect_env()
+
     parser = argparse.ArgumentParser(
         description="View encrypted logs from the database",
         formatter_class=argparse.RawDescriptionHelpFormatter,

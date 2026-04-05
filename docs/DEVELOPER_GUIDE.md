@@ -88,7 +88,7 @@ ______________________________________________________________________
 The setup wizard creates all required 1Password vault items for the three environments (`dev`, `int`, `prod`) and installs Git hooks:
 
 ```bash
-make setup
+revt ops  # Note: Creates items if missing
 ```
 
 This single command:
@@ -99,18 +99,18 @@ This single command:
 - Installs pre-commit hooks
 - Runs `uv sync`
 
-> If `make setup` fails, check that `op` is authenticated: run `op whoami` and sign in if prompted.
+> If `revt ops  # Note: Creates items if missing` fails, check that `op` is authenticated: run `op whoami` and sign in if prompted.
 
 ### Store your API key
 
-After `make setup`, store the Revolut X API credentials for each environment you intend to use:
+After `revt ops  # Note: Creates items if missing`, store the Revolut X API credentials for each environment you intend to use:
 
 ```bash
 # Store credentials for the int (paper trading) environment
-make ops ENV=int
+revt ops ENV=int
 
 # Store credentials for prod (live trading)
-make ops ENV=prod
+revt ops ENV=prod
 ```
 
 You will be prompted for:
@@ -121,7 +121,7 @@ You will be prompted for:
 Verify the values were stored correctly:
 
 ```bash
-make opshow ENV=int
+revt opshow ENV=int
 ```
 
 ______________________________________________________________________
@@ -131,7 +131,7 @@ ______________________________________________________________________
 All trading configuration is stored in 1Password under `revolut-trader-config-{env}`. Set each value with:
 
 ```bash
-make opconfig-set KEY=<key> VALUE=<value> ENV=<env>
+revt config set KEY=<key> VALUE=<value> ENV=<env>
 ```
 
 ### Required parameters
@@ -165,15 +165,15 @@ make opconfig-set KEY=<key> VALUE=<value> ENV=<env>
 ### Example: full configuration for paper trading
 
 ```bash
-make opconfig-set KEY=RISK_LEVEL            VALUE=conservative     ENV=int
-make opconfig-set KEY=BASE_CURRENCY         VALUE=EUR              ENV=int
-make opconfig-set KEY=TRADING_PAIRS         VALUE=BTC-EUR,ETH-EUR  ENV=int
-make opconfig-set KEY=DEFAULT_STRATEGY      VALUE=momentum         ENV=int
-make opconfig-set KEY=INITIAL_CAPITAL       VALUE=10000            ENV=int
-make opconfig-set KEY=MAX_CAPITAL           VALUE=5000             ENV=int
+revt config set KEY=RISK_LEVEL            VALUE=conservative     ENV=int
+revt config set KEY=BASE_CURRENCY         VALUE=EUR              ENV=int
+revt config set KEY=TRADING_PAIRS         VALUE=BTC-EUR,ETH-EUR  ENV=int
+revt config set KEY=DEFAULT_STRATEGY      VALUE=momentum         ENV=int
+revt config set KEY=INITIAL_CAPITAL       VALUE=10000            ENV=int
+revt config set KEY=MAX_CAPITAL           VALUE=5000             ENV=int
 
 # Verify
-make opconfig-show ENV=int
+revt config show ENV=int
 ```
 
 ______________________________________________________________________
@@ -268,7 +268,7 @@ Each risk level's parameters are stored in a dedicated, environment-agnostic 1Pa
 
 ```bash
 # Example: tighten the conservative stop-loss to 1%
-make opconfig-set KEY=STOP_LOSS_PCT VALUE=1.0 ENV=prod   # targets revolut-trader-risk-conservative
+revt config set KEY=STOP_LOSS_PCT VALUE=1.0 ENV=prod   # targets revolut-trader-risk-conservative
 
 # Or with the revt CLI:
 revt config set STOP_LOSS_PCT 1.0 --env prod
@@ -321,7 +321,7 @@ revt run --env prod
 | `--interval` / `-i`  | seconds                                                                                   | Override the strategy's default loop interval |
 | `--log-level` / `-l` | `DEBUG` `INFO` `WARNING` `ERROR`                                                          | Verbosity of console output                   |
 
-> **Environment override** — use `make run ENV=dev|int|prod` to force a specific environment instead of auto-detection.
+> **Environment override** — use `revt run ENV=dev|int|prod` to force a specific environment instead of auto-detection.
 
 ### Stopping the bot
 
@@ -434,8 +434,8 @@ The backtesting engine mirrors the live bot as closely as possible:
 ### Best practices
 
 1. **Test multiple time windows** — 30, 90, 180 days — to check consistency
-1. **Compare strategies** side-by-side with `make backtest-compare`
-1. **Try all risk levels** with `make backtest-matrix` before choosing
+1. **Compare strategies** side-by-side with `revt backtest-compare`
+1. **Try all risk levels** with `revt backtest-matrix` before choosing
 1. **Use out-of-sample testing** — backtest on a period you did not use to choose the strategy
 1. **Watch the fees** — a high trade count can eat into profits even with a high win rate
 
@@ -446,14 +446,14 @@ ______________________________________________________________________
 All data is stored in an encrypted SQLite database (`data/dev.db`, `data/int.db`, `data/prod.db`).
 
 ```bash
-make db               # overview: stats + recent analytics + backtest summary
-make db-stats         # database statistics (snapshot count, last trade)
-make db-analytics     # trading analytics (default: last 30 days)
-make db-analytics DAYS=7   # last 7 days
-make db-backtests     # list recent backtest runs with metrics
-make db-export-csv    # export trades and snapshots to CSV files
-make db-report        # comprehensive analytics report with charts (default: last 30 days)
-make db-report DAYS=7 DIR=data/reports  # custom window and output directory
+revt db               # overview: stats + recent analytics + backtest summary
+revt db stats         # database statistics (snapshot count, last trade)
+revt db analytics     # trading analytics (default: last 30 days)
+revt db analytics DAYS=7   # last 7 days
+revt db backtests     # list recent backtest runs with metrics
+revt db export-csv    # export trades and snapshots to CSV files
+revt db report        # comprehensive analytics report with charts (default: last 30 days)
+revt db report DAYS=7 DIR=data/reports  # custom window and output directory
 ```
 
 The basic `db-analytics` report shows:
@@ -464,14 +464,14 @@ The basic `db-analytics` report shows:
 
 ### Comprehensive analytics report
 
-`make db-report` produces a deeper analysis of all data in the database:
+`revt db report` produces a deeper analysis of all data in the database:
 
 ```bash
 # Install chart dependencies first (one-time):
 uv sync --extra analytics
 
 # Generate the report (saves to data/reports/):
-make db-report DAYS=30
+revt db report DAYS=30
 ```
 
 The report includes:
@@ -493,10 +493,10 @@ A `report.md` markdown file is also written to the output directory, making it e
 ### Verifying encryption
 
 ```bash
-make db-encrypt-status
+revt db encrypt-status
 ```
 
-If encryption is not active, run `make db-encrypt-setup` to generate and store an encryption key in 1Password.
+If encryption is not active, run `revt db encrypt-setup` to generate and store an encryption key in 1Password.
 
 ______________________________________________________________________
 
@@ -513,17 +513,17 @@ Configure trailing stop on shutdown:
 
 ```bash
 # Wait for a 0.5% pullback from peak before closing profitable positions
-make opconfig-set KEY=SHUTDOWN_TRAILING_STOP_PCT VALUE=0.5 ENV=int
+revt config set KEY=SHUTDOWN_TRAILING_STOP_PCT VALUE=0.5 ENV=int
 
 # Force-close after 3 minutes if trailing stop never triggers
-make opconfig-set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=180 ENV=int
+revt config set KEY=SHUTDOWN_MAX_WAIT_SECONDS VALUE=180 ENV=int
 ```
 
 ______________________________________________________________________
 
 ## 11. Telegram Notifications (Optional)
 
-The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, a critical error occurs, or the daily loss limit is hit. When `make db-report` runs, a PDF analytics report is sent to Telegram (requires `--extra analytics` for `fpdf2`); if fpdf2 is not installed, a text summary is sent instead.
+The bot can send real-time notifications to a Telegram chat whenever a trade executes, the bot starts or stops, a critical error occurs, or the daily loss limit is hit. When `revt db report` runs, a PDF analytics report is sent to Telegram (requires `--extra analytics` for `fpdf2`); if fpdf2 is not installed, a text summary is sent instead.
 
 While the bot is running it also **listens for commands** you send directly in the chat, giving you on-demand access to live status and analytics without touching the server.
 
@@ -560,11 +560,11 @@ While the bot is running it also **listens for commands** you send directly in t
 
 ### Store credentials in 1Password
 
-The bot token is stored as a concealed credential via `make ops`; the chat ID is stored as a config value:
+The bot token is stored as a concealed credential via `revt ops`; the chat ID is stored as a config value:
 
 ```bash
-make ops ENV=prod                                          # prompts for Revolut API key and Telegram bot token
-make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<chat_id> ENV=prod
+revt ops ENV=prod                                          # prompts for Revolut API key and Telegram bot token
+revt config set KEY=TELEGRAM_CHAT_ID VALUE=<chat_id> ENV=prod
 ```
 
 Both keys must be set — if either is missing, notifications are silently disabled.
@@ -621,9 +621,9 @@ Additional commands available only through the control plane:
 | `/backtest [strategy] [risk] [days] [pairs,...]` | Run a backtest and receive full results summary via Telegram              |
 | `/help`                                          | List all available commands                                               |
 
-The control plane and `make run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
+The control plane and `revt run` cannot both run at the same time with Telegram configured — both would try to read the same Telegram updates. Use either:
 
-- `make run` — start the bot directly (command listener active while running), **or**
+- `revt run` — start the bot directly (command listener active while running), **or**
 - `make telegram` — start the control plane and use `/run` to start/stop the bot
 
 ______________________________________________________________________
@@ -677,10 +677,10 @@ ______________________________________________________________________
 ### API connection issues
 
 ```bash
-make opstatus           # check 1Password CLI is authenticated
-make opshow ENV=int     # verify credentials are stored
-make api-test ENV=int   # test the Revolut X connection
-make api-ready ENV=int  # check view + trade permissions
+revt opstatus           # check 1Password CLI is authenticated
+revt opshow ENV=int     # verify credentials are stored
+revt api test ENV=int   # test the Revolut X connection
+revt api ready ENV=int  # check view + trade permissions
 ```
 
 ### "1Password is required but not available"
@@ -696,11 +696,11 @@ op whoami
 
 ### "Config field missing" errors
 
-A required 1Password config key is missing. The error message tells you which key and which `make opconfig-set` command to run to fix it. Example:
+A required 1Password config key is missing. The error message tells you which key and which `revt config set` command to run to fix it. Example:
 
 ```
 RuntimeError: INITIAL_CAPITAL is required for paper mode.
-Fix: make opconfig-set KEY=INITIAL_CAPITAL VALUE=10000 ENV=int
+Fix: revt config set KEY=INITIAL_CAPITAL VALUE=10000 ENV=int
 ```
 
 ### "No signals generated"
@@ -717,10 +717,10 @@ All pairs must end with your `BASE_CURRENCY`. If `BASE_CURRENCY=EUR`:
 
 ```bash
 # Wrong:
-make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-USD,ETH-USD ENV=int
+revt config set KEY=TRADING_PAIRS VALUE=BTC-USD,ETH-USD ENV=int
 
 # Correct:
-make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR ENV=int
+revt config set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR ENV=int
 ```
 
 ### Live trading is not available
@@ -728,10 +728,10 @@ make opconfig-set KEY=TRADING_PAIRS VALUE=BTC-EUR,ETH-EUR ENV=int
 Your API key must have **Trade** permission. Check:
 
 ```bash
-make api-ready ENV=prod
+revt api ready ENV=prod
 ```
 
-If the output shows `Trade (place orders): FAIL`, re-generate your Revolut X API key with trading permission and re-run `make ops ENV=prod`.
+If the output shows `Trade (place orders): FAIL`, re-generate your Revolut X API key with trading permission and re-run `revt ops ENV=prod`.
 
 ### Candle interval invalid
 
@@ -742,7 +742,7 @@ ______________________________________________________________________
 ## 14. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
-No. `make run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
+No. `revt run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
 
 **Q: Can I run multiple strategies at the same time?**
 The bot runs one strategy at a time. Use `multi_strategy` to get the benefits of multiple strategies in a single run — it combines signals from all strategies with weighted voting.
@@ -754,7 +754,7 @@ On the next start, the bot reads its position state from the database and resume
 Set `MAX_CAPITAL`. Even if your account holds €50,000, you can limit the bot to trading with only €5,000:
 
 ```bash
-make opconfig-set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
+revt config set KEY=MAX_CAPITAL VALUE=5000 ENV=prod
 ```
 
 **Q: Are fees included in backtest results?**
@@ -785,7 +785,7 @@ make api-order-book SYMBOL=BTC-EUR ENV=int
 The bot will never sell a cryptocurrency it did not purchase itself. If you hold BTC in your account from before you started the bot, the bot will not touch it.
 
 **Q: Which environments use real money?**
-Only `prod` (`make run ENV=prod` / `revt run`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
+Only `prod` (`revt run ENV=prod` / `revt run`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
 
 ______________________________________________________________________
 
@@ -881,7 +881,7 @@ ______________________________________________________________________
 
 ### Performance Metrics
 
-Appear in backtest results (`make db-backtests`) and the analytics report (`make db-report`).
+Appear in backtest results (`revt db backtests`) and the analytics report (`revt db report`).
 
 **Win rate**
 Percentage of closed trades that made money. 24 wins out of 42 trades = 57% win rate. Always read alongside profit factor — a high win rate with tiny gains and large losses is still a losing strategy.
@@ -907,23 +907,23 @@ Return relative to overall volatility — "how much am I earning per unit of ris
 Like Sharpe, but only penalises downward volatility (losses). Upward swings are not counted against the strategy. A Sortino higher than Sharpe means the strategy's volatility comes mostly from gains, not losses — which is a good sign.
 
 **Equity curve**
-The `equity_curve.png` chart in `make db-report`. A line showing portfolio total value over time. Steadily rising = healthy. Flat or declining = investigate.
+The `equity_curve.png` chart in `revt db report`. A line showing portfolio total value over time. Steadily rising = healthy. Flat or declining = investigate.
 
 ______________________________________________________________________
 
 ### Bot Modes & Environments
 
-**Mock mode** (`make run ENV=dev` / `revt run --env dev`, `ENVIRONMENT=dev`)
+**Mock mode** (`revt run ENV=dev` / `revt run --env dev`, `ENVIRONMENT=dev`)
 Fully simulated — fake prices, no API calls, no credentials needed. Use it to explore the interface and test configuration changes without connecting to anything.
 
-**Paper trading** (`make run ENV=int` / `revt run --env int`, `ENVIRONMENT=int`)
+**Paper trading** (`revt run ENV=int` / `revt run --env int`, `ENVIRONMENT=int`)
 Real live market data from Revolut X, but all orders are simulated in software. Your balance is never touched. Always paper-trade before going live.
 
-**Live trading** (`make run ENV=prod` / `revt run`, `ENVIRONMENT=prod`)
+**Live trading** (`revt run ENV=prod` / `revt run`, `ENVIRONMENT=prod`)
 Real orders sent to Revolut X. Real money. Requires prod credentials in 1Password and an explicit confirmation prompt.
 
-**Backtesting** (`make backtest`, `make backtest-compare`)
+**Backtesting** (`revt backtest`, `revt backtest-compare`)
 Replaying a strategy against historical candle data to estimate how it would have performed. The engine applies the same fees, spread, stop-loss/take-profit logic, and signal filters as the live bot, so results are as realistic as possible.
 
 **Session**
-One complete run of the bot from start to graceful shutdown. The database records each session with its start time, end time, total trades, and final balance — visible in `make db-stats`.
+One complete run of the bot from start to graceful shutdown. The database records each session with its start time, end time, total trades, and final balance — visible in `revt db stats`.

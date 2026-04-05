@@ -12,6 +12,10 @@ from decimal import Decimal
 
 from loguru import logger
 
+from cli.env_detect import set_env as _set_env
+
+_set_env()
+
 from src.api import create_api_client
 from src.backtest.engine import BacktestEngine
 from src.config import RiskLevel, StrategyType, settings

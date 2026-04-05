@@ -6,35 +6,27 @@
 
 **Package manager: `uv`** — always prefix Python commands with `uv run`.
 
+**Development commands**: Use `just` (install: `brew install just`)
+
+**Functional commands**: Use `revt` CLI
+
 ```bash
-uv sync --extra dev          # install dependencies
-make test                    # run tests with coverage
-make lint / format / typecheck / security / check
-make pre-commit              # run all pre-commit hooks
+# Development (just)
+just install                 # install/update dependencies
+just test                    # run tests with coverage
+just lint / format / typecheck / security / check
+just pre-commit              # run all pre-commit hooks
+just clean / deep-clean      # cleanup
 
-# Bot (env auto-detected: tagged→prod, main→int, branch→dev; always paper by default)
-make run                     # STRATEGY=... RISK=... PAIRS=... INTERVAL=...
-make run ENV=prod MODE=live  # LIVE TRADING — requires confirmation
-
-make telegram                # start always-on Telegram Control Plane
-
-# Backtesting
-make backtest                # STRATEGY=momentum DAYS=30
-make backtest-hf / backtest-compare / backtest-matrix
-
-# Database
-make db / db-stats / db-analytics / db-backtests / db-export-csv
-make db-encrypt-setup / db-encrypt-status
-make db-report               # analytics report + charts (DAYS=30, DIR=data/reports)
-make logs                    # view WARNING+ logs from DB
-
-# 1Password / credentials
-make setup                   # first-time setup (idempotent)
-make ops ENV=dev             # set API key interactively
-make opshow / opstatus / opconfig-show / opconfig-set
-
-# API utilities
-make api-test / api-ready ENV=int
+# Functional (revt)
+revt run                     # start trading (paper by default)
+revt run --mode live         # LIVE TRADING — requires confirmation
+revt telegram start          # start always-on Telegram Control Plane
+revt backtest                # backtest strategies
+revt ops                     # manage credentials
+revt config show/set         # view/update config
+revt db stats/analytics      # database management
+revt api test/ready          # API utilities
 ```
 
 ### `revt` CLI

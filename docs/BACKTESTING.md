@@ -12,25 +12,25 @@ The backtesting system allows you to:
 - **Store results securely** in the encrypted SQLite database
 
 Results are persisted **exclusively to the encrypted database** — no plaintext JSON or log files are written.
-Use `make db-backtests` to view results and `make db-export-csv` to export when needed.
+Use `revt db backtests` to view results and `revt db export-csv` to export when needed.
 
 ## Quick Start
 
 ```bash
 # Test market making strategy on BTC-EUR for 30 days
-make backtest STRATEGY=market_making DAYS=30
+revt backtest STRATEGY=market_making DAYS=30
 
 # Test momentum strategy with moderate risk
-make backtest STRATEGY=momentum DAYS=60
+revt backtest STRATEGY=momentum DAYS=60
 
 # High-frequency backtest with 1-minute candles (closest to live 5s polling)
-make backtest-hf STRATEGY=breakout DAYS=7
+revt backtest-hf STRATEGY=breakout DAYS=7
 
 # View stored results
-make db-backtests
+revt db backtests
 
 # Export to CSV for spreadsheet analysis
-make db-export-csv
+revt db export-csv
 ```
 
 ## High-Frequency Backtesting
@@ -40,8 +40,8 @@ The live bot polls the Revolut X API every 5 seconds to make trading decisions b
 To simulate the live bot's behavior as closely as possible, use **1-minute candles** — the highest granularity available:
 
 ```bash
-make backtest-hf                           # 1-min candles, 7 days default
-make backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
+revt backtest-hf                           # 1-min candles, 7 days default
+revt backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
 ```
 
 **Important differences between live and backtest:**
@@ -68,7 +68,7 @@ make backtest-hf STRATEGY=breakout DAYS=14 # specific strategy and period
 - **API limits**: Revolut X limits candle requests to 1,000 candles per call. The engine automatically paginates, but many requests may be needed for long periods.
 - **Not a perfect match**: 5-second polling can react to micro-movements that don't appear in 1-minute candle summaries. Backtest results remain an approximation.
 
-For longer-term strategy validation (30+ days), use hourly candles (`INTERVAL=60`) or the default settings. For short-term / high-frequency validation, use `make backtest-hf`.
+For longer-term strategy validation (30+ days), use hourly candles (`INTERVAL=60`) or the default settings. For short-term / high-frequency validation, use `revt backtest-hf`.
 
 ## Command Line Options
 
@@ -239,13 +239,13 @@ All results are stored in the encrypted database:
 
 ```bash
 # View last 10 backtest runs
-make db-backtests
+revt db backtests
 
 # Export all data to dated CSV files in data/exports/
-make db-export-csv
+revt db export-csv
 
 # Analytics summary
-make db-analytics
+revt db analytics
 ```
 
 ## Best Practices
@@ -253,26 +253,26 @@ make db-analytics
 ### 1. Test Multiple Time Periods
 
 ```bash
-make backtest STRATEGY=momentum DAYS=30    # Recent performance
-make backtest STRATEGY=momentum DAYS=90    # Quarterly
-make backtest STRATEGY=momentum DAYS=180   # Semi-annual
+revt backtest STRATEGY=momentum DAYS=30    # Recent performance
+revt backtest STRATEGY=momentum DAYS=90    # Quarterly
+revt backtest STRATEGY=momentum DAYS=180   # Semi-annual
 ```
 
 ### 2. Compare Different Strategies
 
 ```bash
 for strategy in market_making momentum mean_reversion multi_strategy breakout range_reversion; do
-  make backtest STRATEGY=$strategy DAYS=90
+  revt backtest STRATEGY=$strategy DAYS=90
 done
-make db-backtests LIMIT=20
+revt db backtests LIMIT=20
 ```
 
 ### 3. Test Different Risk Levels
 
 ```bash
-make backtest STRATEGY=momentum DAYS=60
+revt backtest STRATEGY=momentum DAYS=60
 # Then change risk via: make opconfig-set KEY=RISK_LEVEL VALUE=aggressive
-make backtest STRATEGY=momentum DAYS=60
+revt backtest STRATEGY=momentum DAYS=60
 ```
 
 ### 4. Optimize Timeframes
