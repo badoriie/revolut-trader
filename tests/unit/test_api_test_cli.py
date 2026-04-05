@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.api_test import (
+from cli.commands.api import (
     _execute_api_command,
     _handle_ticker_commands,
     check_connection,
@@ -264,7 +264,7 @@ async def test_run_command_test(mock_api_client):
 
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0}
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         await run_command(args)
 
     mock_api_client.initialize.assert_called_once()
@@ -283,7 +283,7 @@ async def test_run_command_trade_ready(mock_api_client):
         "trade": True,
     }
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         await run_command(args)
 
     mock_api_client.initialize.assert_called_once()
@@ -297,7 +297,7 @@ async def test_run_command_unknown(mock_api_client):
 
     args = SimpleNamespace(command="unknown")
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         with pytest.raises(SystemExit) as exc_info:
             await run_command(args)
 
@@ -308,17 +308,19 @@ def test_run_api_command_test(mock_api_client, capsys):
     """Test run_api_command wrapper function with test command."""
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0}
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock()) as mock_run:
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
+        with patch(
+            "cli.commands.api.asyncio.run", side_effect=_make_asyncio_run_mock()
+        ) as mock_run:
             run_api_command("test")
             assert mock_run.called
 
 
 def test_run_api_command_keyboard_interrupt(mock_api_client):
     """Test run_api_command handles keyboard interrupt."""
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         with patch(
-            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+            "cli.commands.api.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
         ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_command("test")
@@ -327,9 +329,10 @@ def test_run_api_command_keyboard_interrupt(mock_api_client):
 
 def test_run_api_command_exception(mock_api_client):
     """Test run_api_command handles exceptions."""
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         with patch(
-            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(Exception("Test error"))
+            "cli.commands.api.asyncio.run",
+            side_effect=_make_asyncio_run_mock(Exception("Test error")),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_command("test")
@@ -340,17 +343,19 @@ def test_run_api_endpoint_balance(mock_api_client, capsys):
     """Test run_api_endpoint wrapper function."""
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0}
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
-        with patch("cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock()) as mock_run:
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
+        with patch(
+            "cli.commands.api.asyncio.run", side_effect=_make_asyncio_run_mock()
+        ) as mock_run:
             run_api_endpoint(command="balance")
             assert mock_run.called
 
 
 def test_run_api_endpoint_keyboard_interrupt(mock_api_client):
     """Test run_api_endpoint handles keyboard interrupt."""
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         with patch(
-            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
+            "cli.commands.api.asyncio.run", side_effect=_make_asyncio_run_mock(KeyboardInterrupt())
         ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_endpoint(command="balance")
@@ -359,9 +364,10 @@ def test_run_api_endpoint_keyboard_interrupt(mock_api_client):
 
 def test_run_api_endpoint_exception(mock_api_client):
     """Test run_api_endpoint handles exceptions."""
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         with patch(
-            "cli.api_test.asyncio.run", side_effect=_make_asyncio_run_mock(Exception("Test error"))
+            "cli.commands.api.asyncio.run",
+            side_effect=_make_asyncio_run_mock(Exception("Test error")),
         ):
             with pytest.raises(SystemExit) as exc_info:
                 run_api_endpoint(command="balance")
@@ -455,8 +461,8 @@ def test_main_parses_args_and_calls_run_api_command(monkeypatch):
     """Test main() parses sys.argv and delegates to run_api_command."""
     monkeypatch.setattr("sys.argv", ["api_test.py", "test"])
 
-    with patch("cli.api_test.run_api_command") as mock_cmd:
-        from cli.api_test import main
+    with patch("cli.commands.api.run_api_command") as mock_cmd:
+        from cli.commands.api import main
 
         main()
         mock_cmd.assert_called_once_with("test")
@@ -466,8 +472,8 @@ def test_main_trade_ready_command(monkeypatch):
     """Test main() with trade-ready command."""
     monkeypatch.setattr("sys.argv", ["api_test.py", "trade-ready"])
 
-    with patch("cli.api_test.run_api_command") as mock_cmd:
-        from cli.api_test import main
+    with patch("cli.commands.api.run_api_command") as mock_cmd:
+        from cli.commands.api import main
 
         main()
         mock_cmd.assert_called_once_with("trade-ready")
@@ -498,7 +504,7 @@ def test_run_api_endpoint_displays_json(mock_api_client, capsys):
     """Test run_api_endpoint displays JSON output."""
     mock_api_client.get_balance.return_value = {"total_eur": 1000.0, "currency": "EUR"}
 
-    with patch("cli.api_test.RevolutAPIClient", return_value=mock_api_client):
+    with patch("cli.commands.api.RevolutAPIClient", return_value=mock_api_client):
         run_api_endpoint(command="balance")
 
     # asyncio.run actually runs the endpoint, which prints JSON

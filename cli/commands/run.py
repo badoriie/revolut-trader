@@ -10,7 +10,7 @@ import sys
 
 from loguru import logger
 
-from cli.env_detect import detect_env as _detect_env
+from cli.utils.env_detect import detect_env as _detect_env
 
 
 def setup_logging(log_level: str) -> None:

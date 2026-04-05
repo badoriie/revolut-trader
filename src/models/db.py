@@ -213,11 +213,11 @@ def get_db_url(env: str | None = None) -> str:
              ``os.environ["ENVIRONMENT"]`` if not provided.
 
     Returns:
-        SQLite URL, e.g. ``"sqlite:///data/dev.db"``.
+        SQLite URL, e.g. ``"sqlite:///revt-data/dev.db"``.
     """
     if env is None:
         env = os.environ.get("ENVIRONMENT", "dev")
-    return f"sqlite:///data/{env}.db"
+    return f"sqlite:///revt-data/{env}.db"
 
 
 DB_URL = get_db_url()

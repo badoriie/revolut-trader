@@ -846,7 +846,7 @@ class TradingBot:
 
         from pathlib import Path
 
-        from cli.analytics_report import generate_report_data
+        from cli.utils.analytics_report import generate_report_data
 
         try:
             await self.notifier.reply(f"📊 Generating {days}-day analytics report...")
@@ -854,7 +854,7 @@ class TradingBot:
             # Generate report data and PDF (safe to call from async context)
             result = generate_report_data(
                 days=days,
-                output_dir=Path("data/reports"),
+                output_dir=Path("revt-data/reports"),
             )
 
             if not result.get("pdf_bytes"):

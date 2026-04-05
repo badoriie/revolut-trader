@@ -7,6 +7,7 @@
 #   just install       install dependencies
 #   just test          run tests with coverage
 #   just check         run all quality checks
+#   just env           show current environment
 #
 # See: just --list
 
@@ -97,6 +98,10 @@ check: lint format typecheck security test
 # ============================================================================
 # Development Utilities
 # ============================================================================
+
+# Show current environment (dev/int/prod)
+env:
+    @uv run python -c "from cli.utils.env_detect import detect_env; env = detect_env(); print(f'Current environment: {env}')"
 
 # Generate class diagrams using pyreverse
 diagrams:

@@ -97,7 +97,7 @@ The `update` command:
 
 - **Binary users**: Downloads and replaces the binary with the latest release
 - **Source users**: Pulls latest changes from git and updates dependencies
-- **Safe**: Never touches `data/` folder or 1Password configuration
+- **Safe**: Never touches `revt-data/` folder or 1Password configuration
 
 ### Run from source (developers)
 
@@ -128,11 +128,11 @@ See [Backtesting Guide](docs/BACKTESTING.md) for metrics, interpretation, and be
 
 The project uses three environments, each with separate credentials and databases:
 
-| Environment | API                  | Default Mode | DB File        | Purpose                          |
-| ----------- | -------------------- | ------------ | -------------- | -------------------------------- |
-| **dev**     | Mock (no real calls) | Paper        | `data/dev.db`  | Development & testing            |
-| **int**     | Real Revolut X API   | Paper        | `data/int.db`  | Pre-production validation        |
-| **prod**    | Real Revolut X API   | Paper        | `data/prod.db` | Production (live opt-in allowed) |
+| Environment | API                  | Default Mode | DB File             | Purpose                          |
+| ----------- | -------------------- | ------------ | ------------------- | -------------------------------- |
+| **dev**     | Mock (no real calls) | Paper        | `revt-data/dev.db`  | Development & testing            |
+| **int**     | Real Revolut X API   | Paper        | `revt-data/int.db`  | Pre-production validation        |
+| **prod**    | Real Revolut X API   | Paper        | `revt-data/prod.db` | Production (live opt-in allowed) |
 
 Each environment has its own 1Password items:
 
@@ -317,7 +317,7 @@ revolut-trader/
 
 ## Database & Monitoring
 
-Trading data is stored in an encrypted SQLite database per environment (`data/dev.db`, `data/int.db`, `data/prod.db`).
+Trading data is stored in an encrypted SQLite database per environment (`revt-data/dev.db`, `revt-data/int.db`, `revt-data/prod.db`).
 
 ```bash
 revt db stats         # database statistics

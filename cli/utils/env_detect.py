@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).parent.parent
+_ROOT = Path(__file__).parent.parent.parent
 
 
 def detect_env() -> str:

@@ -296,11 +296,11 @@ ______________________________________________________________________
 
 The project uses three deployment environments with full isolation:
 
-| Environment | API                  | Trading Mode           | DB File        | 1Password Items                        |
-| ----------- | -------------------- | ---------------------- | -------------- | -------------------------------------- |
-| `dev`       | Mock (no real calls) | Paper only             | `data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
-| `int`       | Real Revolut X API   | Paper only             | `data/int.db`  | `*-credentials-int` / `*-config-int`   |
-| `prod`      | Real Revolut X API   | Paper (default) / Live | `data/prod.db` | `*-credentials-prod` / `*-config-prod` |
+| Environment | API                  | Trading Mode           | DB File             | 1Password Items                        |
+| ----------- | -------------------- | ---------------------- | ------------------- | -------------------------------------- |
+| `dev`       | Mock (no real calls) | Paper only             | `revt-data/dev.db`  | `*-credentials-dev` / `*-config-dev`   |
+| `int`       | Real Revolut X API   | Paper only             | `revt-data/int.db`  | `*-credentials-int` / `*-config-int`   |
+| `prod`      | Real Revolut X API   | Paper (default) / Live | `revt-data/prod.db` | `*-credentials-prod` / `*-config-prod` |
 
 ### Key rules
 

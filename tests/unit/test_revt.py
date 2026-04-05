@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cli.env_detect import detect_env
 from cli.revt import (
     _build_parser,
     _check_binary_version,
@@ -59,6 +58,7 @@ from cli.revt import (
     cmd_update,
     main,
 )
+from cli.utils.env_detect import detect_env
 
 # ---------------------------------------------------------------------------
 # Helpers to build argparse.Namespace objects quickly
@@ -566,13 +566,13 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("cli.revt.TradingMode", create=True),
             patch("cli.revt.settings", create=True),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=mock_run_bot)}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=mock_run_bot)}),
             patch("asyncio.run"),
         ):
             cmd_run(args)
@@ -590,8 +590,8 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
-            patch("cli.validators.validate_trading_pairs", return_value=(False, "bad pairs")),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.validators.validate_trading_pairs", return_value=(False, "bad pairs")),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_run(args)
@@ -612,12 +612,12 @@ class TestCmdRun:
         mock_run_bot = MagicMock()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("src.config.settings", mock_settings),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=mock_run_bot)}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=mock_run_bot)}),
             patch("asyncio.run"),
         ):
             cmd_run(args)
@@ -636,13 +636,13 @@ class TestCmdRun:
         )
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._print_run_config"),
             patch("cli.revt._handle_live_mode_confirmation"),
             patch("cli.revt._setup_logger"),
             patch("cli.revt.TradingMode", create=True),
             patch("cli.revt.settings", create=True),
-            patch.dict("sys.modules", {"cli.run": MagicMock(run_bot=MagicMock())}),
+            patch.dict("sys.modules", {"cli.commands.run": MagicMock(run_bot=MagicMock())}),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
         ):
             cmd_run(args)
@@ -680,7 +680,7 @@ class TestCmdBacktest:
         args = self._base_args()
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._backtest_single") as mock_single,
             patch("loguru.logger"),
         ):
@@ -691,7 +691,7 @@ class TestCmdBacktest:
         args = self._base_args(hf=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._backtest_single") as mock_single,
             patch("loguru.logger"),
         ):
@@ -702,7 +702,7 @@ class TestCmdBacktest:
         args = self._base_args(compare=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -713,7 +713,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True)
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli") as mock_compare,
             patch("loguru.logger"),
         ):
@@ -726,7 +726,7 @@ class TestCmdBacktest:
         args = self._base_args(matrix=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -738,7 +738,7 @@ class TestCmdBacktest:
         args = self._base_args(compare=True, strategy="momentum")
         with (
             patch("cli.revt._show_update_notification"),
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._run_compare_cli"),
             patch("loguru.logger"),
         ):
@@ -762,7 +762,9 @@ class TestBacktestSingle:
         )
         mock_run_backtest = MagicMock()
         with (
-            patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.backtest": MagicMock(run_backtest=mock_run_backtest)}
+            ),
             patch("asyncio.run"),
         ):
             from cli.revt import _backtest_single
@@ -781,7 +783,9 @@ class TestBacktestSingle:
         )
         mock_run_backtest = MagicMock()
         with (
-            patch.dict("sys.modules", {"cli.backtest": MagicMock(run_backtest=mock_run_backtest)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.backtest": MagicMock(run_backtest=mock_run_backtest)}
+            ),
             patch("asyncio.run", side_effect=KeyboardInterrupt),
         ):
             from cli.revt import _backtest_single
@@ -797,7 +801,7 @@ class TestRunCompareCli:
     def test_delegates_to_backtest_compare(self):
         mock_run = MagicMock()
         mock_module = MagicMock(run_compare_cli=mock_run)
-        with patch.dict("sys.modules", {"cli.backtest_compare": mock_module}):
+        with patch.dict("sys.modules", {"cli.commands.backtest_compare": mock_module}):
             _run_compare_cli(
                 days=30,
                 interval=60,
@@ -822,7 +826,7 @@ class TestCmdOps:
     def test_status(self):
         args = _ns(env="dev", status=True, show=False)
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_status") as mock_status,
         ):
             cmd_ops(args)
@@ -831,7 +835,7 @@ class TestCmdOps:
     def test_show(self):
         args = _ns(env="dev", status=False, show=True)
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._ops_show") as mock_show,
         ):
             cmd_ops(args)
@@ -998,7 +1002,7 @@ class TestCmdConfig:
     def test_show(self):
         args = _ns(env="dev", config_cmd="show")
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1007,7 +1011,7 @@ class TestCmdConfig:
     def test_set(self):
         args = _ns(env="dev", config_cmd="set", key="RISK_LEVEL", value="aggressive")
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_set") as mock_set,
         ):
             cmd_config(args)
@@ -1016,7 +1020,7 @@ class TestCmdConfig:
     def test_init(self):
         args = _ns(env="dev", config_cmd="init")
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_init") as mock_init,
         ):
             cmd_config(args)
@@ -1025,7 +1029,7 @@ class TestCmdConfig:
     def test_delete(self):
         args = _ns(env="dev", config_cmd="delete", key="MAX_CAPITAL")
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_delete") as mock_del,
         ):
             cmd_config(args)
@@ -1034,7 +1038,7 @@ class TestCmdConfig:
     def test_default_is_show(self):
         args = _ns(env="dev", config_cmd=None)
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._config_show") as mock_show,
         ):
             cmd_config(args)
@@ -1084,7 +1088,7 @@ class TestConfigSet:
     def test_validation_failure_exits(self, capsys):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(False, "bad value")),
+            patch("cli.utils.validators.validate_config_value", return_value=(False, "bad value")),
             pytest.raises(SystemExit),
         ):
             _config_set("dev", "KEY", "VAL")
@@ -1092,7 +1096,7 @@ class TestConfigSet:
     def test_successful_set(self, capsys):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(True, None)),
+            patch("cli.utils.validators.validate_config_value", return_value=(True, None)),
             patch("cli.revt._op", return_value=MagicMock(returncode=0)),
         ):
             _config_set("dev", "RISK_LEVEL", "aggressive")
@@ -1102,7 +1106,7 @@ class TestConfigSet:
     def test_op_edit_failure_exits(self):
         with (
             patch("cli.revt._check_op", return_value=True),
-            patch("cli.validators.validate_config_value", return_value=(True, None)),
+            patch("cli.utils.validators.validate_config_value", return_value=(True, None)),
             patch("cli.revt._op", return_value=MagicMock(returncode=1, stderr="error")),
             pytest.raises(SystemExit),
         ):
@@ -1255,7 +1259,7 @@ class TestCmdApi:
     def test_dev_env_blocked(self, capsys):
         args = _ns(env="dev", api_cmd="balance")
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_api(args)
@@ -1268,7 +1272,7 @@ class TestCmdApi:
         mock_run = MagicMock()
         with (
             patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
+            patch.dict("sys.modules", {"cli.commands.api": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("test")
@@ -1278,7 +1282,7 @@ class TestCmdApi:
         mock_run = MagicMock()
         with (
             patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_command=mock_run)}),
+            patch.dict("sys.modules", {"cli.commands.api": MagicMock(run_api_command=mock_run)}),
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("trade-ready")
@@ -1296,7 +1300,9 @@ class TestCmdApi:
         mock_endpoint = MagicMock()
         with (
             patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.api": MagicMock(run_api_endpoint=mock_endpoint)}
+            ),
         ):
             cmd_api(args)
         mock_endpoint.assert_called_once()
@@ -1314,7 +1320,9 @@ class TestCmdApi:
         mock_endpoint = MagicMock()
         with (
             patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict("sys.modules", {"cli.api_test": MagicMock(run_api_endpoint=mock_endpoint)}),
+            patch.dict(
+                "sys.modules", {"cli.commands.api": MagicMock(run_api_endpoint=mock_endpoint)}
+            ),
         ):
             cmd_api(args)
         mock_endpoint.assert_called_once()
@@ -1334,11 +1342,11 @@ class TestCmdTelegram:
         args = _ns(env="dev", telegram_cmd="start")
         mock_run_control_plane = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt._show_update_notification"),
             patch.dict(
                 "sys.modules",
-                {"cli.telegram_control": MagicMock(run_control_plane=mock_run_control_plane)},
+                {"cli.commands.telegram": MagicMock(run_control_plane=mock_run_control_plane)},
             ),
         ):
             cmd_telegram(args)
@@ -1350,7 +1358,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = None
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit) as exc_info,
@@ -1366,7 +1374,7 @@ class TestCmdTelegram:
         mock_settings.telegram_bot_token = "token123"
         mock_settings.telegram_chat_id = None
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("cli.revt.settings", mock_settings, create=True),
             patch("cli.revt.TelegramNotifier", create=True),
             pytest.raises(SystemExit),
@@ -1381,7 +1389,7 @@ class TestCmdTelegram:
         mock_notifier.send_test = MagicMock()
         # Patch settings attributes on the real singleton and TelegramNotifier at its source
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1396,7 +1404,7 @@ class TestCmdTelegram:
         mock_notifier = MagicMock()
         mock_notifier.send_test = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch("src.config.settings.telegram_bot_token", new="token123"),
             patch("src.config.settings.telegram_chat_id", new="chat456"),
             patch("src.utils.telegram.TelegramNotifier", return_value=mock_notifier),
@@ -1418,8 +1426,8 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="stats")
         mock_show_stats = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
         mock_show_stats.assert_called_once()
@@ -1428,9 +1436,9 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="analytics", days=60)
         mock_show_analytics = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.db_manage": MagicMock(show_analytics=mock_show_analytics)}
+                "sys.modules", {"cli.commands.db": MagicMock(show_analytics=mock_show_analytics)}
             ),
         ):
             cmd_db(args)
@@ -1440,9 +1448,9 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="backtests", limit=5)
         mock_show = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.db_manage": MagicMock(show_backtest_results=mock_show)}
+                "sys.modules", {"cli.commands.db": MagicMock(show_backtest_results=mock_show)}
             ),
         ):
             cmd_db(args)
@@ -1452,8 +1460,8 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="export")
         mock_export = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(export_csv=mock_export)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(export_csv=mock_export)}),
         ):
             cmd_db(args)
         mock_export.assert_called_once()
@@ -1462,9 +1470,10 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="report", days=30, output_dir="data/reports")
         mock_generate = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
-                "sys.modules", {"cli.analytics_report": MagicMock(generate_report=mock_generate)}
+                "sys.modules",
+                {"cli.utils.analytics_report": MagicMock(generate_report=mock_generate)},
             ),
         ):
             cmd_db(args)
@@ -1474,7 +1483,7 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd="encrypt-setup")
         mock_setup = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules",
                 {"src.utils.db_encryption": MagicMock(setup_database_encryption=mock_setup)},
@@ -1489,7 +1498,7 @@ class TestCmdDb:
         mock_enc.is_enabled = True
         mock_enc_class = MagicMock(return_value=mock_enc)
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
             patch.dict(
                 "sys.modules",
                 {"src.utils.db_encryption": MagicMock(DatabaseEncryption=mock_enc_class)},
@@ -1503,8 +1512,8 @@ class TestCmdDb:
         args = _ns(env="dev", db_cmd=None)
         mock_show_stats = MagicMock()
         with (
-            patch("cli.env_detect.detect_env", return_value="dev"),
-            patch.dict("sys.modules", {"cli.db_manage": MagicMock(show_stats=mock_show_stats)}),
+            patch("cli.utils.env_detect.detect_env", return_value="dev"),
+            patch.dict("sys.modules", {"cli.commands.db": MagicMock(show_stats=mock_show_stats)}),
         ):
             cmd_db(args)
         mock_show_stats.assert_called_once()

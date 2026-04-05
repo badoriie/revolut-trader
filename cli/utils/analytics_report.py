@@ -11,7 +11,7 @@ Usage
     uv run python cli/analytics_report.py [--days N] [--output-dir PATH]
 
     # GitHub Actions: post the markdown to the job summary
-    cat data/reports/report.md >> "$GITHUB_STEP_SUMMARY"
+    cat revt-data/reports/report.md >> "$GITHUB_STEP_SUMMARY"
 
 Optional extra dependencies (``uv sync --extra analytics``):
     matplotlib~=3.10   — chart generation
@@ -32,7 +32,7 @@ from typing import Any
 
 from loguru import logger
 
-from cli.env_detect import set_env as _set_env
+from cli.utils.env_detect import set_env as _set_env
 
 # Detect environment before src.config is imported (Settings singleton).
 _set_env()

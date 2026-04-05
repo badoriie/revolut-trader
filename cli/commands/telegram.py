@@ -20,7 +20,7 @@ import signal
 import sys
 from decimal import Decimal
 
-from cli.env_detect import set_env as _set_env
+from cli.utils.env_detect import set_env as _set_env
 
 # ENVIRONMENT must be set before src.config is imported — Settings() is created
 # at import time.  Environment is locked to git branch/tag or frozen binary.
@@ -404,7 +404,7 @@ class TelegramControlPlane:
         # Bot is not running — generate full PDF report
         from pathlib import Path
 
-        from cli.analytics_report import generate_report_data
+        from cli.utils.analytics_report import generate_report_data
 
         try:
             await self.notifier.reply(f"📊 Generating {days}-day analytics report...")
@@ -412,7 +412,7 @@ class TelegramControlPlane:
             # Generate report data and PDF (safe to call from async context)
             result = generate_report_data(
                 days=days,
-                output_dir=Path("data/reports"),
+                output_dir=Path("revt-data/reports"),
             )
 
             if not result.get("pdf_bytes"):

@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.analytics_report import (
+from cli.utils.analytics_report import (
     compute_daily_returns,
     compute_max_drawdown,
     compute_profit_factor,
@@ -290,10 +290,10 @@ class TestTelegramIntegration:
         mock_db.load_trade_history.return_value = [{"pnl": 50.0}, {"pnl": -20.0}]
         return mock_db
 
-    @patch("cli.analytics_report._generate_pdf", return_value=None)
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report._generate_pdf", return_value=None)
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_sends_text_fallback_when_no_pdf(
         self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
     ):
@@ -306,7 +306,7 @@ class TestTelegramIntegration:
         mock_notifier.notify_report_ready = AsyncMock()
         mock_notifier_cls.return_value = mock_notifier
 
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         generate_report(days=30, output_dir=tmp_path)
 
@@ -318,10 +318,10 @@ class TestTelegramIntegration:
         assert isinstance(call_kwargs["total_pnl"], Decimal)
         assert call_kwargs["win_rate"] == 60.0
 
-    @patch("cli.analytics_report._generate_pdf", return_value=b"%PDF-1.4 test")
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report._generate_pdf", return_value=b"%PDF-1.4 test")
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_sends_pdf_when_pdf_bytes_available(
         self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
     ):
@@ -335,7 +335,7 @@ class TestTelegramIntegration:
         mock_notifier.notify_report_ready = AsyncMock()
         mock_notifier_cls.return_value = mock_notifier
 
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         generate_report(days=30, output_dir=tmp_path)
 
@@ -347,9 +347,9 @@ class TestTelegramIntegration:
         # notify_report_ready must NOT be called when PDF is sent
         mock_notifier.notify_report_ready.assert_not_awaited()
 
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_sends_telegram_notification_when_configured(
         self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
     ):
@@ -363,7 +363,7 @@ class TestTelegramIntegration:
         mock_notifier.notify_report_ready = AsyncMock()
         mock_notifier_cls.return_value = mock_notifier
 
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         generate_report(days=30, output_dir=tmp_path)
 
@@ -374,9 +374,9 @@ class TestTelegramIntegration:
         )
         assert total_calls == 1
 
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_skips_telegram_when_not_configured(
         self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
     ):
@@ -405,7 +405,7 @@ class TestTelegramIntegration:
         mock_db.load_trade_history.return_value = []
 
         # Import after patching
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         # Run report
         generate_report(days=30, output_dir=tmp_path)
@@ -413,9 +413,9 @@ class TestTelegramIntegration:
         # Verify notifier was never created
         mock_notifier_cls.assert_not_called()
 
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_telegram_failure_does_not_crash_report(
         self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
     ):
@@ -449,7 +449,7 @@ class TestTelegramIntegration:
         mock_notifier_cls.return_value = mock_notifier
 
         # Import after patching
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         # Run report - should not raise
         result = generate_report(days=30, output_dir=tmp_path)
@@ -458,10 +458,10 @@ class TestTelegramIntegration:
         assert result["report_path"]
         assert Path(result["report_path"]).exists()
 
-    @patch("cli.analytics_report._generate_pdf", side_effect=RuntimeError("fpdf2 crash"))
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report._generate_pdf", side_effect=RuntimeError("fpdf2 crash"))
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_falls_back_to_text_when_pdf_generation_fails(
         self, mock_settings, mock_notifier_cls, mock_db_cls, mock_gen_pdf, tmp_path
     ):
@@ -475,7 +475,7 @@ class TestTelegramIntegration:
         mock_notifier.notify_report_ready = AsyncMock()
         mock_notifier_cls.return_value = mock_notifier
 
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         # Must not raise — report generation must succeed even when PDF fails
         result = generate_report(days=30, output_dir=tmp_path)
@@ -486,9 +486,9 @@ class TestTelegramIntegration:
         # Text fallback WAS sent instead
         mock_notifier.notify_report_ready.assert_awaited_once()
 
-    @patch("cli.analytics_report.DatabasePersistence")
-    @patch("cli.analytics_report.TelegramNotifier")
-    @patch("cli.analytics_report.settings")
+    @patch("cli.utils.analytics_report.DatabasePersistence")
+    @patch("cli.utils.analytics_report.TelegramNotifier")
+    @patch("cli.utils.analytics_report.settings")
     def test_telegram_disabled_via_parameter(
         self, mock_settings, mock_notifier_cls, mock_db_cls, tmp_path
     ):
@@ -517,7 +517,7 @@ class TestTelegramIntegration:
         mock_db.load_trade_history.return_value = []
 
         # Import after patching
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         # Run report with send_telegram=False
         generate_report(days=30, output_dir=tmp_path, send_telegram=False)
@@ -535,28 +535,28 @@ class TestComputeWinLossStreaks:
     """Test win/loss streak calculation."""
 
     def test_empty_list(self):
-        from cli.analytics_report import compute_win_loss_streaks
+        from cli.utils.analytics_report import compute_win_loss_streaks
 
         result = compute_win_loss_streaks([])
         assert result["longest_win_streak"] == 0
         assert result["longest_loss_streak"] == 0
 
     def test_all_wins(self):
-        from cli.analytics_report import compute_win_loss_streaks
+        from cli.utils.analytics_report import compute_win_loss_streaks
 
         result = compute_win_loss_streaks([10.0, 5.0, 20.0, 1.0])
         assert result["longest_win_streak"] == 4
         assert result["longest_loss_streak"] == 0
 
     def test_all_losses(self):
-        from cli.analytics_report import compute_win_loss_streaks
+        from cli.utils.analytics_report import compute_win_loss_streaks
 
         result = compute_win_loss_streaks([-10.0, -5.0, -1.0])
         assert result["longest_win_streak"] == 0
         assert result["longest_loss_streak"] == 3
 
     def test_mixed_streaks(self):
-        from cli.analytics_report import compute_win_loss_streaks
+        from cli.utils.analytics_report import compute_win_loss_streaks
 
         # Pattern: +++ -- ++++ -
         pnl = [10.0, 5.0, 3.0, -2.0, -1.0, 8.0, 12.0, 15.0, 4.0, -3.0]
@@ -565,7 +565,7 @@ class TestComputeWinLossStreaks:
         assert result["longest_loss_streak"] == 2  # positions 3-4
 
     def test_alternating(self):
-        from cli.analytics_report import compute_win_loss_streaks
+        from cli.utils.analytics_report import compute_win_loss_streaks
 
         pnl = [10.0, -5.0, 8.0, -3.0, 12.0]
         result = compute_win_loss_streaks(pnl)
@@ -577,13 +577,13 @@ class TestComputeRollingVolatility:
     """Test rolling volatility calculation."""
 
     def test_empty_list(self):
-        from cli.analytics_report import compute_rolling_volatility
+        from cli.utils.analytics_report import compute_rolling_volatility
 
         result = compute_rolling_volatility([])
         assert result == []
 
     def test_insufficient_data(self):
-        from cli.analytics_report import compute_rolling_volatility
+        from cli.utils.analytics_report import compute_rolling_volatility
 
         # Window=20 but only 10 values
         values = [100.0 + i for i in range(10)]
@@ -591,7 +591,7 @@ class TestComputeRollingVolatility:
         assert result == []
 
     def test_flat_values_zero_volatility(self):
-        from cli.analytics_report import compute_rolling_volatility
+        from cli.utils.analytics_report import compute_rolling_volatility
 
         values = [100.0] * 25
         result = compute_rolling_volatility(values, window=20)
@@ -599,14 +599,14 @@ class TestComputeRollingVolatility:
         assert all(v == 0.0 for v in result)
 
     def test_returns_correct_length(self):
-        from cli.analytics_report import compute_rolling_volatility
+        from cli.utils.analytics_report import compute_rolling_volatility
 
         values = [100.0 + i * 0.1 for i in range(50)]
         result = compute_rolling_volatility(values, window=20)
         assert len(result) == 29  # 50 - 20 - 1
 
     def test_volatile_period_has_higher_values(self):
-        from cli.analytics_report import compute_rolling_volatility
+        from cli.utils.analytics_report import compute_rolling_volatility
 
         # Stable then volatile
         stable = [100.0 + i * 0.01 for i in range(25)]  # gentle upward trend
@@ -622,7 +622,7 @@ class TestGenerateInsights:
     """Test rule-based insights generation."""
 
     def test_excellent_performance(self):
-        from cli.analytics_report import _generate_insights
+        from cli.utils.analytics_report import _generate_insights
 
         insights = _generate_insights(
             total_pnl=5000.0,
@@ -638,7 +638,7 @@ class TestGenerateInsights:
         )
 
     def test_poor_performance_warnings(self):
-        from cli.analytics_report import _generate_insights
+        from cli.utils.analytics_report import _generate_insights
 
         insights = _generate_insights(
             total_pnl=-500.0,
@@ -655,7 +655,7 @@ class TestGenerateInsights:
         )
 
     def test_high_fee_drag_indirect(self):
-        from cli.analytics_report import _generate_insights
+        from cli.utils.analytics_report import _generate_insights
 
         # Test with mediocre performance (fees would eat into profits)
         insights = _generate_insights(
@@ -676,51 +676,51 @@ class TestGenerateInsights:
 
 class TestFmtEur:
     def test_positive(self):
-        from cli.analytics_report import _fmt_eur
+        from cli.utils.analytics_report import _fmt_eur
 
         assert _fmt_eur(123.456) == "+€123.46"
 
     def test_negative(self):
-        from cli.analytics_report import _fmt_eur
+        from cli.utils.analytics_report import _fmt_eur
 
         assert _fmt_eur(-50.0) == "€-50.00"
 
     def test_zero(self):
-        from cli.analytics_report import _fmt_eur
+        from cli.utils.analytics_report import _fmt_eur
 
         assert _fmt_eur(0.0) == "+€0.00"
 
 
 class TestFmtPct:
     def test_positive(self):
-        from cli.analytics_report import _fmt_pct
+        from cli.utils.analytics_report import _fmt_pct
 
         assert _fmt_pct(5.123) == "+5.12%"
 
     def test_negative(self):
-        from cli.analytics_report import _fmt_pct
+        from cli.utils.analytics_report import _fmt_pct
 
         assert _fmt_pct(-3.5) == "-3.50%"
 
     def test_custom_decimals(self):
-        from cli.analytics_report import _fmt_pct
+        from cli.utils.analytics_report import _fmt_pct
 
         assert _fmt_pct(1.2345, decimals=1) == "+1.2%"
 
 
 class TestFormatMetricValue:
     def test_nonzero_formatted(self):
-        from cli.analytics_report import _format_metric_value
+        from cli.utils.analytics_report import _format_metric_value
 
         assert _format_metric_value(1.5, ".2f") == "1.50"
 
     def test_zero_returns_fallback(self):
-        from cli.analytics_report import _format_metric_value
+        from cli.utils.analytics_report import _format_metric_value
 
         assert _format_metric_value(0.0, ".2f") == "N/A"
 
     def test_custom_fallback(self):
-        from cli.analytics_report import _format_metric_value
+        from cli.utils.analytics_report import _format_metric_value
 
         assert _format_metric_value(0.0, ".2f", fallback="—") == "—"
 
@@ -732,18 +732,18 @@ class TestFormatMetricValue:
 
 class TestDrawdownSeries:
     def test_empty(self):
-        from cli.analytics_report import _drawdown_series
+        from cli.utils.analytics_report import _drawdown_series
 
         assert _drawdown_series([]) == []
 
     def test_monotone_growth(self):
-        from cli.analytics_report import _drawdown_series
+        from cli.utils.analytics_report import _drawdown_series
 
         result = _drawdown_series([100.0, 110.0, 120.0])
         assert all(v == pytest.approx(0.0) for v in result)
 
     def test_drawdown_recovery(self):
-        from cli.analytics_report import _drawdown_series
+        from cli.utils.analytics_report import _drawdown_series
 
         result = _drawdown_series([100.0, 80.0, 100.0])
         assert result[0] == pytest.approx(0.0)
@@ -758,7 +758,7 @@ class TestDrawdownSeries:
 
 class TestBuildPerformanceGrid:
     def test_empty_trades(self):
-        from cli.analytics_report import _build_performance_grid
+        from cli.utils.analytics_report import _build_performance_grid
 
         perf, count = _build_performance_grid([])
         assert len(perf) == 7
@@ -766,7 +766,7 @@ class TestBuildPerformanceGrid:
         assert all(c == 0 for row in count for c in row)
 
     def test_single_trade(self):
-        from cli.analytics_report import _build_performance_grid
+        from cli.utils.analytics_report import _build_performance_grid
 
         trade = {"pnl": 100.0, "timestamp": "2026-01-05T14:30:00"}  # Monday
         perf, count = _build_performance_grid([trade])
@@ -774,14 +774,14 @@ class TestBuildPerformanceGrid:
         assert perf[0][14] == pytest.approx(100.0)
 
     def test_skips_missing_pnl(self):
-        from cli.analytics_report import _build_performance_grid
+        from cli.utils.analytics_report import _build_performance_grid
 
         trade = {"pnl": None, "timestamp": "2026-01-05T14:30:00"}
         _perf, count = _build_performance_grid([trade])
         assert all(c == 0 for row in count for c in row)
 
     def test_skips_missing_timestamp(self):
-        from cli.analytics_report import _build_performance_grid
+        from cli.utils.analytics_report import _build_performance_grid
 
         trade = {"pnl": 50.0, "timestamp": None}
         _perf, count = _build_performance_grid([trade])
@@ -790,7 +790,7 @@ class TestBuildPerformanceGrid:
 
 class TestAverageGridCells:
     def test_averages_correctly(self):
-        from cli.analytics_report import _average_grid_cells
+        from cli.utils.analytics_report import _average_grid_cells
 
         perf = [[0.0] * 24 for _ in range(7)]
         count = [[0] * 24 for _ in range(7)]
@@ -800,7 +800,7 @@ class TestAverageGridCells:
         assert perf[0][0] == pytest.approx(100.0)
 
     def test_zero_trades_unchanged(self):
-        from cli.analytics_report import _average_grid_cells
+        from cli.utils.analytics_report import _average_grid_cells
 
         perf = [[0.0] * 24 for _ in range(7)]
         count = [[0] * 24 for _ in range(7)]
@@ -815,7 +815,7 @@ class TestAverageGridCells:
 
 class TestFetchReportData:
     def test_calls_all_db_methods(self):
-        from cli.analytics_report import _fetch_report_data
+        from cli.utils.analytics_report import _fetch_report_data
 
         mock_db = MagicMock()
         mock_db.get_analytics.return_value = {}
@@ -839,7 +839,7 @@ class TestFetchReportData:
 
 class TestComputeReportMetrics:
     def test_computes_derived_metrics(self):
-        from cli.analytics_report import _compute_report_metrics
+        from cli.utils.analytics_report import _compute_report_metrics
 
         analytics = {"total_trades": 10, "win_rate": 60.0, "total_pnl": 500.0}
         portfolio_series = [
@@ -865,12 +865,12 @@ class TestComputeReportMetrics:
 
 class TestMdSymbolSection:
     def test_empty_returns_empty(self):
-        from cli.analytics_report import _md_symbol_section
+        from cli.utils.analytics_report import _md_symbol_section
 
         assert _md_symbol_section([]) == []
 
     def test_single_symbol(self):
-        from cli.analytics_report import _md_symbol_section
+        from cli.utils.analytics_report import _md_symbol_section
 
         data = [
             {
@@ -888,12 +888,12 @@ class TestMdSymbolSection:
 
 class TestMdStrategySection:
     def test_empty_returns_empty(self):
-        from cli.analytics_report import _md_strategy_section
+        from cli.utils.analytics_report import _md_strategy_section
 
         assert _md_strategy_section([]) == []
 
     def test_single_strategy(self):
-        from cli.analytics_report import _md_strategy_section
+        from cli.utils.analytics_report import _md_strategy_section
 
         data = [{"strategy": "momentum", "total_trades": 5, "win_rate": 55.0, "total_pnl": 200.0}]
         lines = _md_strategy_section(data)
@@ -902,17 +902,17 @@ class TestMdStrategySection:
 
 class TestMdBacktestSection:
     def test_empty_returns_empty(self):
-        from cli.analytics_report import _md_backtest_section
+        from cli.utils.analytics_report import _md_backtest_section
 
         assert _md_backtest_section({}) == []
 
     def test_no_runs_returns_empty(self):
-        from cli.analytics_report import _md_backtest_section
+        from cli.utils.analytics_report import _md_backtest_section
 
         assert _md_backtest_section({"total_runs": 0}) == []
 
     def test_with_runs(self):
-        from cli.analytics_report import _md_backtest_section
+        from cli.utils.analytics_report import _md_backtest_section
 
         data = {
             "total_runs": 5,
@@ -928,12 +928,12 @@ class TestMdBacktestSection:
 
 class TestMdChartsSection:
     def test_empty_returns_empty(self):
-        from cli.analytics_report import _md_charts_section
+        from cli.utils.analytics_report import _md_charts_section
 
         assert _md_charts_section([]) == []
 
     def test_with_chart_paths(self):
-        from cli.analytics_report import _md_charts_section
+        from cli.utils.analytics_report import _md_charts_section
 
         paths = [Path("data/reports/equity.png"), Path("data/reports/drawdown.png")]
         lines = _md_charts_section(paths)
@@ -943,7 +943,7 @@ class TestMdChartsSection:
 
 class TestBuildMarkdown:
     def test_full_report(self):
-        from cli.analytics_report import _build_markdown
+        from cli.utils.analytics_report import _build_markdown
 
         metrics = {
             "total_trades": 50,
@@ -971,13 +971,13 @@ class TestBuildMarkdown:
 
 class TestPrintSymbolTable:
     def test_empty_prints_nothing(self, capsys):
-        from cli.analytics_report import _print_symbol_table
+        from cli.utils.analytics_report import _print_symbol_table
 
         _print_symbol_table([])
         assert capsys.readouterr().out == ""
 
     def test_prints_table(self, capsys):
-        from cli.analytics_report import _print_symbol_table
+        from cli.utils.analytics_report import _print_symbol_table
 
         data = [
             {
@@ -996,13 +996,13 @@ class TestPrintSymbolTable:
 
 class TestPrintStrategyTable:
     def test_empty_prints_nothing(self, capsys):
-        from cli.analytics_report import _print_strategy_table
+        from cli.utils.analytics_report import _print_strategy_table
 
         _print_strategy_table([])
         assert capsys.readouterr().out == ""
 
     def test_prints_table(self, capsys):
-        from cli.analytics_report import _print_strategy_table
+        from cli.utils.analytics_report import _print_strategy_table
 
         data = [{"strategy": "momentum", "total_trades": 5, "win_rate": 55.0, "total_pnl": 200.0}]
         _print_strategy_table(data)
@@ -1012,19 +1012,19 @@ class TestPrintStrategyTable:
 
 class TestPrintBacktestSection:
     def test_empty_prints_nothing(self, capsys):
-        from cli.analytics_report import _print_backtest_section
+        from cli.utils.analytics_report import _print_backtest_section
 
         _print_backtest_section({})
         assert capsys.readouterr().out == ""
 
     def test_no_runs_prints_nothing(self, capsys):
-        from cli.analytics_report import _print_backtest_section
+        from cli.utils.analytics_report import _print_backtest_section
 
         _print_backtest_section({"total_runs": 0})
         assert capsys.readouterr().out == ""
 
     def test_prints_section(self, capsys):
-        from cli.analytics_report import _print_backtest_section
+        from cli.utils.analytics_report import _print_backtest_section
 
         data = {
             "total_runs": 5,
@@ -1041,7 +1041,7 @@ class TestPrintBacktestSection:
 
 class TestPrintSuggestions:
     def test_prints_suggestions(self, capsys):
-        from cli.analytics_report import _print_suggestions
+        from cli.utils.analytics_report import _print_suggestions
 
         suggestions = ["Lower risk level", "Use limit orders to reduce fees"]
         _print_suggestions(suggestions, "=" * 62)
@@ -1057,18 +1057,18 @@ class TestPrintSuggestions:
 
 
 class TestMainEntryPoint:
-    @patch("cli.analytics_report.generate_report")
+    @patch("cli.utils.analytics_report.generate_report")
     def test_calls_generate_report(self, mock_gen, monkeypatch):
-        from cli.analytics_report import main
+        from cli.utils.analytics_report import main
 
         monkeypatch.setattr("sys.argv", ["analytics_report.py", "--days", "7"])
         main()
         mock_gen.assert_called_once()
         assert mock_gen.call_args.kwargs["days"] == 7
 
-    @patch("cli.analytics_report.generate_report", side_effect=RuntimeError("DB error"))
+    @patch("cli.utils.analytics_report.generate_report", side_effect=RuntimeError("DB error"))
     def test_handles_exception(self, mock_gen, monkeypatch):
-        from cli.analytics_report import main
+        from cli.utils.analytics_report import main
 
         monkeypatch.setattr("sys.argv", ["analytics_report.py"])
         with pytest.raises(SystemExit) as exc_info:

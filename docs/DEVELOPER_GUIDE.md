@@ -443,7 +443,7 @@ ______________________________________________________________________
 
 ## 9. Monitoring Performance
 
-All data is stored in an encrypted SQLite database (`data/dev.db`, `data/int.db`, `data/prod.db`).
+All data is stored in an encrypted SQLite database (`revt-data/dev.db`, `revt-data/int.db`, `revt-data/prod.db`).
 
 ```bash
 revt db               # overview: stats + recent analytics + backtest summary
@@ -453,7 +453,7 @@ revt db analytics DAYS=7   # last 7 days
 revt db backtests     # list recent backtest runs with metrics
 revt db export-csv    # export trades and snapshots to CSV files
 revt db report        # comprehensive analytics report with charts (default: last 30 days)
-revt db report DAYS=7 DIR=data/reports  # custom window and output directory
+revt db report DAYS=7 DIR=revt-data/reports  # custom window and output directory
 ```
 
 The basic `db-analytics` report shows:
@@ -470,7 +470,7 @@ The basic `db-analytics` report shows:
 # Install chart dependencies first (one-time):
 uv sync --extra analytics
 
-# Generate the report (saves to data/reports/):
+# Generate the report (saves to revt-data/reports/):
 revt db report DAYS=30
 ```
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from cli.env_detect import detect_env as _detect_env
+from cli.utils.env_detect import detect_env as _detect_env
 from src.utils.db_persistence import DatabasePersistence
 
 
@@ -38,7 +38,7 @@ def show_analytics(days: int = 30):
     print("=" * 50)
 
 
-def export_data(output_dir: str = "data/exports"):
+def export_data(output_dir: str = "revt-data/exports"):
     """Export all database data to JSON files."""
     print(f"\nExporting data to {output_dir}...")
 
@@ -157,12 +157,12 @@ def main():
         os.environ["ENVIRONMENT"] = _detect_env()
 
     if len(sys.argv) < 2:
-        print("Usage: python cli/db_manage.py <command> [options]")
+        print("Usage: python cli/commands/db.py <command> [options]")
         print("\nCommands:")
         print("  stats              - Show database statistics")
         print("  analytics [days]   - Show trading analytics (default: 30 days)")
         print("  backtests [limit]  - Show backtest results (default: 10)")
-        print("  export [dir]       - Export data to JSON (default: data/exports)")
+        print("  export [dir]       - Export data to JSON (default: revt-data/exports)")
         print("  export-csv         - Export data to CSV")
         sys.exit(1)
 
@@ -178,7 +178,7 @@ def main():
             limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10
             show_backtest_results(limit)
         elif command == "export":
-            output_dir = sys.argv[2] if len(sys.argv) > 2 else "data/exports"
+            output_dir = sys.argv[2] if len(sys.argv) > 2 else "revt-data/exports"
             export_data(output_dir)
         elif command == "export-csv":
             export_csv()

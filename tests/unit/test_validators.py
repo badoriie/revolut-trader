@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from cli.validators import (
+from cli.utils.validators import (
     NUMERIC_FIELDS,
     validate_config_value,
     validate_not_empty,

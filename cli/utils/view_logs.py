@@ -21,7 +21,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from cli.env_detect import detect_env as _detect_env
+from cli.utils.env_detect import detect_env as _detect_env
 from src.utils.db_persistence import DatabasePersistence
 
 # Suppress decryption warnings when viewing logs - they're expected for old test data

@@ -12,7 +12,7 @@ The Revolut Trader bot is a production-ready automated trading system with three
 | `int`       | `main`       | Real Revolut X   | Paper only           | Integration testing         |
 | `prod`      | release tags | Real Revolut X   | Paper (default)/Live | Production trading          |
 
-Each environment has separate 1Password items for credentials and config, and separate SQLite databases (`data/{env}.db`).
+Each environment has separate 1Password items for credentials and config, and separate SQLite databases (`revt-data/{env}.db`).
 
 ## Component Hierarchy
 

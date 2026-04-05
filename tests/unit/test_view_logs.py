@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from cli.view_logs import format_log_entry
+from cli.utils.view_logs import format_log_entry
 
 
 class TestFormatLogEntry:

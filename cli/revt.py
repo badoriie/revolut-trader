@@ -13,7 +13,7 @@ Usage
     revt config                View / update trading configuration
     revt api <endpoint>        Call Revolut X API endpoints
     revt db  <subcommand>      Database management and analytics
-    revt update                Update revt (preserves data/ and config)
+    revt update                Update revt (preserves revt-data/ and config)
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _DAYS_HELP = "Look-back days (default: 30)"
 # Environment helpers — detection delegated to cli.env_detect
 # ---------------------------------------------------------------------------
 
-from cli.env_detect import set_env as _set_env  # noqa: E402
+from cli.utils.env_detect import set_env as _set_env  # noqa: E402
 
 
 def _env_badge(env: str) -> str:
@@ -198,7 +198,7 @@ def _check_for_updates() -> tuple[str, str] | None:
     if os.environ.get("REVT_SKIP_UPDATE_CHECK"):
         return None
 
-    cache_file = _ROOT / "data" / ".update_check_cache"
+    cache_file = _ROOT / "revt-data" / ".update_check_cache"
     cache_ttl = 86400  # 24 hours in seconds
 
     # Check cache first
@@ -323,7 +323,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     # Validate trading pairs if provided
     if args.pairs:
-        from cli.validators import validate_trading_pairs
+        from cli.utils.validators import validate_trading_pairs
 
         is_valid, error = validate_trading_pairs(args.pairs)
         if not is_valid:
@@ -344,7 +344,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     _setup_logger(args.log_level)
 
     # Deferred import — ENVIRONMENT must be set before src.config is loaded.
-    from cli.run import run_bot
+    from cli.commands.run import run_bot
 
     class _RunArgs:
         strategy = args.strategy
@@ -426,7 +426,7 @@ def _backtest_single(
     interval_override: int | None = None,
 ) -> None:
     """Run a single-strategy backtest by calling ``cli.backtest.run_backtest``."""
-    from cli.backtest import run_backtest
+    from cli.commands.backtest import run_backtest
 
     class _BArgs:
         strategy = args.strategy
@@ -458,7 +458,7 @@ def _run_compare_cli(
 
     No more sys.argv patching - calls the function directly.
     """
-    from cli.backtest_compare import run_compare_cli
+    from cli.commands.backtest_compare import run_compare_cli
 
     run_compare_cli(
         days=days,
@@ -688,7 +688,7 @@ def _config_set(env: str, key: str, value: str) -> None:
         sys.exit(1)
 
     # Validate the value before setting
-    from cli.validators import validate_config_value
+    from cli.utils.validators import validate_config_value
 
     is_valid, error = validate_config_value(key, value)
     if not is_valid:
@@ -810,7 +810,7 @@ def cmd_api(args: argparse.Namespace) -> None:
 
     # Delegate to api_test — validation of required args happens there
     if raw_cmd in {"test", "ready"}:
-        from cli.api_test import run_api_command
+        from cli.commands.api import run_api_command
 
         # Map friendly names to api_test command names
         cmd_map = {"ready": "trade-ready", "test": "test"}
@@ -818,7 +818,7 @@ def cmd_api(args: argparse.Namespace) -> None:
         return
 
     # For all other API endpoints, call them directly via the API client
-    from cli.api_test import run_api_endpoint
+    from cli.commands.api import run_api_endpoint
 
     run_api_endpoint(
         command=api_cmd,
@@ -851,7 +851,7 @@ def cmd_telegram(args: argparse.Namespace) -> None:
         _show_update_notification()
 
         # Deferred import — ENVIRONMENT must be set before src.config is loaded.
-        from cli.telegram_control import run_control_plane
+        from cli.commands.telegram import run_control_plane
 
         print(f"\n  Environment : {_env_badge(env)}")
         print("  Starting Telegram Control Plane…")
@@ -908,31 +908,31 @@ def cmd_db(args: argparse.Namespace) -> None:
     sub = getattr(args, "db_cmd", None) or "stats"
 
     if sub == "stats":
-        from cli.db_manage import show_stats
+        from cli.commands.db import show_stats
 
         show_stats()
 
     elif sub == "analytics":
-        from cli.db_manage import show_analytics
+        from cli.commands.db import show_analytics
 
         show_analytics(days=getattr(args, "days", 30))
 
     elif sub == "backtests":
-        from cli.db_manage import show_backtest_results
+        from cli.commands.db import show_backtest_results
 
         show_backtest_results(limit=getattr(args, "limit", 10))
 
     elif sub == "export":
-        from cli.db_manage import export_csv
+        from cli.commands.db import export_csv
 
         export_csv()
 
     elif sub == "report":
-        from cli.analytics_report import generate_report
+        from cli.utils.analytics_report import generate_report
 
         generate_report(
             days=getattr(args, "days", 30),
-            output_dir=Path(getattr(args, "output_dir", "data/reports")),
+            output_dir=Path(getattr(args, "output_dir", "revt-data/reports")),
         )
 
     elif sub == "encrypt-setup":
@@ -1279,7 +1279,7 @@ def _update_from_source() -> None:
     print()
     print("✅ Update complete!")
     print()
-    print("ℹ️  Your data/ folder and 1Password config are untouched.")
+    print("ℹ️  Your revt-data/ folder and 1Password config are untouched.")
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -1298,7 +1298,7 @@ def cmd_update(args: argparse.Namespace) -> None:
         - Replaces the current binary
         - Preserves all data, config, and 1Password credentials
 
-    The data/ folder and all 1Password configuration remain untouched.
+    The revt-data/ folder and all 1Password configuration remain untouched.
     """
     # Check if running as frozen binary
     if getattr(sys, "frozen", False):
@@ -1363,7 +1363,7 @@ examples:
   revt telegram start                         start always-on control plane
 
   # Updates
-  revt update                                 update revt (preserves data/ and config)
+  revt update                                 update revt (preserves revt-data/ and config)
 
 environment variables:
   REVT_SKIP_UPDATE_CHECK=1                    disable update notifications
@@ -1600,8 +1600,8 @@ environment detection (run / telegram — not overridable):
     p_db_rep.add_argument(
         "--output-dir",
         dest="output_dir",
-        default="data/reports",
-        help="Output directory (default: data/reports)",
+        default="revt-data/reports",
+        help="Output directory (default: revt-data/reports)",
     )
 
     db_sub.add_parser("encrypt-setup", help="Generate and store the DB encryption key in 1Password")
@@ -1625,7 +1625,7 @@ environment detection (run / telegram — not overridable):
     # ── update ────────────────────────────────────────────────────────────────
     p_update = sub.add_parser(
         "update",
-        help="Update revt to the latest version (preserves data/ folder and 1Password config)",
+        help="Update revt to the latest version (preserves revt-data/ folder and 1Password config)",
     )
     p_update.set_defaults(func=cmd_update)
 

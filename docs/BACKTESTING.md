@@ -241,7 +241,7 @@ All results are stored in the encrypted database:
 # View last 10 backtest runs
 revt db backtests
 
-# Export all data to dated CSV files in data/exports/
+# Export all data to dated CSV files in revt-data/exports/
 revt db export-csv
 
 # Analytics summary

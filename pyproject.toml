@@ -97,14 +97,14 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "cli/**" = ["T201"]          # CLI scripts legitimately use print()
-"cli/analytics_report.py" = ["E402"]  # imports after _set_env()
-"cli/api_test.py" = ["E402"]          # imports after _set_env()
-"cli/backtest.py" = ["E402"]          # imports after _set_env()
-"cli/backtest_compare.py" = ["E402"]  # imports after _set_env()
-"cli/db_manage.py" = ["E402"]         # imports after _set_env()
-"cli/run.py" = ["E402"]               # imports after _set_env()
-"cli/telegram_control.py" = ["E402"]  # imports after _set_env()
-"cli/view_logs.py" = ["E402"]         # imports after _set_env()
+"cli/utils/analytics_report.py" = ["E402"]  # imports after _set_env()
+"cli/commands/api.py" = ["E402"]          # imports after _set_env()
+"cli/commands/backtest.py" = ["E402"]          # imports after _set_env()
+"cli/commands/backtest_compare.py" = ["E402"]  # imports after _set_env()
+"cli/commands/db.py" = ["E402"]         # imports after _set_env()
+"cli/commands/run.py" = ["E402"]               # imports after _set_env()
+"cli/commands/telegram.py" = ["E402"]  # imports after _set_env()
+"cli/utils/view_logs.py" = ["E402"]         # imports after _set_env()
 "tests/**" = ["T201", "SIM117"]  # tests: print for debugging, nested with for readability
 "src/backtest/engine.py" = ["T201"]       # display_results() prints to console
 "src/utils/db_encryption.py" = ["T201"]   # __main__ block prints setup status

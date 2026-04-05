@@ -28,9 +28,9 @@ def mock_notifier():
 
 @pytest.fixture
 def plane(mock_notifier, mock_persistence, monkeypatch):
-    monkeypatch.setattr("cli.telegram_control.DatabasePersistence", lambda: mock_persistence)
-    with patch("cli.telegram_control.TelegramNotifier", return_value=mock_notifier):
-        from cli.telegram_control import TelegramControlPlane
+    monkeypatch.setattr("cli.commands.telegram.DatabasePersistence", lambda: mock_persistence)
+    with patch("cli.commands.telegram.TelegramNotifier", return_value=mock_notifier):
+        from cli.commands.telegram import TelegramControlPlane
 
         p = TelegramControlPlane()
     p.notifier = mock_notifier
@@ -120,7 +120,7 @@ class TestRunCommand:
         mock_bot.stop = AsyncMock()
         mock_bot.is_running = True
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot):
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot):
             await plane._cmd_run([])
 
         mock_bot.start.assert_awaited_once_with(start_command_listener=False)
@@ -133,7 +133,7 @@ class TestRunCommand:
         mock_bot.stop = AsyncMock()
         mock_bot.is_running = True
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot):
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot):
             await plane._cmd_run([])
 
         plane.notifier.reply.assert_awaited()
@@ -148,7 +148,7 @@ class TestRunCommand:
         mock_bot.stop = AsyncMock()
         mock_bot.is_running = True
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot):
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot):
             await plane._cmd_run([])
 
         assert plane._bot_task is not None
@@ -173,7 +173,7 @@ class TestRunCommand:
         mock_bot = MagicMock()
         mock_bot.start = AsyncMock(side_effect=RuntimeError("API key missing"))
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot):
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot):
             await plane._cmd_run([])
 
         text = plane.notifier.reply.call_args.args[0]
@@ -184,7 +184,7 @@ class TestRunCommand:
         mock_bot = MagicMock()
         mock_bot.start = AsyncMock(side_effect=RuntimeError("fail"))
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot):
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot):
             await plane._cmd_run([])
 
         assert plane.bot is None
@@ -196,7 +196,7 @@ class TestRunCommand:
         mock_bot.run_trading_loop = AsyncMock()
         mock_bot.stop = AsyncMock()
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot) as mock_cls:
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot) as mock_cls:
             await plane._cmd_run(["momentum"])
 
         from src.config import StrategyType
@@ -210,7 +210,7 @@ class TestRunCommand:
         mock_bot.run_trading_loop = AsyncMock()
         mock_bot.stop = AsyncMock()
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot) as mock_cls:
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot) as mock_cls:
             await plane._cmd_run(["moderate"])
 
         from src.config import RiskLevel
@@ -224,7 +224,7 @@ class TestRunCommand:
         mock_bot.run_trading_loop = AsyncMock()
         mock_bot.stop = AsyncMock()
 
-        with patch("cli.telegram_control.TradingBot", return_value=mock_bot) as mock_cls:
+        with patch("cli.commands.telegram.TradingBot", return_value=mock_bot) as mock_cls:
             await plane._cmd_run(["BTC-EUR,ETH-EUR"])
 
         assert mock_cls.call_args.kwargs.get("trading_pairs") == ["BTC-EUR", "ETH-EUR"]
@@ -563,9 +563,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest([])
             if plane._backtest_task:
@@ -605,9 +605,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest([])
             if plane._backtest_task:
@@ -642,9 +642,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest([])
             if plane._backtest_task:
@@ -663,8 +663,8 @@ class TestBacktestCommand:
         mock_engine.run = AsyncMock(side_effect=RuntimeError("no data"))
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
         ):
             await plane._cmd_backtest([])
             if plane._backtest_task:
@@ -689,9 +689,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest([])
             if plane._backtest_task:
@@ -715,9 +715,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine) as mock_cls,
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine) as mock_cls,
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest(["momentum"])
             if plane._backtest_task:
@@ -743,9 +743,9 @@ class TestBacktestCommand:
         mock_db.save_backtest_run = MagicMock(return_value=1)
 
         with (
-            patch("cli.telegram_control.create_api_client", return_value=mock_api),
-            patch("cli.telegram_control.BacktestEngine", return_value=mock_engine),
-            patch("cli.telegram_control.DatabasePersistence", return_value=mock_db),
+            patch("cli.commands.telegram.create_api_client", return_value=mock_api),
+            patch("cli.commands.telegram.BacktestEngine", return_value=mock_engine),
+            patch("cli.commands.telegram.DatabasePersistence", return_value=mock_db),
         ):
             await plane._cmd_backtest(["14"])
             if plane._backtest_task:
@@ -769,21 +769,21 @@ class TestBacktestCommand:
 
 
 class TestRunControlPlane:
-    @patch("cli.telegram_control.settings")
+    @patch("cli.commands.telegram.settings")
     def test_exits_when_telegram_not_configured(self, mock_settings):
         mock_settings.telegram_bot_token = None
         mock_settings.telegram_chat_id = None
 
-        from cli.telegram_control import run_control_plane
+        from cli.commands.telegram import run_control_plane
 
         with pytest.raises(SystemExit) as exc_info:
             run_control_plane()
         assert exc_info.value.code == 1
 
-    @patch("cli.telegram_control.asyncio")
-    @patch("cli.telegram_control.signal")
-    @patch("cli.telegram_control.TelegramControlPlane")
-    @patch("cli.telegram_control.settings")
+    @patch("cli.commands.telegram.asyncio")
+    @patch("cli.commands.telegram.signal")
+    @patch("cli.commands.telegram.TelegramControlPlane")
+    @patch("cli.commands.telegram.settings")
     def test_runs_event_loop(self, mock_settings, mock_plane_cls, mock_signal, mock_asyncio):
         mock_settings.telegram_bot_token = "token"
         mock_settings.telegram_chat_id = "123"
@@ -791,7 +791,7 @@ class TestRunControlPlane:
         mock_loop = MagicMock()
         mock_asyncio.new_event_loop.return_value = mock_loop
 
-        from cli.telegram_control import run_control_plane
+        from cli.commands.telegram import run_control_plane
 
         run_control_plane()
 
@@ -821,7 +821,7 @@ class TestReportWithPdf:
             },
         }
 
-        with patch("cli.analytics_report.generate_report_data", return_value=mock_result):
+        with patch("cli.utils.analytics_report.generate_report_data", return_value=mock_result):
             await plane._cmd_report(30)
 
         plane.notifier.send_document.assert_awaited_once()
@@ -840,7 +840,7 @@ class TestReportWithPdf:
 
         mock_result = {"pdf_bytes": None}
 
-        with patch("cli.analytics_report.generate_report_data", return_value=mock_result):
+        with patch("cli.utils.analytics_report.generate_report_data", return_value=mock_result):
             await plane._cmd_report(30)
 
         plane.notifier.notify_report_ready.assert_awaited_once()
@@ -852,7 +852,7 @@ class TestReportWithPdf:
 
         mock_result = {"pdf_bytes": None}
 
-        with patch("cli.analytics_report.generate_report_data", return_value=mock_result):
+        with patch("cli.utils.analytics_report.generate_report_data", return_value=mock_result):
             await plane._cmd_report(30)
 
         plane.notifier.reply.assert_awaited()
