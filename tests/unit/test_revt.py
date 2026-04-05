@@ -22,7 +22,6 @@ from cli.revt import (
     _check_for_updates,
     _check_op,
     _config_delete,
-    _config_init,
     _config_set,
     _config_show,
     _env_badge,
@@ -669,7 +668,6 @@ class TestCmdBacktest:
             "interval": 60,
             "capital": None,
             "log_level": None,
-            "hf": False,
             "compare": False,
             "matrix": False,
         }
@@ -686,17 +684,6 @@ class TestCmdBacktest:
         ):
             cmd_backtest(args)
         mock_single.assert_called_once_with(args)
-
-    def test_hf_backtest(self):
-        args = self._base_args(hf=True)
-        with (
-            patch("cli.revt._show_update_notification"),
-            patch("cli.utils.env_detect.detect_env", return_value="dev"),
-            patch("cli.revt._backtest_single") as mock_single,
-            patch("loguru.logger"),
-        ):
-            cmd_backtest(args)
-        mock_single.assert_called_once_with(args, interval_override=1)
 
     def test_compare_backtest(self):
         args = self._base_args(compare=True)
@@ -850,6 +837,15 @@ class TestCmdOps:
             cmd_ops(args)
         mock_set.assert_called_once_with("int")
 
+    def test_init_subcommand(self):
+        args = _ns(ops_cmd="init", status=False, show=False)
+        with (
+            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
+            patch("cli.revt._ops_init") as mock_init,
+        ):
+            cmd_ops(args)
+        mock_init.assert_called_once_with("int")
+
 
 # ---------------------------------------------------------------------------
 # _ops_status
@@ -885,6 +881,252 @@ class TestOpsStatus:
             _ops_status("dev")
         out = capsys.readouterr().out
         assert "Authenticated    yes" in out
+
+
+# ---------------------------------------------------------------------------
+# _ops_init
+# ---------------------------------------------------------------------------
+
+
+class TestOpsInit:
+    """Tests for _ops_init() — 'revt ops init'."""
+
+    def test_op_not_available_exits(self):
+        from cli.revt import _ops_init
+
+        with (
+            patch("cli.revt._check_op", return_value=False),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _ops_init("int")
+        assert exc_info.value.code == 1
+
+    def test_dev_creates_placeholder_without_keypair(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=1),  # item get creds → not found
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults") as mock_cfg,
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+        ):
+            _ops_init("dev")
+
+        mock_creds.assert_called_once_with("dev", "revolut-trader-credentials-dev")
+        mock_cfg.assert_called_once_with("dev", "revolut-trader-config-dev")
+        assert "Dev is ready" in capsys.readouterr().out
+
+    def test_int_creates_creds_and_config(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=1),  # item get creds → not found
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults") as mock_cfg,
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_called_once_with("int", "revolut-trader-credentials-int")
+        mock_cfg.assert_called_once_with("int", "revolut-trader-config-int")
+        assert "Next steps" in capsys.readouterr().out
+
+    def test_existing_creds_item_skipped_on_no_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=0),  # item get creds → exists
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults"),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", return_value="n"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_not_called()
+
+    def test_existing_creds_item_reset_on_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        op_responses = [
+            MagicMock(returncode=0),  # item get creds → exists
+            MagicMock(returncode=0),  # item delete creds
+            MagicMock(returncode=1),  # item get config → not found
+        ]
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", side_effect=op_responses),
+            patch("cli.revt._create_creds_item") as mock_creds,
+            patch("cli.revt._create_config_item_defaults"),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", return_value="y"),
+        ):
+            _ops_init("int")
+
+        mock_creds.assert_called_once()
+
+    def test_keyboard_interrupt_on_confirm(self, capsys):
+        from cli.revt import _ops_init
+
+        with (
+            patch("cli.revt._check_op", return_value=True),
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
+            patch("cli.revt._create_risk_items"),
+            patch("cli.revt._create_strategy_items"),
+            patch("builtins.input", side_effect=KeyboardInterrupt),
+        ):
+            _ops_init("int")  # should skip credentials and continue, not raise
+        out = capsys.readouterr().out
+        assert "Skipping credentials item" in out
+
+
+class TestCreateCredsItem:
+    """Tests for _create_creds_item() — keypair generation + 1Password write."""
+
+    def test_dev_creates_placeholder_no_keypair(self, capsys):
+        from cli.revt import _create_creds_item
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            _create_creds_item("dev", "revolut-trader-credentials-dev")
+
+        call_args = mock_run.call_args[0][0]
+        assert "op" in call_args
+        assert "item" in call_args
+        assert "create" in call_args
+        # No private/public key fields for dev; Telegram placeholder present
+        full_cmd = " ".join(call_args)
+        assert "REVOLUT_PRIVATE_KEY" not in full_cmd
+        assert "REVOLUT_PUBLIC_KEY" not in full_cmd
+        assert "TELEGRAM_BOT_TOKEN" in full_cmd
+        assert "✓" in capsys.readouterr().out
+
+    def test_int_generates_ed25519_keypair(self, capsys):
+        from cli.revt import _create_creds_item
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            _create_creds_item("int", "revolut-trader-credentials-int")
+
+        call_args = mock_run.call_args[0][0]
+        full_cmd = " ".join(call_args)
+        assert "REVOLUT_PRIVATE_KEY" in full_cmd
+        assert "REVOLUT_PUBLIC_KEY" in full_cmd
+        assert "TELEGRAM_BOT_TOKEN" in full_cmd
+        out = capsys.readouterr().out
+        assert "PUBLIC KEY" in out
+        assert "BEGIN PUBLIC KEY" in out
+        assert "✓" in out
+
+    def test_subprocess_failure_exits(self):
+        from cli.revt import _create_creds_item
+
+        with (
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="error")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_creds_item("int", "revolut-trader-credentials-int")
+        assert exc_info.value.code == 1
+
+
+class TestCreateRiskItems:
+    """Tests for _create_risk_items()."""
+
+    def test_creates_all_three_when_missing(self, capsys):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),  # all missing
+            patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run,
+        ):
+            _create_risk_items()
+
+        assert mock_run.call_count == 3
+        out = capsys.readouterr().out
+        assert "conservative" in out
+        assert "moderate" in out
+        assert "aggressive" in out
+
+    def test_skips_existing_items(self, capsys):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),  # all exist
+            patch("subprocess.run") as mock_run,
+        ):
+            _create_risk_items()
+
+        mock_run.assert_not_called()
+        assert "skipped" in capsys.readouterr().out
+
+    def test_exits_on_failure(self):
+        from cli.revt import _create_risk_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="err")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_risk_items()
+        assert exc_info.value.code == 1
+
+
+class TestCreateStrategyItems:
+    """Tests for _create_strategy_items()."""
+
+    def test_creates_all_six_when_missing(self, capsys):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),  # all missing
+            patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run,
+        ):
+            _create_strategy_items()
+
+        assert mock_run.call_count == 6
+        out = capsys.readouterr().out
+        assert "market_making" in out
+        assert "multi_strategy" in out
+
+    def test_skips_existing_items(self, capsys):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=0)),  # all exist
+            patch("subprocess.run") as mock_run,
+        ):
+            _create_strategy_items()
+
+        mock_run.assert_not_called()
+        assert "skipped" in capsys.readouterr().out
+
+    def test_exits_on_failure(self):
+        from cli.revt import _create_strategy_items
+
+        with (
+            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
+            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="err")),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _create_strategy_items()
+        assert exc_info.value.code == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1017,15 +1259,6 @@ class TestCmdConfig:
             cmd_config(args)
         mock_set.assert_called_once_with("dev", "RISK_LEVEL", "aggressive")
 
-    def test_init(self):
-        args = _ns(env="dev", config_cmd="init")
-        with (
-            patch("cli.utils.env_detect.detect_env", return_value="dev"),
-            patch("cli.revt._config_init") as mock_init,
-        ):
-            cmd_config(args)
-        mock_init.assert_called_once_with("dev")
-
     def test_delete(self):
         args = _ns(env="dev", config_cmd="delete", key="MAX_CAPITAL")
         with (
@@ -1114,108 +1347,6 @@ class TestConfigSet:
 
 
 # ---------------------------------------------------------------------------
-# _config_init
-# ---------------------------------------------------------------------------
-
-
-class TestConfigInit:
-    """Tests for _config_init()."""
-
-    def test_op_not_available_exits(self):
-        with (
-            patch("cli.revt._check_op", return_value=False),
-            pytest.raises(SystemExit),
-        ):
-            _config_init("dev")
-
-    def test_item_exists_user_cancels(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", return_value="n"),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_item_exists_user_confirms_reset(self, capsys):
-        op_results = [
-            MagicMock(returncode=0),  # item get (exists)
-            MagicMock(returncode=0),  # item delete
-        ]
-        op_idx = 0
-
-        def mock_op(*args):
-            nonlocal op_idx
-            r = op_results[min(op_idx, len(op_results) - 1)]
-            op_idx += 1
-            return r
-
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", side_effect=mock_op),
-            patch("builtins.input", return_value="y"),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Config item created" in out
-
-    def test_item_exists_keyboard_interrupt(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", side_effect=KeyboardInterrupt),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_item_exists_eof_error(self, capsys):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=0)),
-            patch("builtins.input", side_effect=EOFError),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Cancelled" in out
-
-    def test_new_item_created_non_prod(self, capsys):
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("dev")
-        out = capsys.readouterr().out
-        assert "Config item created" in out
-
-    def test_new_item_created_prod_shows_tip(self, capsys):
-        create_result = MagicMock(returncode=0)
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=create_result),
-        ):
-            _config_init("prod")
-        out = capsys.readouterr().out
-        assert "Tip" in out
-        assert "MAX_CAPITAL" in out
-
-    def test_create_failure_exits(self):
-        with (
-            patch("cli.revt._check_op", return_value=True),
-            patch("cli.revt._op", return_value=MagicMock(returncode=1)),
-            patch("subprocess.run", return_value=MagicMock(returncode=1, stderr="fail")),
-            pytest.raises(SystemExit),
-        ):
-            _config_init("dev")
-
-
-# ---------------------------------------------------------------------------
 # _config_delete
 # ---------------------------------------------------------------------------
 
@@ -1257,15 +1388,14 @@ class TestCmdApi:
     """Tests for cmd_api() — the 'revt api' command."""
 
     def test_dev_env_blocked(self, capsys):
-        args = _ns(env="dev", api_cmd="balance")
+        args = _ns(env="dev", api_cmd="test")
         with (
             patch("cli.utils.env_detect.detect_env", return_value="dev"),
             pytest.raises(SystemExit) as exc_info,
         ):
             cmd_api(args)
         assert exc_info.value.code == 1
-        out = capsys.readouterr().out
-        assert "mock" in out
+        assert "mock" in capsys.readouterr().out
 
     def test_test_command_delegates(self):
         args = _ns(api_cmd="test")
@@ -1286,48 +1416,6 @@ class TestCmdApi:
         ):
             cmd_api(args)
         mock_run.assert_called_once_with("trade-ready")
-
-    def test_balance_command_delegates_to_endpoint(self):
-        args = _ns(
-            api_cmd="balance",
-            symbol=None,
-            symbols=None,
-            order_id=None,
-            interval=60,
-            limit=20,
-            depth=20,
-        )
-        mock_endpoint = MagicMock()
-        with (
-            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict(
-                "sys.modules", {"cli.commands.api": MagicMock(run_api_endpoint=mock_endpoint)}
-            ),
-        ):
-            cmd_api(args)
-        mock_endpoint.assert_called_once()
-
-    def test_pairs_command_maps_name(self):
-        args = _ns(
-            api_cmd="pairs",
-            symbol=None,
-            symbols=None,
-            order_id=None,
-            interval=60,
-            limit=20,
-            depth=20,
-        )
-        mock_endpoint = MagicMock()
-        with (
-            patch.dict("os.environ", {"ENVIRONMENT": "int"}),
-            patch.dict(
-                "sys.modules", {"cli.commands.api": MagicMock(run_api_endpoint=mock_endpoint)}
-            ),
-        ):
-            cmd_api(args)
-        mock_endpoint.assert_called_once()
-        # Check that 'pairs' was mapped to 'currency-pairs'
-        assert mock_endpoint.call_args.kwargs["command"] == "currency-pairs"
 
 
 # ---------------------------------------------------------------------------
@@ -1478,35 +1566,6 @@ class TestCmdDb:
         ):
             cmd_db(args)
         mock_generate.assert_called_once()
-
-    def test_encrypt_setup(self):
-        args = _ns(env="dev", db_cmd="encrypt-setup")
-        mock_setup = MagicMock()
-        with (
-            patch("cli.utils.env_detect.detect_env", return_value="dev"),
-            patch.dict(
-                "sys.modules",
-                {"src.utils.db_encryption": MagicMock(setup_database_encryption=mock_setup)},
-            ),
-        ):
-            cmd_db(args)
-        mock_setup.assert_called_once()
-
-    def test_encrypt_status(self, capsys):
-        args = _ns(env="dev", db_cmd="encrypt-status")
-        mock_enc = MagicMock()
-        mock_enc.is_enabled = True
-        mock_enc_class = MagicMock(return_value=mock_enc)
-        with (
-            patch("cli.utils.env_detect.detect_env", return_value="dev"),
-            patch.dict(
-                "sys.modules",
-                {"src.utils.db_encryption": MagicMock(DatabaseEncryption=mock_enc_class)},
-            ),
-        ):
-            cmd_db(args)
-        out = capsys.readouterr().out
-        assert "enabled" in out
 
     def test_default_is_stats(self):
         args = _ns(env="dev", db_cmd=None)
@@ -1814,9 +1873,8 @@ class TestBuildParser:
 
     def test_backtest_subcommand(self):
         parser = _build_parser()
-        args = parser.parse_args(["backtest", "--days", "60", "--hf"])
+        args = parser.parse_args(["backtest", "--days", "60"])
         assert args.days == 60
-        assert args.hf is True
         assert args.func == cmd_backtest
 
     def test_ops_subcommand(self):
@@ -1835,8 +1893,8 @@ class TestBuildParser:
 
     def test_api_subcommand(self):
         parser = _build_parser()
-        args = parser.parse_args(["api", "balance"])
-        assert args.api_cmd == "balance"
+        args = parser.parse_args(["api", "test"])
+        assert args.api_cmd == "test"
         assert args.func == cmd_api
 
     def test_db_subcommand(self):

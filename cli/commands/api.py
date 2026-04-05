@@ -1,13 +1,7 @@
-#!/usr/bin/env python3
-"""
-API Testing CLI for Revolut Trader
-Essential commands to test API connectivity and permissions
-"""
+"""API readiness checks for Revolut Trader."""
 
-import argparse
 import asyncio
 import sys
-from typing import Any
 
 from loguru import logger
 
@@ -20,7 +14,7 @@ from src.api.client import RevolutAPIClient
 _VIEW_ERROR_HINTS: dict[str, str] = {
     "deactivated": (
         "API key is invalid or deactivated.\n"
-        "        → Re-activate the key in Revolut X, or run 'make ops' to set a new one."
+        "        → Re-activate the key in Revolut X, or run 'revt ops' to set a new one."
     ),
     "forbidden": (
         "API key lacks read permissions.\n"
@@ -30,7 +24,7 @@ _VIEW_ERROR_HINTS: dict[str, str] = {
         "Cannot reach the Revolut X API.\n        → Check your internet connection and try again."
     ),
     "unknown": (
-        "Unexpected error during authentication.\n        → Run 'make api-test' for details."
+        "Unexpected error during authentication.\n        → Run 'revt api ready' for details."
     ),
 }
 
@@ -66,7 +60,7 @@ async def check_trade_ready(api_client: RevolutAPIClient) -> None:
     else:
         hint = _VIEW_ERROR_HINTS.get(
             view_error or "",
-            f"HTTP error: {view_error}.\n        → Run 'make api-test' for details.",
+            f"HTTP error: {view_error}.\n        → Run 'revt api ready' for details.",
         )
         print(f"STATUS: No market data access — {hint}")
         sys.exit(1)
@@ -82,14 +76,12 @@ async def check_connection(api_client: RevolutAPIClient) -> None:
     print("=" * 50)
 
     try:
-        # Test balance endpoint as a simple connectivity check
         balance_data = await api_client.get_balance()
 
         if balance_data:
             print("\n✅ Authentication successful")
             print("✅ API connection working")
 
-            # Show basic account info
             if balance_data.get("balances"):
                 base_currency = balance_data.get("base_currency", "EUR")
                 balances = balance_data["balances"]
@@ -112,68 +104,31 @@ async def check_connection(api_client: RevolutAPIClient) -> None:
         raise
 
 
-async def run_command(args) -> None:
-    """Run the specified API command."""
+async def _run_command(command: str) -> None:
+    """Run the specified API readiness command."""
     api_client = RevolutAPIClient()
     await api_client.initialize()
 
     try:
-        if args.command == "trade-ready":
+        if command == "trade-ready":
             await check_trade_ready(api_client)
-        elif args.command == "test":
-            await check_connection(api_client)
         else:
-            print(f"Unknown command: {args.command}")
-            sys.exit(1)
+            await check_connection(api_client)
     finally:
         await api_client.close()
 
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="API Testing CLI for Revolut Trader",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python cli/commands/api.py test          # Test authenticated connection
-  python cli/commands/api.py trade-ready   # Check API permissions (view + trade)
-        """,
-    )
-
-    parser.add_argument(
-        "command",
-        choices=["trade-ready", "test"],
-        help="Command to execute",
-    )
-
-    args = parser.parse_args()
-
-    # Call the new function
-    run_api_command(args.command)
-
-
 def run_api_command(command: str) -> None:
-    """Run an API test command.
-
-    This function can be called directly from other modules without
-    needing to patch sys.argv.
+    """Run an API readiness command (test or trade-ready).
 
     Args:
-        command: The API command to run (test, trade-ready, etc.)
+        command: Either ``"test"`` (connection check) or ``"trade-ready"`` (permissions check).
     """
-    from types import SimpleNamespace
-
-    # Reduce logging noise
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
 
-    # Create a namespace object with the command
-    args = SimpleNamespace(command=command)
-
-    # Run command
     try:
-        asyncio.run(run_command(args))
+        asyncio.run(_run_command(command))
     except KeyboardInterrupt:
         print("\n\nCancelled by user")
         sys.exit(1)
@@ -181,144 +136,3 @@ def run_api_command(command: str) -> None:
         logger.error(f"Command failed: {e!s}", exc_info=True)
         print(f"\n❌ Error: {e}")
         sys.exit(1)
-
-
-async def _handle_ticker_commands(
-    api_client: RevolutAPIClient, command: str, symbol: str, symbols: str | None
-) -> dict[str, Any] | list[dict[str, Any]]:
-    """Handle ticker and tickers commands."""
-    if command == "ticker":
-        return await api_client.get_ticker(symbol)
-
-    # tickers or all-tickers
-    if symbols:
-        symbol_list = [s.strip() for s in symbols.split(",")]
-        return await api_client.get_tickers(symbol_list)
-    return await api_client.get_tickers()
-
-
-async def _execute_api_command(
-    api_client: RevolutAPIClient,
-    command: str,
-    symbol: str | None,
-    symbols: str | None,
-    order_id: str | None,
-    interval: int | None,
-    limit: int | None,
-    depth: int | None,
-) -> dict[str, Any] | list[dict[str, Any]] | None:
-    """Execute the API command and return the result.
-
-    Extracted to reduce cognitive complexity of run_api_endpoint.
-    """
-    # Validate required parameters
-    if command in ("ticker", "order-book", "candles", "trades", "public-trades") and not symbol:
-        print(f"❌ Error: {command} command requires --symbol")
-        sys.exit(1)
-
-    if command == "order" and not order_id:
-        print("❌ Error: order command requires --order-id")
-        sys.exit(1)
-
-    # Simple commands (no parameters) - dispatch table
-    simple_commands = {
-        "balance": api_client.get_balance,
-        "currencies": api_client.get_currencies,
-        "currency-pairs": api_client.get_currency_pairs,
-        "open-orders": api_client.get_open_orders,
-        "orders": api_client.get_historical_orders,
-    }
-
-    if command in simple_commands:
-        return await simple_commands[command]()
-
-    # Ticker commands
-    if command in ("ticker", "tickers", "all-tickers"):
-        assert symbol is not None  # Validated above for ticker
-        return await _handle_ticker_commands(api_client, command, symbol, symbols)
-
-    # Symbol-based data commands - dispatch table
-    if command in ("order-book", "candles", "trades", "public-trades"):
-        assert symbol is not None  # Validated above for remaining symbol commands
-
-        symbol_commands = {
-            "order-book": lambda: api_client.get_order_book(symbol, depth=depth or 10),
-            "candles": lambda: api_client.get_candles(
-                symbol, interval=interval or 60, limit=limit or 100
-            ),
-            "trades": lambda: api_client.get_trades(symbol=symbol, limit=limit or 100),
-            "public-trades": lambda: api_client.get_public_trades(symbol, limit=limit or 100),
-        }
-
-        return await symbol_commands[command]()
-
-    # Order lookup
-    if command == "order":
-        assert order_id is not None  # Validated above
-        return await api_client.get_order(order_id)
-
-    # Unknown command
-    print(f"❌ Unknown command: {command}")
-    sys.exit(1)
-
-
-def run_api_endpoint(
-    *,
-    command: str,
-    symbol: str | None = None,
-    symbols: str | None = None,
-    order_id: str | None = None,
-    interval: int | None = None,
-    limit: int | None = None,
-    depth: int | None = None,
-) -> None:
-    """Run an API endpoint command with the given parameters.
-
-    This function provides a direct interface to API endpoints without
-    needing to patch sys.argv. It's a simple proxy to the API client.
-
-    Args:
-        command: The API command to run (balance, ticker, tickers, etc.)
-        symbol: Symbol for single-symbol commands
-        symbols: Comma-separated symbols for multi-symbol commands
-        order_id: Order ID for order-specific commands
-        interval: Candle interval in minutes
-        limit: Result limit
-        depth: Order book depth
-    """
-    import json
-
-    # Reduce logging noise
-    logger.remove()
-    logger.add(sys.stderr, level="WARNING")
-
-    async def _run_endpoint():
-        """Run the API endpoint and display results."""
-        api_client = RevolutAPIClient()
-        await api_client.initialize()
-
-        try:
-            result = await _execute_api_command(
-                api_client, command, symbol, symbols, order_id, interval, limit, depth
-            )
-
-            # Display results as formatted JSON
-            if result:
-                print(json.dumps(result, indent=2, default=str))
-
-        finally:
-            await api_client.close()
-
-    try:
-        asyncio.run(_run_endpoint())
-    except KeyboardInterrupt:
-        print("\n\nCancelled by user")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Command failed: {e!s}", exc_info=True)
-        print(f"\n❌ Error: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
