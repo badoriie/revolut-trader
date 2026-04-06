@@ -14,6 +14,7 @@ Release platforms (built by CI):
 """
 
 from pathlib import Path
+from PyInstaller.utils.hooks import copy_metadata  # noqa: F821
 
 # Project root is one level above this spec file
 PROJECT_ROOT = Path(SPECPATH).parent  # noqa: F821 — SPECPATH set by PyInstaller
@@ -22,7 +23,11 @@ a = Analysis(
     [str(PROJECT_ROOT / "cli" / "revt.py")],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
-    datas=[],
+    datas=[
+        # Package metadata — needed for importlib.metadata.version("revolut-trader")
+        # to work inside the frozen binary (used by the update-check banner).
+        *copy_metadata("revolut-trader"),
+    ],
     hiddenimports=[
         # ── CLI modules (all lazily imported inside cmd_* functions) ──────────
         "cli.run",

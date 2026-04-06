@@ -62,7 +62,13 @@ class TelegramControlPlane:
 
     async def run(self) -> None:
         """Send a startup message and begin polling for Telegram commands."""
-        await self.notifier.reply("🤖 Telegram Control Plane started. Type /help for commands.")
+        from cli.revt import _get_current_version_from_pyproject
+
+        version = _get_current_version_from_pyproject()
+        version_str = f" v{version}" if version else ""
+        await self.notifier.reply(
+            f"🤖 Telegram Control Plane{version_str} started. Type /help for commands."
+        )
         await self.notifier.start_polling(self._handle_command, self._stop_event)
 
     async def shutdown_async(self) -> None:
