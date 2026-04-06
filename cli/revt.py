@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import errno
 import getpass
 import os
 import subprocess
@@ -1348,7 +1349,9 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
         # executable.  The safe pattern is: unlink the old inode first (the running process
         # keeps its open file-descriptor), then copy the new binary into place.
         try:
-            with contextlib.suppress(OSError):  # nosec B110 — best-effort; copy may still succeed
+            # Only suppress FileNotFoundError — PermissionError must propagate so we
+            # can detect it and suggest `sudo` below.
+            with contextlib.suppress(FileNotFoundError):
                 current_binary.unlink()
             shutil.copy2(str(tmp_path), str(current_binary))
             current_binary.chmod(0o755)
@@ -1363,6 +1366,12 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
                 except Exception:
                     # Backup restore failed - not critical since we're raising the main error
                     pass  # nosec B110
+            if e.errno in (errno.EPERM, errno.EACCES):
+                raise RuntimeError(
+                    f"Failed to replace binary: {e}\n"
+                    f"   The binary at {current_binary} is owned by root.\n"
+                    f"   Re-run with sudo:  sudo {current_binary} update"
+                ) from e
             raise RuntimeError(f"Failed to replace binary: {e}") from e
 
         print(f"✓ Updated: {current_binary}")
