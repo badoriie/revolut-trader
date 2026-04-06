@@ -33,11 +33,6 @@ on:
           - minor
           - major
 
-permissions:
-  contents: write
-  attestations: write
-  id-token: write
-
 concurrency:
   group: release-prod
   cancel-in-progress: false
@@ -50,6 +45,8 @@ jobs:
   validate-inputs:
     name: Validate Inputs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check confirmation
         if: inputs.confirm != 'I UNDERSTAND'
@@ -64,6 +61,8 @@ jobs:
     name: Check Version Bump
     needs: validate-inputs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -103,6 +102,8 @@ jobs:
     name: Lint & Format
     needs: check-version-bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -124,6 +125,8 @@ jobs:
     name: Type Check
     needs: check-version-bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -142,6 +145,8 @@ jobs:
     name: Security Scan
     needs: check-version-bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -160,6 +165,8 @@ jobs:
     name: Tests (prod)
     needs: check-version-bump
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -184,6 +191,8 @@ jobs:
   build-revt:
     name: Build revt binary (${{ matrix.artifact }})
     needs: check-version-bump
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +237,10 @@ jobs:
     name: Create Release
     needs: [lint, typecheck, security, test, build-revt]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -266,6 +279,20 @@ jobs:
 
           NEW_TAG=$(git describe --tags --abbrev=0)
           echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Update uv.lock for new version
+        run: |
+          # Regenerate lockfile to match the new pyproject.toml version
+          uv lock
+
+          # Check if uv.lock was modified
+          if git diff --quiet uv.lock; then
+            echo "uv.lock unchanged"
+          else
+            echo "uv.lock updated for new version"
+            git add uv.lock
+            git commit -m "chore: update uv.lock for ${{ steps.bump.outputs.tag }}" --no-verify
+          fi
 
       - name: Push commit and tag to main
         run: |

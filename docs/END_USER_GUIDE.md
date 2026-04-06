@@ -8,6 +8,28 @@ ______________________________________________________________________
 
 ## 1. Download the Bot
 
+### Quick Install (One-Liner)
+
+**Linux x86_64:**
+
+```bash
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-x86_64 -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
+```
+
+**Raspberry Pi / ARM64:**
+
+```bash
+curl -L https://github.com/badoriie/revolut-trader/releases/latest/download/revt-linux-arm64 -o revt && chmod +x revt && sudo mv revt /usr/local/bin/
+```
+
+Verify installation:
+
+```bash
+revt --version
+```
+
+### Manual Installation
+
 1. Go to the [latest GitHub Release](https://github.com/badoriie/revolut-trader/releases)
 
 1. Download the `revt` binary for your system:
@@ -24,7 +46,7 @@ ______________________________________________________________________
    chmod +x revt-linux-arm64
    ```
 
-1. (Optional) Move it to your PATH:
+1. Move it to your PATH:
 
    ```bash
    sudo mv revt-linux-x86_64 /usr/local/bin/revt
