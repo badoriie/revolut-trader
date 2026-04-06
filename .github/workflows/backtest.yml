@@ -10,29 +10,6 @@ name: Backtest Matrix
 on:
   workflow_dispatch:
     inputs:
-      strategies:
-        description: "Strategies to compare (comma-separated, or 'all')"
-        required: false
-        default: "all"
-        type: choice
-        options:
-          - all
-          - market_making
-          - momentum
-          - mean_reversion
-          - multi_strategy
-          - breakout
-          - range_reversion
-      risk_levels:
-        description: "Risk levels to test"
-        required: false
-        default: "conservative,moderate,aggressive"
-        type: choice
-        options:
-          - conservative,moderate,aggressive
-          - conservative
-          - moderate
-          - aggressive
       days:
         description: "Days of historical data"
         required: false
@@ -114,28 +91,16 @@ jobs:
 
       - run: uv sync --extra dev
 
-      - name: Build strategy arguments
-        id: args
-        run: |
-          STRATEGIES="${{ inputs.strategies }}"
-          if [ "$STRATEGIES" = "all" ] || [ -z "$STRATEGIES" ]; then
-            echo "strategies_arg=" >> "$GITHUB_OUTPUT"
-          else
-            echo "strategies_arg=--strategies $STRATEGIES" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Run backtest matrix
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           ENVIRONMENT: int
         run: |
-          uv run revt backtest --compare \
-            ${{ steps.args.outputs.strategies_arg }} \
+          uv run revt backtest --matrix \
             --days ${{ inputs.days || '30' }} \
             --interval ${{ inputs.interval || '60' }} \
             --pairs ${{ inputs.pairs || 'BTC-EUR,ETH-EUR' }} \
             --capital ${{ inputs.capital || '10000' }} \
-            --risk-levels ${{ inputs.risk_levels || 'conservative,moderate,aggressive' }} \
             --log-level ${{ inputs.log_level || 'WARNING' }} 2>&1 | tee backtest-output.txt
 
       - name: Generate timestamped filename
@@ -160,7 +125,7 @@ jobs:
           {
             echo "## Backtest Matrix Report"
             echo ""
-            echo "**Parameters:** strategies=${{ inputs.strategies || 'all' }} · days=${{ inputs.days || '30' }} · interval=${{ inputs.interval || '60' }}min · pairs=${{ inputs.pairs || 'BTC-EUR,ETH-EUR' }} · capital=€${{ inputs.capital || '10000' }} · risk=${{ inputs.risk_levels || 'conservative,moderate,aggressive' }}"
+            echo "**Parameters:** all strategies × all risk levels · days=${{ inputs.days || '30' }} · interval=${{ inputs.interval || '60' }}min · pairs=${{ inputs.pairs || 'BTC-EUR,ETH-EUR' }} · capital=€${{ inputs.capital || '10000' }}"
             echo ""
             echo '```'
             echo "$TABLE"
