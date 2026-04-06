@@ -1,6 +1,6 @@
 [project]
 name = "revolut-trader"
-version = "0.7.4"
+version = "0.8.0"
 description = "Professional algorithmic trading bot for Revolut Crypto API"
 requires-python = ">=3.11"
 license = { text = "MIT" }
