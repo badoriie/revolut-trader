@@ -10,6 +10,25 @@ import pytest
 from cli.commands.run import setup_logging
 
 
+def _asyncio_run_noop(coro):
+    """Side-effect for mocking asyncio.run: closes the coroutine without awaiting it.
+
+    Without this, the unawaited coroutine triggers a RuntimeWarning that leaks
+    across tests and shows up in unrelated test output.
+    """
+    coro.close()
+
+
+def _asyncio_run_raise(exc):
+    """Side-effect factory: closes the coroutine then raises the given exception."""
+
+    def _side_effect(coro):
+        coro.close()
+        raise exc
+
+    return _side_effect
+
+
 class TestSetupLogging:
     """Tests for setup_logging."""
 
@@ -173,7 +192,7 @@ class TestMain:
         with (
             patch.object(sys, "argv", ["run"]),
             patch("src.config.settings", mock_settings),
-            patch("cli.commands.run.asyncio.run") as mock_run,
+            patch("cli.commands.run.asyncio.run", side_effect=_asyncio_run_noop) as mock_run,
         ):
             main()
 
@@ -237,7 +256,7 @@ class TestMain:
             patch.object(sys, "argv", ["run"]),
             patch("src.config.settings", mock_settings),
             patch("builtins.input", return_value="I UNDERSTAND"),
-            patch("cli.commands.run.asyncio.run") as mock_run,
+            patch("cli.commands.run.asyncio.run", side_effect=_asyncio_run_noop) as mock_run,
         ):
             main()
 
@@ -252,7 +271,10 @@ class TestMain:
         with (
             patch.object(sys, "argv", ["run"]),
             patch("src.config.settings", mock_settings),
-            patch("cli.commands.run.asyncio.run", side_effect=RuntimeError("crash")),
+            patch(
+                "cli.commands.run.asyncio.run",
+                side_effect=_asyncio_run_raise(RuntimeError("crash")),
+            ),
             pytest.raises(SystemExit) as exc_info,
         ):
             main()
@@ -268,7 +290,9 @@ class TestMain:
         with (
             patch.object(sys, "argv", ["run"]),
             patch("src.config.settings", mock_settings),
-            patch("cli.commands.run.asyncio.run", side_effect=KeyboardInterrupt),
+            patch(
+                "cli.commands.run.asyncio.run", side_effect=_asyncio_run_raise(KeyboardInterrupt())
+            ),
         ):
             main()  # should not raise or sys.exit
 
@@ -285,7 +309,7 @@ class TestMain:
                 patch.object(sys, "argv", ["run"]),
                 patch("cli.utils.env_detect.detect_env", return_value="dev"),
                 patch("src.config.settings", mock_settings),
-                patch("cli.commands.run.asyncio.run"),
+                patch("cli.commands.run.asyncio.run", side_effect=_asyncio_run_noop),
             ):
                 main()
             assert os.environ.get("ENVIRONMENT") is not None

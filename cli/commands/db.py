@@ -38,8 +38,16 @@ def show_analytics(days: int = 30):
     print("=" * 50)
 
 
-def export_data(output_dir: str = "revt-data/exports"):
+def _default_data_dir() -> Path:
+    """Return the data directory from env or ~/revt-data."""
+    raw = os.environ.get("REVT_DATA_DIR", "").strip()
+    return Path(raw) if raw else Path.home() / "revt-data"
+
+
+def export_data(output_dir: str | None = None):
     """Export all database data to JSON files."""
+    if output_dir is None:
+        output_dir = str(_default_data_dir() / "exports")
     print(f"\nExporting data to {output_dir}...")
 
     out = Path(output_dir)
@@ -178,7 +186,7 @@ def main():
             limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10
             show_backtest_results(limit)
         elif command == "export":
-            output_dir = sys.argv[2] if len(sys.argv) > 2 else "revt-data/exports"
+            output_dir = sys.argv[2] if len(sys.argv) > 2 else None
             export_data(output_dir)
         elif command == "export-csv":
             export_csv()
