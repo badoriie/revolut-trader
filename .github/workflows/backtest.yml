@@ -127,8 +127,9 @@ jobs:
       - name: Run backtest matrix
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ENVIRONMENT: int
         run: |
-          uv run python cli/backtest_compare.py \
+          uv run revt backtest --compare \
             ${{ steps.args.outputs.strategies_arg }} \
             --days ${{ inputs.days || '30' }} \
             --interval ${{ inputs.interval || '60' }} \
