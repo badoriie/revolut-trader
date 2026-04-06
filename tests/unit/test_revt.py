@@ -304,20 +304,37 @@ class TestUpdateCache:
 class TestGetCurrentVersionFromPyproject:
     """Tests for _get_current_version_from_pyproject()."""
 
-    def test_reads_version_from_real_pyproject(self):
-        # The real pyproject.toml exists in the repo
+    def test_reads_version_from_importlib_metadata(self):
+        # importlib.metadata is tried first and works in installed/dev environments
         version = _get_current_version_from_pyproject()
         assert version is not None
         assert "." in version  # looks like semver
 
-    def test_missing_pyproject_returns_none(self):
-        with patch("cli.revt._ROOT", Path("/nonexistent/path")):
+    def test_falls_back_to_pyproject_toml_when_metadata_unavailable(self, tmp_path):
+        # Simulate frozen binary where importlib.metadata fails but pyproject.toml exists
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_bytes(b'[project]\nname = "revolut-trader"\nversion = "9.8.7"\n')
+        with (
+            patch("cli.revt._ROOT", tmp_path),
+            patch("importlib.metadata.version", side_effect=Exception("not found")),
+        ):
+            result = _get_current_version_from_pyproject()
+        assert result == "9.8.7"
+
+    def test_missing_pyproject_and_no_metadata_returns_none(self, tmp_path):
+        with (
+            patch("cli.revt._ROOT", Path("/nonexistent/path")),
+            patch("importlib.metadata.version", side_effect=Exception("not found")),
+        ):
             assert _get_current_version_from_pyproject() is None
 
     def test_malformed_pyproject_returns_none(self, tmp_path):
         bad_file = tmp_path / "pyproject.toml"
         bad_file.write_bytes(b"\x00\x01\x02")
-        with patch("cli.revt._ROOT", tmp_path):
+        with (
+            patch("cli.revt._ROOT", tmp_path),
+            patch("importlib.metadata.version", side_effect=Exception("not found")),
+        ):
             result = _get_current_version_from_pyproject()
             assert result is None
 
@@ -1984,10 +2001,10 @@ class TestMain:
 
 
 class TestGetCurrentVersionFallbacks:
-    """Cover the tomllib fallback branches (lines 180-184)."""
+    """Cover the tomllib fallback branches."""
 
     def test_returns_none_when_tomllib_unavailable(self, monkeypatch):
-        """When both tomllib and tomli are unavailable, returns None."""
+        """When importlib.metadata fails and tomllib/tomli are unavailable, returns None."""
         import builtins
 
         real_import = builtins.__import__
@@ -1997,7 +2014,10 @@ class TestGetCurrentVersionFallbacks:
                 raise ImportError(f"No module named '{name}'")
             return real_import(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=mock_import):
+        with (
+            patch("importlib.metadata.version", side_effect=Exception("not found")),
+            patch("builtins.__import__", side_effect=mock_import),
+        ):
             result = _get_current_version_from_pyproject()
         assert result is None
 

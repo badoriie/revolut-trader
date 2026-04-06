@@ -416,6 +416,22 @@ class TestRunLifecycle:
         assert "started" in text.lower() or "Control" in text
 
     @pytest.mark.asyncio
+    async def test_run_includes_version_in_startup_message(self, plane):
+        plane._stop_event.set()
+        with patch("cli.revt._get_current_version_from_pyproject", return_value="1.2.3"):
+            await plane.run()
+        text = plane.notifier.reply.call_args.args[0]
+        assert "v1.2.3" in text
+
+    @pytest.mark.asyncio
+    async def test_run_startup_message_omits_version_when_unavailable(self, plane):
+        plane._stop_event.set()
+        with patch("cli.revt._get_current_version_from_pyproject", return_value=None):
+            await plane.run()
+        text = plane.notifier.reply.call_args.args[0]
+        assert " v" not in text
+
+    @pytest.mark.asyncio
     async def test_run_calls_start_polling(self, plane):
         plane._stop_event.set()
         await plane.run()

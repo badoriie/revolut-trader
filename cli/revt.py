@@ -124,7 +124,20 @@ def _read_update_cache(cache_file: Path, cache_ttl: int) -> tuple[str, str] | No
 
 
 def _get_current_version_from_pyproject() -> str | None:
-    """Get current version from pyproject.toml."""
+    """Get current version, works for both frozen binaries and source installs.
+
+    Tries importlib.metadata first (works in PyInstaller bundles), then falls
+    back to reading pyproject.toml directly (works in source/dev mode).
+    """
+    # importlib.metadata works when the package is installed (including PyInstaller bundles)
+    try:
+        from importlib.metadata import version
+
+        return version("revolut-trader")
+    except Exception:
+        pass  # nosec B110 — fallback to pyproject.toml below; exception is non-critical
+
+    # Fallback: read pyproject.toml directly (dev/source mode)
     try:
         import tomllib  # Python 3.11+
     except ImportError:
@@ -1365,7 +1378,7 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
                     print(f"⚠️  Update failed, restored backup: {e}")
                 except Exception:
                     # Backup restore failed - not critical since we're raising the main error
-                    pass  # nosec B110
+                    pass  # nosec B110 — best-effort restore; original error raised below
             if e.errno in (errno.EPERM, errno.EACCES):
                 raise RuntimeError(
                     f"Failed to replace binary: {e}\n"
