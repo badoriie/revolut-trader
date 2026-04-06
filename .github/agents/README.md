@@ -1,10 +1,44 @@
-# GitHub Agents
+# GitHub Copilot Configuration
 
-This folder contains agent configurations synced from `.claude/agents/` for version control and team collaboration.
+This folder is part of the GitHub Copilot config mirroring the `.claude/` setup.
+
+## Structure
+
+```
+.github/
+├── copilot-instructions.md        ← synced from CLAUDE.md (global instructions)
+├── agents/                        ← synced from .claude/agents/ (specialized agents)
+│   └── *.agent.md
+├── instructions/                  ← synced from .claude/rules/ (context-specific rules)
+│   ├── deployment-check.instructions.md
+│   └── security-audit.instructions.md
+└── prompts/                       ← maintained directly (reusable prompt files / skills)
+    └── revolut-api.prompt.md
+```
+
+## Mapping to `.claude/`
+
+| `.claude/` | `.github/` | Sync method |
+|---|---|---|
+| `CLAUDE.md` | `copilot-instructions.md` | `just sync-copilot` |
+| `agents/*.md` | `agents/*.agent.md` | `just sync-agents` |
+| `rules/*.md` | `instructions/*.instructions.md` | `just sync-rules` |
+| `skills/*.md` | `prompts/*.prompt.md` | Maintained directly |
+| `hooks/` | — | No Copilot equivalent |
+| `memory/` | — | No Copilot equivalent |
+
+## Sync Commands
+
+```bash
+just sync-all       # sync everything (copilot-instructions + agents + rules)
+just sync-copilot   # sync CLAUDE.md → copilot-instructions.md
+just sync-agents    # sync .claude/agents/ → .github/agents/
+just sync-rules     # sync .claude/rules/ → .github/instructions/
+```
+
+Run `just sync-all` after any changes to `CLAUDE.md`, `.claude/agents/`, or `.claude/rules/`.
 
 ## Agent Files
-
-All agent files follow the naming pattern: `<agent-name>.agent.md`
 
 - **audit-docs.agent.md** — Documentation audit agent
 - **backtest-analyst.agent.md** — Backtest analysis and strategy evaluation
@@ -12,36 +46,3 @@ All agent files follow the naming pattern: `<agent-name>.agent.md`
 - **security-reviewer.agent.md** — Security audit for financial trading code
 - **strategy-review.agent.md** — Trading strategy analysis and optimization
 - **testing-debug.agent.md** — Testing and debugging specialist
-
-## Sync Process
-
-These files are synced from `.claude/agents/` (Claude Desktop configuration):
-
-```bash
-# Sync all agents from .claude/agents/ to .github/agents/
-just sync-agents
-```
-
-This ensures agent configurations are:
-- ✅ Version controlled in git
-- ✅ Accessible to all team members
-- ✅ Documented in the repository
-- ✅ Consistent across environments
-
-## Source of Truth
-
-- **`.claude/agents/`** — Local Claude Desktop configuration (not in git)
-- **`.github/agents/`** — Version-controlled copy (synced via `just sync-agents`)
-
-## Usage
-
-These agent configurations can be used with:
-- Claude Desktop (via `.claude/agents/`)
-- GitHub Copilot Agents (future feature)
-- Team documentation and onboarding
-- CI/CD workflows (future integration)
-
-## Related Files
-
-- **`AGENTS.md`** — User guide for all available agents and how to use them
-- **`.github/copilot-instructions.md`** — GitHub Copilot instructions (synced from `CLAUDE.md`)

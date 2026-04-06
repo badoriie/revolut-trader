@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import getpass
 import os
 import subprocess
@@ -28,6 +29,14 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _OP_VAULT = "revolut-trader"
+
+
+def _get_data_dir() -> Path:
+    """Return the data directory from REVT_DATA_DIR env var or ~/revt-data."""
+    raw = os.environ.get("REVT_DATA_DIR", "").strip()
+    return Path(raw) if raw else Path.home() / "revt-data"
+
+
 _OP_CATEGORY = "Secure Note"
 _CANCELLED = "\nCancelled."
 _DAYS_HELP = "Look-back days (default: 30)"
@@ -199,7 +208,7 @@ def _check_for_updates() -> tuple[str, str] | None:
     if os.environ.get("REVT_SKIP_UPDATE_CHECK"):
         return None
 
-    cache_file = _ROOT / "revt-data" / ".update_check_cache"
+    cache_file = _get_data_dir() / ".update_check_cache"
     cache_ttl = 86400  # 24 hours in seconds
 
     # Check cache first
@@ -1019,6 +1028,9 @@ def _create_config_item_defaults(env: str, cfg_item: str) -> None:
         "MIN_ORDER_VALUE[text]=10",
         # ── Telegram ──────────────────────────────────────────────────────────
         "TELEGRAM_CHAT_ID[text]=",
+        # ── Data directory ────────────────────────────────────────────────────
+        # Absolute path for databases, exports, and reports (leave blank = ~/revt-data)
+        "DATA_DIR[text]=",
     ]
     if env != "prod":
         fields.insert(4, "INITIAL_CAPITAL[text]=10000")
@@ -1259,7 +1271,7 @@ def cmd_db(args: argparse.Namespace) -> None:
 
         generate_report(
             days=getattr(args, "days", 30),
-            output_dir=Path(getattr(args, "output_dir", "revt-data/reports")),
+            output_dir=Path(getattr(args, "output_dir", None) or (_get_data_dir() / "reports")),
         )
 
 
@@ -1319,7 +1331,8 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
 
         # Get current binary path
         current_binary = Path(sys.executable)
-        backup_path = current_binary.with_suffix(".backup")
+        # Use a writable temp dir for backup instead of the (potentially root-owned) binary dir
+        backup_path = Path(tempfile.gettempdir()) / f"revt.backup.{os.getpid()}"
 
         # Backup current binary
         try:
@@ -1330,14 +1343,22 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
             print(f"⚠️  Warning: Failed to backup current binary: {e}")
             print("   Continuing with update...")
 
-        # Replace with new binary
+        # Replace with new binary.
+        # On Linux, shutil.move / os.replace raise ETXTBSY when the target is a running
+        # executable.  The safe pattern is: unlink the old inode first (the running process
+        # keeps its open file-descriptor), then copy the new binary into place.
         try:
-            shutil.move(str(tmp_path), str(current_binary))
+            with contextlib.suppress(OSError):  # nosec B110 — best-effort; copy may still succeed
+                current_binary.unlink()
+            shutil.copy2(str(tmp_path), str(current_binary))
+            current_binary.chmod(0o755)
+            tmp_path.unlink(missing_ok=True)
         except OSError as e:
-            # Try to restore backup if move failed
+            # Try to restore backup if copy failed
             if backup_path.exists():
                 try:
                     shutil.copy2(backup_path, current_binary)
+                    current_binary.chmod(0o755)
                     print(f"⚠️  Update failed, restored backup: {e}")
                 except Exception:
                     # Backup restore failed - not critical since we're raising the main error
@@ -1872,8 +1893,8 @@ environment detection (run / telegram — not overridable):
     p_db_rep.add_argument(
         "--output-dir",
         dest="output_dir",
-        default="revt-data/reports",
-        help="Output directory (default: revt-data/reports)",
+        default=None,
+        help="Output directory (default: ~/revt-data/reports or DATA_DIR/reports from 1Password)",
     )
 
     p_db.set_defaults(func=cmd_db)

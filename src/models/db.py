@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import (
     DateTime,
@@ -208,22 +209,32 @@ class LogEntryDB(Base):
 def get_db_url(env: str | None = None) -> str:
     """Return the SQLite URL for the given environment.
 
+    The data directory is resolved from the ``REVT_DATA_DIR`` environment
+    variable (set by ``Settings`` after reading from 1Password), falling back
+    to ``~/revt-data`` so the database is always in a user-owned location.
+
     Args:
         env: Environment name (dev, int, prod).  Falls back to
              ``os.environ["ENVIRONMENT"]`` if not provided.
 
     Returns:
-        SQLite URL, e.g. ``"sqlite:///revt-data/dev.db"``.
+        SQLite URL, e.g. ``"sqlite:////home/user/revt-data/dev.db"``.
     """
     if env is None:
         env = os.environ.get("ENVIRONMENT", "dev")
-    return f"sqlite:///revt-data/{env}.db"
+    data_dir = os.environ.get("REVT_DATA_DIR", "").strip()
+    if not data_dir:
+        data_dir = str(Path.home() / "revt-data")
+    return f"sqlite:///{data_dir}/{env}.db"
 
 
+# Module-level convenience — resolved at import time; callers that need the
+# current value after Settings initialises REVT_DATA_DIR should call
+# get_db_url() directly rather than using this constant.
 DB_URL = get_db_url()
 
 
-def create_db_engine(url: str = DB_URL):
+def create_db_engine(url: str | None = None):
     """Create and configure the SQLite engine.
 
     Applied pragmas
@@ -236,6 +247,8 @@ def create_db_engine(url: str = DB_URL):
       instead of failing immediately.
     * ``cache_size=-64000`` — 64 MB page cache for faster repeated queries.
     """
+    if url is None:
+        url = get_db_url()
     engine = create_engine(
         url,
         echo=False,

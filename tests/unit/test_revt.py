@@ -2065,15 +2065,17 @@ class TestDownloadAndInstallBinary:
         fake_current = tmp_path / "revt_current"
         fake_current.write_bytes(b"old binary")
 
+        # Use real file operations (everything is scoped to tmp_path / system tmpdir).
+        # The new install path does: unlink → copy2 → chmod, so we must not mock copy2.
         with (
             patch("urllib.request.urlretrieve", side_effect=fake_urlretrieve),
             patch("sys.executable", str(fake_current)),
-            patch("shutil.move"),
-            patch("shutil.copy2"),
         ):
             from cli.revt import _download_and_install_binary
 
             _download_and_install_binary("https://example.com/revt", "v1.0.0")
+
+        assert fake_current.read_bytes() == b"fake binary content"
 
 
 class TestUpdateFromSourcePullFailed:

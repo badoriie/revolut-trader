@@ -845,8 +845,6 @@ class TradingBot:
         """
         assert self.notifier is not None
 
-        from pathlib import Path
-
         from cli.utils.analytics_report import generate_report_data
 
         try:
@@ -855,7 +853,7 @@ class TradingBot:
             # Generate report data and PDF (safe to call from async context)
             result = generate_report_data(
                 days=days,
-                output_dir=Path("revt-data/reports"),
+                output_dir=settings.data_dir / "reports",
             )
 
             if not result.get("pdf_bytes"):

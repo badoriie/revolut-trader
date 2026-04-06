@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -31,13 +32,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.models.db import (
-    DB_URL,
     BacktestRunDB,
     LogEntryDB,
     PortfolioSnapshotDB,
     SessionDB,
     TradeDB,
     create_db_engine,
+    get_db_url,
     get_session_factory,
     init_database,
 )
@@ -54,12 +55,13 @@ class DatabasePersistence:
     """
 
     def __init__(self) -> None:
-        Path(DB_URL.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
-        self.engine = create_db_engine()
+        db_url = get_db_url()
+        Path(db_url.replace("sqlite:///", "")).parent.mkdir(parents=True, exist_ok=True)
+        self.engine = create_db_engine(db_url)
         self._session_factory = get_session_factory(self.engine)
         init_database(self.engine)
         self.encryption = DatabaseEncryption()
-        logger.info(f"Database persistence initialised: {DB_URL}")
+        logger.info(f"Database persistence initialised: {db_url}")
         if self.encryption.is_enabled:
             logger.info("✓ Database field encryption enabled")
 
@@ -751,7 +753,7 @@ class DatabasePersistence:
     # CSV export
     # ---------------------------------------------------------------------------
 
-    def export_to_csv(self, output_dir: Path = Path("revt-data/exports")) -> None:
+    def export_to_csv(self, output_dir: Path | None = None) -> None:
         """Export all trades and portfolio snapshots to dated CSV files.
 
         Files are written to *output_dir* and named with today's date
@@ -759,7 +761,14 @@ class DatabasePersistence:
 
         Args:
             output_dir: Directory to write CSV files into (created if absent).
+                        Defaults to ``<data_dir>/exports`` where *data_dir* is
+                        resolved from the ``REVT_DATA_DIR`` environment variable
+                        or ``~/revt-data``.
         """
+        if output_dir is None:
+            raw = os.environ.get("REVT_DATA_DIR", "").strip()
+            data_dir = Path(raw) if raw else Path.home() / "revt-data"
+            output_dir = data_dir / "exports"
         output_dir.mkdir(parents=True, exist_ok=True)
         today = datetime.now(UTC).strftime("%Y%m%d")
 

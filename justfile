@@ -119,9 +119,17 @@ sync-agents:
     @cp .claude/agents/testing-debug.md .github/agents/testing-debug.agent.md
     @echo "✅ All agents synced successfully"
 
-# Sync both CLAUDE.md and agents
-sync-all: sync-copilot sync-agents
-    @echo "✅ All documentation and agents synced"
+# Sync rule files from .claude/rules/ to .github/instructions/ (Copilot instruction files)
+sync-rules:
+    @echo "Syncing rules from .claude/rules/ → .github/instructions/..."
+    @awk 'NR==1{print "---\napplyTo: \"**\"\n---"} {print}' .claude/rules/deployment-check.md > .github/instructions/deployment-check.instructions.md
+    @awk 'NR==1{print "---\napplyTo: \"src/api/**,src/execution/**,src/risk_management/**,src/utils/**\"\n---"} {print}' .claude/rules/security-audit.md > .github/instructions/security-audit.instructions.md
+    @echo "✅ All rules synced successfully"
+
+# Sync all Copilot configs: CLAUDE.md, agents, and rules
+# Note: .github/prompts/ files are maintained directly (Copilot prompt format differs from Claude skills)
+sync-all: sync-copilot sync-agents sync-rules
+    @echo "✅ All Copilot configs synced"
 
 # Generate class diagrams using pyreverse
 diagrams:

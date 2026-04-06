@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -426,6 +427,14 @@ class Settings(BaseSettings):
 
     def _load_basic_capital_config(self, op) -> None:
         """Load basic capital and shutdown config."""
+        raw_data_dir = op.get_optional("DATA_DIR")
+        if raw_data_dir and raw_data_dir.strip():
+            self.data_dir = Path(raw_data_dir.strip()).expanduser().resolve()
+        else:
+            self.data_dir = Path.home() / "revt-data"
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["REVT_DATA_DIR"] = str(self.data_dir)
+
         self.max_capital = _load_optional_float(
             op,
             "MAX_CAPITAL",
@@ -1022,6 +1031,11 @@ class Settings(BaseSettings):
     #                          make opconfig-set KEY=TELEGRAM_CHAT_ID VALUE=<id> ENV=<env>
     telegram_bot_token: str | None = Field(default=None)
     telegram_chat_id: str | None = Field(default=None)
+
+    # Data directory — root folder for SQLite databases, exports, and reports.
+    # Set DATA_DIR in 1Password to override; defaults to ~/revt-data.
+    # Populated by _load_basic_capital_config and mirrored to REVT_DATA_DIR env var.
+    data_dir: Path = Field(default_factory=lambda: Path.home() / "revt-data")
 
     def override_trading_mode(self, mode: TradingMode) -> None:
         """Override trading mode (used by CLI --mode flag).

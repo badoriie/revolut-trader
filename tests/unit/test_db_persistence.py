@@ -41,9 +41,9 @@ def make_order(symbol: str = "BTC-EUR") -> Order:
 @pytest.fixture
 def db_persistence(tmp_path, monkeypatch):
     db_url = f"sqlite:///{tmp_path}/test.db"
-    monkeypatch.setattr("src.utils.db_persistence.DB_URL", db_url)
+    monkeypatch.setenv("REVT_DATA_DIR", str(tmp_path))
     test_engine = create_engine(db_url)
-    monkeypatch.setattr("src.utils.db_persistence.create_db_engine", lambda: test_engine)
+    monkeypatch.setattr("src.utils.db_persistence.create_db_engine", lambda url=None: test_engine)
     from src.utils.db_persistence import DatabasePersistence
 
     db = DatabasePersistence()
@@ -393,20 +393,32 @@ class TestSessionContextManagerError:
 
 
 class TestEnvironmentAwareDbUrl:
-    """Tests that the DB URL includes the environment name."""
+    """Tests that the DB URL includes the environment name and data dir."""
 
-    def test_db_url_includes_environment(self):
+    def test_db_url_includes_environment(self, monkeypatch):
         from src.models.db import get_db_url
 
-        assert get_db_url("dev") == "sqlite:///revt-data/dev.db"
-        assert get_db_url("int") == "sqlite:///revt-data/int.db"
-        assert get_db_url("prod") == "sqlite:///revt-data/prod.db"
+        monkeypatch.setenv("REVT_DATA_DIR", "/custom/data")
+        assert get_db_url("dev") == "sqlite:////custom/data/dev.db"
+        assert get_db_url("int") == "sqlite:////custom/data/int.db"
+        assert get_db_url("prod") == "sqlite:////custom/data/prod.db"
 
-    def test_db_url_defaults_to_env_var(self, monkeypatch):
+    def test_db_url_defaults_to_home(self, monkeypatch):
+        from pathlib import Path
+
         from src.models.db import get_db_url
 
+        monkeypatch.delenv("REVT_DATA_DIR", raising=False)
         monkeypatch.setenv("ENVIRONMENT", "int")
-        assert get_db_url() == "sqlite:///revt-data/int.db"
+        expected = f"sqlite:///{Path.home()}/revt-data/int.db"
+        assert get_db_url() == expected
+
+    def test_db_url_uses_custom_data_dir(self, monkeypatch):
+        from src.models.db import get_db_url
+
+        monkeypatch.setenv("REVT_DATA_DIR", "/opt/revt-data")
+        monkeypatch.setenv("ENVIRONMENT", "prod")
+        assert get_db_url() == "sqlite:////opt/revt-data/prod.db"
 
 
 # ---------------------------------------------------------------------------
