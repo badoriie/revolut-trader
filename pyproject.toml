@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx~=0.28",
-    "pydantic~=2.12",
+    "pydantic~=2.13",
     "pydantic-settings~=2.12",
     "cryptography~=46.0",
     "loguru~=0.7",
