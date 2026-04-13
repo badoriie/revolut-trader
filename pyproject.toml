@@ -49,7 +49,7 @@ dev = [
     "pyright~=1.1",
     "pre-commit~=4.5",
     "bandit~=1.9",
-    "commitizen~=4.0",
+    "commitizen~=4.13",
     "pylint~=4.0",
     "pyinstaller~=6.0",
 ]
