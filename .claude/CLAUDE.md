@@ -85,20 +85,8 @@ Every change updates: `README.md`, docstrings, `CLAUDE.md`, `docs/{END_USER_GUID
 
 ## Key Files
 
-| File                                  | Purpose                                                                                                              |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `src/bot.py`                          | Main orchestrator                                                                                                    |
-| `src/config.py`                       | Pydantic config + 1Password                                                                                          |
-| `src/api/{client,mock_client}.py`     | Real/mock API                                                                                                        |
-| `src/models/{domain,db}.py`           | Domain models, ORM                                                                                                   |
-| `src/risk_management/risk_manager.py` | Risk validation                                                                                                      |
-| `src/execution/executor.py`           | Order execution                                                                                                      |
-| `src/strategies/`                     | 6 strategy implementations                                                                                           |
-| `src/utils/`                          | 1Password, DB, encryption, indicators, fees, telegram, rate limiter                                                  |
-| `src/backtest/engine.py`              | Backtest engine                                                                                                      |
-| `cli/revt.py`                         | CLI entry point (`revt` command)                                                                                     |
-| `cli/commands/`                       | Command handlers (run, backtest, backtest_compare, api, db, telegram)                                                |
-| `cli/utils/`                          | env_detect, validators, analytics_report, view_logs                                                                  |
-| `tests/`                              | Tests (≥97% coverage)                                                                                                |
-| `docs/revolut-x-api-docs.md`          | **API reference**                                                                                                    |
-| `docs/`                               | ARCHITECTURE, DEVELOPMENT_GUIDELINES, BACKTESTING, END_USER_GUIDE, DEVELOPER_GUIDE, 1PASSWORD, TELEGRAM_BOT_COMMANDS |
+- `src/bot.py` — orchestrator · `src/config.py` — Pydantic + 1Password
+- `src/api/{client,mock_client}.py` · `src/models/{domain,db}.py`
+- `src/{risk_management,execution,strategies,backtest}/` · `src/utils/` (1Password, DB, encryption, indicators, fees, telegram, rate limiter)
+- `cli/revt.py` + `cli/commands/` (run, backtest, backtest_compare, api, db, telegram) · `cli/utils/`
+- `docs/revolut-x-api-docs.md` — **API reference (source of truth)**

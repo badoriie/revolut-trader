@@ -1,3 +1,9 @@
+---
+name: deployment-check
+description: Pre-paper and pre-live trading deployment checklists, plus post-deployment monitoring cadence. Use before promoting a strategy to paper or live, or when the user asks to verify deployment readiness.
+user-invocable: true
+---
+
 # Deployment Checklists
 
 ## Pre-Paper Trading
