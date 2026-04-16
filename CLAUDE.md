@@ -81,7 +81,7 @@ All user values → 1Password. No code defaults (except `ENVIRONMENT` from env).
 
 ### Documentation
 
-Every change updates: `README.md`, docstrings, `CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`. Run `just sync-all` after CLAUDE.md or `.claude/` changes to keep GitHub Copilot configs in sync.
+Every change updates: `README.md`, docstrings, `CLAUDE.md`, `docs/{END_USER_GUIDE,DEVELOPER_GUIDE}.md`.
 
 ## Key Files
 

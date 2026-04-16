@@ -103,34 +103,6 @@ check: lint format typecheck security test
 env:
     @uv run python -c "from cli.utils.env_detect import detect_env; env = detect_env(); print(f'Current environment: {env}')"
 
-# Sync CLAUDE.md to .github/copilot-instructions.md
-sync-copilot:
-    @cp CLAUDE.md .github/copilot-instructions.md
-    @echo "Synced CLAUDE.md → .github/copilot-instructions.md"
-
-# Sync agent configurations from .claude/agents/ to .github/agents/
-sync-agents:
-    @echo "Syncing agents from .claude/agents/ → .github/agents/..."
-    @cp .claude/agents/audit-docs.md .github/agents/audit-docs.agent.md
-    @cp .claude/agents/backtest-analyst.md .github/agents/backtest-analyst.agent.md
-    @cp .claude/agents/code-improvement.md .github/agents/code-improvement.agent.md
-    @cp .claude/agents/security-reviewer.md .github/agents/security-reviewer.agent.md
-    @cp .claude/agents/strategy-review.md .github/agents/strategy-review.agent.md
-    @cp .claude/agents/testing-debug.md .github/agents/testing-debug.agent.md
-    @echo "✅ All agents synced successfully"
-
-# Sync rule files from .claude/rules/ to .github/instructions/ (Copilot instruction files)
-sync-rules:
-    @echo "Syncing rules from .claude/rules/ → .github/instructions/..."
-    @awk 'NR==1{print "---\napplyTo: \"**\"\n---"} {print}' .claude/rules/deployment-check.md > .github/instructions/deployment-check.instructions.md
-    @awk 'NR==1{print "---\napplyTo: \"src/api/**,src/execution/**,src/risk_management/**,src/utils/**\"\n---"} {print}' .claude/rules/security-audit.md > .github/instructions/security-audit.instructions.md
-    @echo "✅ All rules synced successfully"
-
-# Sync all Copilot configs: CLAUDE.md, agents, and rules
-# Note: .github/prompts/ files are maintained directly (Copilot prompt format differs from Claude skills)
-sync-all: sync-copilot sync-agents sync-rules
-    @echo "✅ All Copilot configs synced"
-
 # Generate class diagrams using pyreverse
 diagrams:
     #!/usr/bin/env bash
