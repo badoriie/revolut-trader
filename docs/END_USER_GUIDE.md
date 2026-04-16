@@ -271,7 +271,7 @@ sudo journalctl -u revolut-trader -f
 Run the control plane continuously — control trading via Telegram:
 
 ```bash
-revt telegram start --env prod
+revt telegram start
 ```
 
 Then use `/run` and `/stop` commands in Telegram.
@@ -283,15 +283,9 @@ ______________________________________________________________________
 ### Database Analytics
 
 ```bash
-revt db stats --env prod                # overview
-revt db analytics --days 30 --env prod  # trading metrics
-revt db report --days 60 --env prod     # full report with charts
-```
-
-### Logs
-
-```bash
-revt logs --env prod --limit 100
+revt db stats               # overview
+revt db analytics --days 30 # trading metrics
+revt db report --days 60    # full report with charts
 ```
 
 ### Telegram Notifications
@@ -345,8 +339,8 @@ revt ops init  # create with defaults
 Check configuration:
 
 ```bash
-revt config show --env prod
-revt ops --show --env prod
+revt config show
+revt ops --show
 ```
 
 Common issues:
@@ -358,7 +352,7 @@ Common issues:
 ### Telegram Not Working
 
 ```bash
-revt telegram test --env prod
+revt telegram test
 ```
 
 Both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` must be set.

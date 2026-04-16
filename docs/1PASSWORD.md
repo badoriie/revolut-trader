@@ -72,14 +72,14 @@ The bot uses two 1Password items per environment plus shared risk-level items in
 
 ### Credentials (`revolut-trader-credentials-{env}`)
 
-| Field                     | Type      | dev            | int / prod     |
-| ------------------------- | --------- | -------------- | -------------- |
-| `REVOLUT_API_KEY`         | concealed | Not needed     | Yes            |
-| `REVOLUT_PRIVATE_KEY`     | concealed | Not needed     | Yes            |
-| `REVOLUT_PUBLIC_KEY`      | concealed | Not needed     | Yes            |
-| `DATABASE_ENCRYPTION_KEY` | concealed | Auto-generated | Auto-generated |
+| Field                 | Type      | dev        | int / prod     |
+| --------------------- | --------- | ---------- | -------------- |
+| `REVOLUT_API_KEY`     | concealed | Not needed | Yes            |
+| `REVOLUT_PRIVATE_KEY` | concealed | Not needed | Yes            |
+| `REVOLUT_PUBLIC_KEY`  | concealed | Not needed | Yes            |
+| `TELEGRAM_BOT_TOKEN`  | concealed | Optional   | Optional       |
 
-> **Dev uses mock API** — no Revolut API key or Ed25519 keys are required. Only the database encryption key (auto-generated) is stored in the dev credentials item.
+> **Dev uses mock API** — no Revolut API key or Ed25519 keys are required. Only the Telegram bot token is stored in the dev credentials item (optional).
 
 ### Trading Configuration (`revolut-trader-config-{env}`)
 
@@ -101,9 +101,7 @@ The bot uses two 1Password items per environment plus shared risk-level items in
 | | `TAKER_FEE_PCT` | text | `0.0009` | Optional | Optional | Taker fee rate applied to MARKET orders (0.09% default) — update when Revolut changes its fee schedule |
 | | `MAX_ORDER_VALUE` | text | `10000` | Optional | Optional | Absolute max order value in base currency (EUR) — prevents accidental oversized orders |
 | | `MIN_ORDER_VALUE` | text | `10` | Optional | Optional | Minimum order value in base currency (EUR) — filters out dust trades |
-| | `TELEGRAM_BOT_TOKEN` | concealed | _(not set)_ | Optional | Optional | Telegram bot token for notifications and control plane |
 | | `TELEGRAM_CHAT_ID` | text | _(not set)_ | Optional | Optional | Telegram chat ID (user or group) to receive notifications and reports |
-| | `TELEGRAM_REPORTS_ENABLED` | text | `true` | Optional | Optional | Set to `true` to enable analytics/report notifications via Telegram |
 
 ______________________________________________________________________
 
@@ -113,11 +111,10 @@ The bot supports Telegram notifications and a control plane for remote managemen
 
 ### Required Fields
 
-| Field                      | Type      | Description                                                  |
-| -------------------------- | --------- | ------------------------------------------------------------ |
-| `TELEGRAM_BOT_TOKEN`       | concealed | Telegram bot token (from @BotFather)                         |
-| `TELEGRAM_CHAT_ID`         | text      | Chat ID (user or group) to receive notifications and reports |
-| `TELEGRAM_REPORTS_ENABLED` | text      | Set to `true` to enable analytics/report notifications       |
+| Field                | Item                                         | Type      | Description                                                  |
+| -------------------- | -------------------------------------------- | --------- | ------------------------------------------------------------ |
+| `TELEGRAM_BOT_TOKEN` | `revolut-trader-credentials-{env}`           | concealed | Telegram bot token (from @BotFather)                         |
+| `TELEGRAM_CHAT_ID`   | `revolut-trader-config-{env}`                | text      | Chat ID (user or group) to receive notifications and reports |
 
 ### How to Set Up
 
@@ -138,6 +135,7 @@ The bot supports Telegram notifications and a control plane for remote managemen
    status - Show bot status and session P&L
    balance - Show cash balance and open positions
    report - Generate analytics report (optional: days, default 30)
+   backtest - Run a backtest (optional: strategy, risk, days, pairs)
    help - Show list of available commands
    ```
 
@@ -151,14 +149,18 @@ The bot supports Telegram notifications and a control plane for remote managemen
 
 1. **Store in 1Password:**
 
-   - Store the bot token as a concealed field and chat ID as text:
+   - Store the bot token in the credentials item and chat ID in the config item:
 
 ```bash
+# Store bot token in credentials item
+op item edit revolut-trader-credentials-int \
+  --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="6xxxxxx:yourbottoken"
+
+# Store chat ID in config item
 op item edit revolut-trader-config-int \
   --vault revolut-trader \
-  TELEGRAM_BOT_TOKEN[concealed]="6xxxxxx:yourbottoken" \
-  TELEGRAM_CHAT_ID[text]="123456789" \
-  TELEGRAM_REPORTS_ENABLED[text]="true"
+  TELEGRAM_CHAT_ID[text]="123456789"
 ```
 
 5. **Verify:**
@@ -172,19 +174,18 @@ op item edit revolut-trader-config-int \
 - Sends trade notifications, analytics reports, and error alerts to the configured chat
 - Enables the always-on Telegram Control Plane (`revt telegram start`)
 - Delivers analytics reports as PDF (if `fpdf2` is installed) or as a text summary
-- Only sends messages if `TELEGRAM_REPORTS_ENABLED` is `true`
+- Both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` must be set; if either is missing, notifications are silently disabled
 
 ### Troubleshooting
 
 - **No notifications received:**
-  - Check that the bot is running and `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set correctly
-  - Ensure `TELEGRAM_REPORTS_ENABLED` is `true`
+  - Check that the bot is running and `TELEGRAM_BOT_TOKEN` (in credentials item) and `TELEGRAM_CHAT_ID` (in config item) are set correctly
   - Check logs for errors related to Telegram
 - **Bot not responding to commands:**
   - Make sure the bot is added to the group and is not blocked
   - Verify the chat ID matches the group or user
 - **Field not found:**
-  - Run `revt config set TELEGRAM_BOT_TOKEN <token>`
+  - Run `revt ops` to store the bot token in 1Password (prompted interactively)
   - Run `revt config set TELEGRAM_CHAT_ID <chat_id>`
 
 For more details, see [`END_USER_GUIDE.md`](END_USER_GUIDE.md) and [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
@@ -318,7 +319,7 @@ Set `OP_SERVICE_ACCOUNT_TOKEN` and run `op whoami` to verify.
 Install the CLI (see Prerequisites above).
 
 **Vault or item not found**
-Run `revt opstatus` to diagnose, then `revt ops` or `revt ops` to recreate.
+Run `revt ops --status` to diagnose, then `revt ops init` to recreate.
 
 **Field not found at runtime**
 Run `revt config set <field> <value>` to add the missing field,
@@ -328,7 +329,7 @@ or `revt ops init` to recreate the full config item with defaults.
 
 1. Verify token is set: `echo $OP_SERVICE_ACCOUNT_TOKEN`
 1. Verify CLI works: `op whoami`
-1. Verify credentials exist: `revt opstatus`
+1. Verify credentials exist: `revt ops --status`
 
 ______________________________________________________________________
 

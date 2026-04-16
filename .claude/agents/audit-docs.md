@@ -37,7 +37,7 @@ Read `.claude/CLAUDE.md` and check for:
 - **Key Files table**: Are all important files listed? Are any listed files missing from the repo?
 - **Rules**: Are they still relevant and complete?
 
-Fix any inaccuracies, missing components, or outdated information. After any changes, run `just sync-copilot`.
+Fix any inaccuracies, missing components, or outdated information.
 
 ## 4. Review docs/ Files
 

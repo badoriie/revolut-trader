@@ -146,8 +146,6 @@ Each environment has its own 1Password items:
 - Other branches → `dev`
 - Binary → `prod` (always)
 
-Override with `--env dev|int|prod` flag when needed.
-
 ### Mock Trading (dev)
 
 ```bash
@@ -196,12 +194,6 @@ revt config set TRADING_MODE paper   # back to safe default
 revt api test                              # authenticated connection test
 revt api ready                             # check API permissions (view + trade)
 revt telegram test                         # verify Telegram is configured
-
-# Additional API endpoints:
-revt api balance                           # account balances
-revt api ticker --symbol BTC-EUR           # single ticker
-revt api tickers --symbols BTC-EUR,ETH-EUR # multiple tickers
-revt api candles --symbol BTC-EUR          # historical candles
 ```
 
 ## Strategies
@@ -271,7 +263,6 @@ revolut-trader/
 │   │   ├── backtest.yml      # Manual backtest matrix (via Actions console)
 │   │   ├── release.yml       # Manual production release workflow
 │   │   └── diagrams.yml      # Auto-generate architecture diagrams (pyreverse)
-│   ├── copilot-instructions.md  # GitHub Copilot instructions (mirrors CLAUDE.md)
 │   └── dependabot.yml        # Automated dependency updates
 ├── src/
 │   ├── api/                  # Revolut API client (Ed25519 auth) + mock client
@@ -346,7 +337,6 @@ just format           # ruff format + ruff check --fix
 just typecheck        # pyright src/ cli/
 just check            # all of the above + tests
 just pre-commit       # run all pre-commit hooks
-just sync-all         # sync CLAUDE.md + agents to .github/
 just clean            # remove cache files
 just --list           # show all available commands
 ```
@@ -442,7 +432,6 @@ revt api test       # test API connectivity
 | [Telegram Bot Commands](docs/TELEGRAM_BOT_COMMANDS.md)   | BotFather command list setup (copy-paste ready)        |
 | [Revolut X API Docs](docs/revolut-x-api-docs.md)         | API reference (source of truth for all API code)       |
 | [Security Policy](SECURITY.md)                           | Vulnerability reporting, security best practices       |
-| [Reports](reports/)                                      | Audit reports and analysis (documentation, code, security) |
 
 ## Security
 
