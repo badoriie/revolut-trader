@@ -1,3 +1,9 @@
+---
+name: security-audit
+description: Security audit guide for the trading bot — API auth, order execution, risk controls, credentials, encryption, async safety. Use when auditing security-sensitive changes or before deploying to live trading.
+user-invocable: true
+---
+
 # Security Audit Guide
 
 ## Quick Check
