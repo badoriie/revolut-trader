@@ -14,7 +14,7 @@ echo "$FILE" | grep -qE '^src/(execution|risk_management|strategies|backtest|mod
 
 # All Python files: docs must stay in sync
 echo "$FILE" | grep -qE '^(src|cli)/.+\.py$' && \
-  MSGS+=("DOCS [$FILE]: Update README.md, docstrings, .claude/CLAUDE.md, and relevant docs/ guides. Run: just sync-copilot after CLAUDE.md changes.")
+  MSGS+=("DOCS [$FILE]: Update README.md, docstrings, .claude/CLAUDE.md, and relevant docs/ guides.")
 
 # API files: must match API docs
 echo "$FILE" | grep -qE '^src/api/' && \

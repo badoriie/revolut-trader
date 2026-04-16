@@ -139,7 +139,7 @@ raise RuntimeError("Invalid config")
 # GOOD
 raise RuntimeError(
     "RISK_LEVEL not found in 1Password config.\n"
-    "Run: make opconfig-set KEY=RISK_LEVEL VALUE=conservative ENV=dev"
+    "Run: revt config set RISK_LEVEL conservative"
 )
 ```
 
@@ -247,7 +247,7 @@ risk_level: RiskLevel = RiskLevel.CONSERVATIVE  # Risky!
 risk_level_str = get_config("RISK_LEVEL", None)
 if not risk_level_str:
     raise RuntimeError(
-        "RISK_LEVEL not found in 1Password config.\n" "Run: make opconfig-init"
+        "RISK_LEVEL not found in 1Password config.\n" "Run: revt ops init"
     )
 ```
 
@@ -304,7 +304,7 @@ The project uses three deployment environments with full isolation:
 
 ### Key rules
 
-- **`ENVIRONMENT` is auto-detected** from the git branch (`main` → `int`, feature branch → `dev`, tagged commit → `prod`) or from the frozen binary (`prod`). Override with `--env` or `export ENVIRONMENT=dev|int|prod`.
+- **`ENVIRONMENT` is auto-detected** from the git branch (`main` → `int`, feature branch → `dev`, tagged commit → `prod`) or from the frozen binary (`prod`). To override manually, `export ENVIRONMENT=dev|int|prod` before running.
 - **`TRADING_MODE` is stored in 1Password** and defaults to `paper` if not set. Must be explicitly set to `live` for real-money trading.
 - **`INITIAL_CAPITAL` is required for paper mode**, not required for live mode (fetches real balance from API).
 - **Separate API keys per environment** — if a dev key leaks, prod is unaffected.
@@ -313,10 +313,15 @@ The project uses three deployment environments with full isolation:
 ### Running in each environment
 
 ```bash
-revt run              # env auto-detected from git branch (feature → dev, main → int)
-revt run ENV=dev      # mock API, no credentials needed
-revt run ENV=int      # real API, paper mode (no real trades)
-revt run ENV=prod     # real API, live trading (requires confirmation)
+revt run              # env auto-detected: feature branch → dev, main → int, tagged commit → prod
+```
+
+To force a specific environment without changing git context:
+
+```bash
+export ENVIRONMENT=dev && revt run   # mock API, no credentials needed
+export ENVIRONMENT=int && revt run   # real API, paper mode
+export ENVIRONMENT=prod && revt run  # real API, live trading (requires confirmation)
 ```
 
 ### Branches & CI flow
@@ -350,12 +355,12 @@ ______________________________________________________________________
 1. Start in `dev` environment — validate with mock API
 1. Promote to `int` environment — paper trade with real market data
 1. Verify all safety limits work in `int` for at least 24 hours
-1. **Enable live mode explicitly:**
+1. **Enable live mode explicitly** (from a tagged commit / prod binary):
    ```bash
-   revt config set TRADING_MODE live --env prod
+   revt config set TRADING_MODE live
    ```
-1. Start with small capital: `revt config set MAX_CAPITAL 500 --env prod`
-1. Go live: `revt run --env prod` (prompts "I UNDERSTAND")
+1. Start with small capital: `revt config set MAX_CAPITAL 500`
+1. Go live: `revt run` (prompts "I UNDERSTAND" before starting)
 
 ### Environment Parity — Critical Rule
 

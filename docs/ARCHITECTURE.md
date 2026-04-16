@@ -19,11 +19,11 @@ Each environment has separate 1Password items for credentials and config, and se
 ```mermaid
 graph TD
     REVT["revt CLI\ncli/revt.py"]
-    RunCLI["cli/run.py"]
-    BacktestCLI["cli/backtest.py"]
-    AnalyticsCLI["cli/analytics_report.py"]
-    TelegramCtl["Telegram Control Plane\ncli/telegram_control.py"]
-    LogsCLI["cli/view_logs.py"]
+    RunCLI["cli/commands/run.py"]
+    BacktestCLI["cli/commands/backtest.py"]
+    AnalyticsCLI["cli/utils/analytics_report.py"]
+    TelegramCtl["Telegram Control Plane\ncli/commands/telegram.py"]
+    LogsCLI["cli/utils/view_logs.py"]
 
     Bot["TradingBot\nsrc/bot.py"]
     BacktestEngine["BacktestEngine\nsrc/backtest/engine.py"]
@@ -133,18 +133,17 @@ ______________________________________________________________________
 
 ## Telegram Integration
 
-The bot supports push notifications and a two-way control plane for remote management. All Telegram credentials are stored in 1Password under the trading config item (`revolut-trader-config-{env}`):
+The bot supports push notifications and a two-way control plane for remote management. Telegram credentials are split across two 1Password items:
 
-- `TELEGRAM_BOT_TOKEN` (concealed): Bot token from @BotFather
-- `TELEGRAM_CHAT_ID` (text): Your user ID or group chat ID
-- `TELEGRAM_REPORTS_ENABLED` (text): Set to `"true"` to receive analytics reports
+- `TELEGRAM_BOT_TOKEN` (concealed): Bot token from @BotFather — stored in `revolut-trader-credentials-{env}`
+- `TELEGRAM_CHAT_ID` (text): Your user ID or group chat ID — stored in `revolut-trader-config-{env}`
 
 **Features:**
 
 - **Push notifications** — trade fills, errors, daily P&L summaries
 - **Analytics delivery** — reports as PDF (requires `fpdf2`) or text summary
 - **Command listener** — `/status`, `/balance`, `/report [days]`, `/help`
-- **Control plane** — `/run`, `/stop` to start/stop the bot remotely (`cli/telegram_control.py`)
+- **Control plane** — `/run`, `/stop` to start/stop the bot remotely (`cli/commands/telegram.py`)
 
 **Security:** Only the configured `TELEGRAM_CHAT_ID` can send commands or receive notifications. See `docs/1PASSWORD.md` for setup.
 

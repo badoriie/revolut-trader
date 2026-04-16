@@ -89,8 +89,7 @@ For longer-term strategy validation (30+ days), use hourly candles (`--interval 
                   Default: 30
 
 --interval, -i    Candle interval in minutes
-                  Choices (backtest): 1, 5, 15, 30, 60, 240, 1440
-                  Choices (backtest-compare/matrix): 1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320
+                  Choices: 1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320
                   Default: 60 (1 hour)
                   Note: Use 1 for highest granularity (closest to live 5s polling)
 
@@ -320,7 +319,7 @@ ERROR | No historical data available
 ValueError: Invalid interval
 ```
 
-**Solution**: Use one of the supported intervals: 1, 5, 15, 30, 60, 240, 1440.
+**Solution**: Use one of the supported intervals: 1, 5, 15, 30, 60, 240, 1440, 2880, 5760, 10080, 20160, 40320.
 
 ### Insufficient Data
 

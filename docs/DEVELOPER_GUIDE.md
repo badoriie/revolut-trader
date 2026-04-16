@@ -59,14 +59,7 @@ git --version         # any version
 
 ### Revolut X API keys
 
-1. Log in to your Revolut X account
-1. Generate an **Ed25519 key pair** (Revolut requires Ed25519 — not RSA):
-   ```bash
-   openssl genpkey -algorithm Ed25519 -out private_key.pem
-   openssl pkey -pubout -in private_key.pem -out public_key.pem
-   ```
-1. Upload `public_key.pem` to Revolut X (API section of your account settings)
-1. Keep `private_key.pem` safe — it goes into 1Password during setup, then can be deleted
+The Ed25519 keypair is generated automatically by `revt ops init` — no manual key generation needed. The command prints the public key to register in Revolut X and stores the private key directly in 1Password (never written to disk).
 
 ______________________________________________________________________
 
@@ -85,39 +78,35 @@ ______________________________________________________________________
 
 ## 3. First-Time Setup
 
-The setup wizard creates all required 1Password vault items for the three environments (`dev`, `int`, `prod`) and installs Git hooks:
+Install dependencies and git hooks:
 
 ```bash
-revt ops  # Note: Creates items if missing
+just install
 ```
 
-This single command:
+Create the 1Password vault items for your current environment (environment is auto-detected from your git context: feature branch → `dev`, `main` → `int`, tagged commit → `prod`):
 
-- Creates `revolut-trader-credentials-{dev,int,prod}` items in 1Password
-- Creates `revolut-trader-config-{dev,int,prod}` items in 1Password
-- Generates and stores Ed25519 keys for `int` and `prod`
-- Installs pre-commit hooks
-- Runs `uv sync`
+```bash
+revt ops init
+```
 
-> If `revt ops  # Note: Creates items if missing` fails, check that `op` is authenticated: run `op whoami` and sign in if prompted.
+`revt ops init` creates the following 1Password items for the detected environment:
+
+- `revolut-trader-credentials-{env}` — API keys and Telegram bot token
+- `revolut-trader-config-{env}` — trading configuration with safe defaults
+- `revolut-trader-risk-{conservative,moderate,aggressive}` — risk parameters (shared, no env suffix)
+- `revolut-trader-strategy-{name}` — per-strategy tuning (shared, no env suffix)
+- For `int` and `prod`: generates an Ed25519 keypair and prints the public key to register in Revolut X
+
+> If `revt ops init` fails, check that `op` is authenticated: run `op whoami` and sign in if prompted.
 
 ### Store your API key
 
-After `revt ops init`, store the Revolut X API credentials (environment is auto-detected from your git context):
+After `revt ops init`, the credentials item is created with a placeholder API key. Store the real Revolut X API key:
 
 ```bash
-# Environment is auto-detected:
-# - Feature branch → dev
-# - main branch → int
-# - Tagged commit → prod
-
-revt ops init   # Store API credentials for the current environment
+revt ops   # prompts for the Revolut API key ID
 ```
-
-You will be prompted for:
-
-- **API Key** — the key ID from Revolut X
-- **Private Key** — contents of your `private_key.pem` file
 
 Verify the values were stored correctly:
 
@@ -282,7 +271,7 @@ ______________________________________________________________________
 
 ## 7. Running the Bot
 
-The recommended way to run the bot is via the `revt` CLI, which is available after `uv sync`. It auto-detects the environment from your git branch (feature branch → `dev`, `main` → `int`, tagged release → `prod`) and can always be overridden with `--env`.
+The recommended way to run the bot is via the `revt` CLI, which is available after `uv sync`. It auto-detects the environment from your git branch (feature branch → `dev`, `main` → `int`, tagged commit → `prod`, frozen binary → `prod`).
 
 ### Mode 1 — Mock trading (no credentials required)
 
@@ -290,7 +279,6 @@ Uses a built-in fake API. Prices are simulated. No 1Password access needed.
 
 ```bash
 revt run                             # auto-detects dev when on a feature branch
-revt run --env dev                   # explicit
 ```
 
 ### Mode 2 — Paper trading (real data, no real trades)
@@ -298,16 +286,16 @@ revt run --env dev                   # explicit
 Connects to the real Revolut X API to get live market data but executes all orders as simulations. Your balance is never touched. **This is the recommended mode before going live.**
 
 ```bash
-revt run --env int
-revt run --env int --strategy momentum --risk moderate
+revt run                             # on main branch, auto-detects int environment
+revt run --strategy momentum --risk moderate
 ```
 
 ### Mode 3 — Live trading (real money)
 
-Sends real orders to Revolut X. Requires `prod` credentials in 1Password. You will be prompted to confirm before the bot starts.
+Sends real orders to Revolut X. Requires `prod` credentials in 1Password (run from a tagged commit). You will be prompted to confirm before the bot starts.
 
 ```bash
-revt run --env prod
+revt run                             # on a tagged commit, auto-detects prod environment
 ```
 
 > **The bot will prompt:** `Type 'I UNDERSTAND' to continue:` — type `I UNDERSTAND` to proceed.
@@ -316,14 +304,15 @@ revt run --env prod
 
 | Flag                 | Values                                                                                    | Notes                                         |
 | -------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `--env` / `-e`       | `dev` `int` `prod`                                                                        | Override auto-detected environment            |
 | `--strategy` / `-s`  | `market_making` `momentum` `mean_reversion` `multi_strategy` `breakout` `range_reversion` | Override `DEFAULT_STRATEGY`                   |
 | `--risk` / `-r`      | `conservative` `moderate` `aggressive`                                                    | Override `RISK_LEVEL` from 1Password          |
 | `--pairs` / `-p`     | `BTC-EUR,ETH-EUR,...`                                                                     | Override `TRADING_PAIRS` from 1Password       |
 | `--interval` / `-i`  | seconds                                                                                   | Override the strategy's default loop interval |
 | `--log-level` / `-l` | `DEBUG` `INFO` `WARNING` `ERROR`                                                          | Verbosity of console output                   |
+| `--mode` / `-m`      | `paper` `live`                                                                            | Override `TRADING_MODE` from 1Password        |
+| `--confirm-live`     | (flag)                                                                                    | Skip live-mode confirmation (automation only) |
 
-> **Environment override** — use `revt run ENV=dev|int|prod` to force a specific environment instead of auto-detection.
+> **Environment is auto-detected** from git context (feature branch → `dev`, `main` → `int`, tagged commit → `prod`, frozen binary → `prod`). It cannot be overridden via a flag.
 
 ### Stopping the bot
 
@@ -368,10 +357,9 @@ revt backtest --matrix --days 30
 | `--strategy` | `market_making`   | `--strategy momentum`     | Single strategy name         |
 | `--days`     | `30`              | `--days 90`               | Historical window            |
 | `--risk`     | `conservative`    | `--risk moderate`         | Risk level                   |
-| `--interval` | `60`              | `--interval 15`           | Candle interval in minutes   |
+| `--interval` | `60`              | `--interval 1`            | Candle interval in minutes   |
 | `--pairs`    | `BTC-EUR,ETH-EUR` | `--pairs BTC-EUR,SOL-EUR` | Trading pairs                |
 | `--capital`  | `10000`           | `--capital 5000`          | Starting capital (EUR)       |
-| `--hf`       | off               | `--hf`                    | 1-min candles mode           |
 | `--compare`  | off               | `--compare`               | All strategies side-by-side  |
 | `--matrix`   | off               | `--matrix`                | All strategies × risk levels |
 
@@ -558,14 +546,19 @@ While the bot is running it also **listens for commands** you send directly in t
 
 ### Store credentials in 1Password
 
-The bot token is stored as a concealed credential via `revt ops init`; the chat ID is stored as a config value:
+The bot token is stored in the credentials item (`revolut-trader-credentials-{env}`); the chat ID is stored in the config item:
 
 ```bash
-revt ops init                              # prompts for Revolut API key and Telegram bot token
+# Store the bot token in 1Password credentials item
+op item edit revolut-trader-credentials-int \
+  --vault revolut-trader \
+  TELEGRAM_BOT_TOKEN[concealed]="<your-bot-token>"
+
+# Store the chat ID in 1Password config item
 revt config set TELEGRAM_CHAT_ID <chat_id>
 ```
 
-Both keys must be set — if either is missing, notifications are silently disabled.
+Both must be set — if either is missing, notifications are silently disabled.
 
 ### What you receive
 
@@ -599,7 +592,6 @@ The **Telegram Control Plane** is an always-on background process that lets you 
 
 ```bash
 revt telegram start            # start the control plane (env auto-detected)
-revt telegram start --env int  # paper trading
 ```
 
 Additional commands available only through the control plane:
@@ -737,7 +729,7 @@ ______________________________________________________________________
 ## 14. FAQ
 
 **Q: Do I need the 1Password CLI for mock trading?**
-No. `revt run` (on a feature branch) or `revt run --env dev` uses a built-in simulated API with no credentials at all.
+No. `revt run` on a feature branch auto-detects the `dev` environment and uses a built-in simulated API with no credentials at all.
 
 **Q: Can I run multiple strategies at the same time?**
 The bot runs one strategy at a time. Use `multi_strategy` to get the benefits of multiple strategies in a single run — it combines signals from all strategies with weighted voting.
@@ -907,16 +899,16 @@ ______________________________________________________________________
 
 ### Bot Modes & Environments
 
-**Mock mode** (`revt run ENV=dev` / `revt run --env dev`, `ENVIRONMENT=dev`)
+**Mock mode** (`ENVIRONMENT=dev`, auto-detected on feature branches)
 Fully simulated — fake prices, no API calls, no credentials needed. Use it to explore the interface and test configuration changes without connecting to anything.
 
-**Paper trading** (`revt run ENV=int` / `revt run --env int`, `ENVIRONMENT=int`)
+**Paper trading** (`ENVIRONMENT=int`, auto-detected on `main` branch)
 Real live market data from Revolut X, but all orders are simulated in software. Your balance is never touched. Always paper-trade before going live.
 
-**Live trading** (`revt run ENV=prod` / `revt run`, `ENVIRONMENT=prod`)
+**Live trading** (`ENVIRONMENT=prod`, auto-detected on tagged commits / frozen binary)
 Real orders sent to Revolut X. Real money. Requires prod credentials in 1Password and an explicit confirmation prompt.
 
-**Backtesting** (`revt backtest`, `revt backtest-compare`)
+**Backtesting** (`revt backtest`, `revt backtest --compare`)
 Replaying a strategy against historical candle data to estimate how it would have performed. The engine applies the same fees, spread, stop-loss/take-profit logic, and signal filters as the live bot, so results are as realistic as possible.
 
 **Session**
