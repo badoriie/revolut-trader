@@ -248,9 +248,28 @@ Fee tracking is built into every trade. Fees are deducted from the cash balance 
 | MARKET     | Taker | 0.09% |
 
 - **LIMIT orders** (market making, mean reversion, range reversion, multi-strategy) — no fee.
-- **MARKET orders** (momentum, breakout, and all SL/TP close orders) — 0.09% taker fee deducted from realized P&L and cash balance.
+- **MARKET orders** (momentum, breakout, and all stop-loss close orders) — 0.09% taker fee deducted from realized P&L and cash balance.
+- **Take-profit closes** — can use a LIMIT order (0% fee) instead of MARKET when `USE_LIMIT_CLOSE=true` is set per strategy in 1Password. Falls back to MARKET after a configurable timeout. Stop-loss closes always use MARKET regardless of this setting.
 
 Fee data is available in trade history exports and the analytics report (`total_fees`, `losing_trades` fields).
+
+### Maker-fee optimisation for take-profit exits
+
+By default, take-profit closes use MARKET orders (0.09% taker fee). You can opt in to LIMIT orders per strategy to capture the 0% maker fee:
+
+```bash
+# Enable limit close for a strategy (e.g. momentum)
+op item edit revolut-trader-strategy-momentum --vault revolut-trader \
+  USE_LIMIT_CLOSE[text]="true" \
+  CLOSE_LIMIT_TIMEOUT_SECS[text]="30"
+```
+
+| 1Password key                | Values              | Default | Notes                                               |
+| ---------------------------- | ------------------- | ------- | --------------------------------------------------- |
+| `USE_LIMIT_CLOSE`            | `true` / `false`    | `false` | Use LIMIT for take-profit exits (0% maker fee)      |
+| `CLOSE_LIMIT_TIMEOUT_SECS`   | positive integer    | `30`    | Seconds to wait for LIMIT fill before MARKET fallback |
+
+Stop-loss closes always use MARKET regardless of this setting.
 
 ## Project Structure
 

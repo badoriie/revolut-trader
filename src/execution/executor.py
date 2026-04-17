@@ -236,6 +236,77 @@ class OrderExecutor:
             order.status = OrderStatus.REJECTED
             return order
 
+    async def _attempt_limit_close(self, close_order: Order, timeout_secs: int) -> Order:
+        """Try to close a position with a LIMIT order; fall back to MARKET on timeout.
+
+        In paper mode the limit fills immediately (0% fee). In live mode the order
+        is polled every 2 seconds; if unfilled after timeout_secs it is cancelled
+        and a MARKET order is placed instead.
+
+        Args:
+            close_order:  Pre-built LIMIT Order with side, quantity, and price set.
+            timeout_secs: Seconds before giving up and falling back to MARKET.
+
+        Returns:
+            The filled Order (either the original limit or the market fallback).
+        """
+        if self.trading_mode == TradingMode.PAPER:
+            await self._execute_paper_order(close_order)
+            return close_order
+
+        await self._execute_live_order(close_order)
+        if close_order.status == OrderStatus.FILLED:
+            return close_order
+
+        deadline = asyncio.get_event_loop().time() + timeout_secs
+        while asyncio.get_event_loop().time() < deadline and close_order.order_id:
+            await asyncio.sleep(2)
+            try:
+                order_data = await self.api_client.get_order(close_order.order_id)
+                state = order_data.get("state", "").lower()
+                new_status = _API_STATE_MAP.get(state, OrderStatus.PENDING)
+                if new_status == OrderStatus.FILLED:
+                    close_order.status = OrderStatus.FILLED
+                    close_order.filled_quantity = close_order.quantity
+                    if close_order.price is not None:
+                        order_value = close_order.price * close_order.filled_quantity
+                        close_order.commission = calculate_fee(order_value, close_order.order_type)
+                    return close_order
+                if new_status in (OrderStatus.CANCELLED, OrderStatus.REJECTED):
+                    break
+            except Exception as exc:
+                logger.warning(f"Error polling limit close order {close_order.order_id}: {exc}")
+
+        # Timeout or non-fillable state: cancel the limit and place a market order.
+        if close_order.order_id and close_order.status not in (
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+            OrderStatus.REJECTED,
+        ):
+            try:
+                await self.api_client.cancel_order(close_order.order_id)
+                async with self._order_lock:
+                    self.open_orders.pop(close_order.order_id, None)
+                logger.info(
+                    f"Limit close timed out after {timeout_secs}s for {close_order.symbol}; "
+                    "falling back to MARKET"
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Could not cancel timed-out limit close {close_order.order_id}: {exc}"
+                )
+
+        market_order = Order(
+            symbol=close_order.symbol,
+            side=close_order.side,
+            order_type=OrderType.MARKET,
+            quantity=close_order.quantity,
+            price=close_order.price,
+            strategy=close_order.strategy,
+        )
+        await self._execute_live_order(market_order)
+        return market_order
+
     async def _update_positions(self, order: Order) -> None:
         """Update in-memory position tracking after an order fills (thread-safe).
 
@@ -305,6 +376,7 @@ class OrderExecutor:
                     current_price=order.price,
                     stop_loss=stop_loss,
                     take_profit=take_profit,
+                    strategy=order.strategy,
                 )
                 self.positions[symbol] = position
 
@@ -344,16 +416,19 @@ class OrderExecutor:
         return None
 
     async def _close_position(self, symbol: str, price: Decimal, reason: str) -> Order | None:
-        """Build and execute a market close order for an open position.
+        """Close an open position, using a LIMIT order for take-profit if configured.
+
+        Stop-loss closes always use MARKET for immediate execution. Take-profit
+        closes use LIMIT when the strategy has use_limit_close=True, saving the
+        0.09% taker fee. The limit falls back to MARKET after close_limit_timeout_secs.
 
         Args:
             symbol: Trading pair to close.
-            price:  Current market price (used as the order price for paper fills).
+            price:  Current market price (used as the order price).
             reason: Human-readable reason for the close (e.g. "stop_loss").
 
         Returns:
-            The executed close Order so callers can update cash balance and persist
-            the trade.  Returns ``None`` if the position had already been removed.
+            The executed close Order, or None if the position was already removed.
         """
         async with self._position_lock:
             if symbol not in self.positions:
@@ -363,16 +438,29 @@ class OrderExecutor:
         logger.info(f"Closing position {symbol} due to {reason} at {price}")
 
         close_side = OrderSide.SELL if position.side == OrderSide.BUY else OrderSide.BUY
+
+        # Use LIMIT for take-profit when the strategy opts in; always MARKET for stop-loss.
+        use_limit = False
+        timeout_secs = 30
+        if reason == "take_profit" and position.strategy:
+            strategy_key = position.strategy.lower().replace(" ", "_").replace("-", "_")
+            _scfg = settings.strategy_configs.get(strategy_key)
+            if _scfg and _scfg.use_limit_close:
+                use_limit = True
+                timeout_secs = _scfg.close_limit_timeout_secs
+
         close_order = Order(
             symbol=symbol,
             side=close_side,
-            order_type=OrderType.MARKET,
+            order_type=OrderType.LIMIT if use_limit else OrderType.MARKET,
             quantity=position.quantity,
             price=price,
             strategy=f"close_{reason}",
         )
 
-        if self.trading_mode == TradingMode.PAPER:
+        if use_limit:
+            close_order = await self._attempt_limit_close(close_order, timeout_secs)
+        elif self.trading_mode == TradingMode.PAPER:
             await self._execute_paper_order(close_order)
         else:
             await self._execute_live_order(close_order)
