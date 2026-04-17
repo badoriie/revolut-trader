@@ -38,7 +38,7 @@ dependencies = [
 [project.optional-dependencies]
 analytics = [
     "matplotlib~=3.10",
-    "numpy~=2.2",
+    "numpy~=2.4",
     "fpdf2~=2.8",
 ]
 dev = [
