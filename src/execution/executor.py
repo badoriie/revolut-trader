@@ -236,6 +236,19 @@ class OrderExecutor:
             order.status = OrderStatus.REJECTED
             return order
 
+    async def _poll_limit_order_status(self, order_id: str) -> OrderStatus:
+        """Fetch the current exchange status of a limit order.
+
+        Returns PENDING on any network/API error so the polling loop retries.
+        """
+        try:
+            order_data = await self.api_client.get_order(order_id)
+            state = order_data.get("state", "").lower()
+            return _API_STATE_MAP.get(state, OrderStatus.PENDING)
+        except Exception as exc:
+            logger.warning(f"Error polling limit close order {order_id}: {exc}")
+            return OrderStatus.PENDING
+
     async def _attempt_limit_close(self, close_order: Order, timeout_secs: int) -> Order:
         """Try to close a position with a LIMIT order; fall back to MARKET on timeout.
 
@@ -261,21 +274,16 @@ class OrderExecutor:
         deadline = asyncio.get_event_loop().time() + timeout_secs
         while asyncio.get_event_loop().time() < deadline and close_order.order_id:
             await asyncio.sleep(2)
-            try:
-                order_data = await self.api_client.get_order(close_order.order_id)
-                state = order_data.get("state", "").lower()
-                new_status = _API_STATE_MAP.get(state, OrderStatus.PENDING)
-                if new_status == OrderStatus.FILLED:
-                    close_order.status = OrderStatus.FILLED
-                    close_order.filled_quantity = close_order.quantity
-                    if close_order.price is not None:
-                        order_value = close_order.price * close_order.filled_quantity
-                        close_order.commission = calculate_fee(order_value, close_order.order_type)
-                    return close_order
-                if new_status in (OrderStatus.CANCELLED, OrderStatus.REJECTED):
-                    break
-            except Exception as exc:
-                logger.warning(f"Error polling limit close order {close_order.order_id}: {exc}")
+            new_status = await self._poll_limit_order_status(close_order.order_id)
+            if new_status == OrderStatus.FILLED:
+                close_order.status = OrderStatus.FILLED
+                close_order.filled_quantity = close_order.quantity
+                if close_order.price is not None:
+                    order_value = close_order.price * close_order.filled_quantity
+                    close_order.commission = calculate_fee(order_value, close_order.order_type)
+                return close_order
+            if new_status in (OrderStatus.CANCELLED, OrderStatus.REJECTED):
+                break
 
         # Timeout or non-fillable state: cancel the limit and place a market order.
         if close_order.order_id and close_order.status not in (
