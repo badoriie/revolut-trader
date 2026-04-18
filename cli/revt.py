@@ -398,6 +398,11 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
     _set_env()
 
+    # --real-data: promote to int so settings loads int credentials from 1Password.
+    # Must happen before any deferred import that triggers src.config loading.
+    if getattr(args, "real_data", False):
+        os.environ["ENVIRONMENT"] = "int"
+
     # Validate conflicting flags
     if args.matrix and (args.strategy or args.strategies):
         print("⚠️  Warning: --strategy and --strategies are ignored in --matrix mode")
