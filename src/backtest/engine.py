@@ -333,7 +333,7 @@ class BacktestEngine:
         """Convert a ``CandleData`` to a ``MarketData`` snapshot.
 
         The close price is used as the reference price.  A synthetic bid/ask
-        spread of ``SPREAD_PCT`` (0.3 %) is applied symmetrically around the
+        spread of ``SPREAD_PCT`` (0.1 %) is applied symmetrically around the
         close — realistic for liquid BTC/ETH pairs on Revolut X.
 
         The timestamp is UTC-aware, matching what the live bot produces.
