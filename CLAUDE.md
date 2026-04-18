@@ -18,7 +18,8 @@ revt config show | set KEY VALUE | delete KEY
 revt api test | ready
 revt db stats | analytics | backtests | export | report
 revt telegram test | start
-revt update
+revt update [--sudo]
+revt completion bash
 ```
 
 ## Architecture

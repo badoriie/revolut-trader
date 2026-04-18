@@ -27,6 +27,9 @@ a = Analysis(
         # Package metadata — needed for importlib.metadata.version("revolut-trader")
         # to work inside the frozen binary (used by the update-check banner).
         *copy_metadata("revolut-trader"),
+        # argcomplete metadata — needed for importlib.metadata lookups inside the
+        # frozen binary when shell completion is triggered via _ARGCOMPLETE=1.
+        *copy_metadata("argcomplete"),
     ],
     hiddenimports=[
         # ── CLI modules (all lazily imported inside cmd_* functions) ──────────
@@ -61,6 +64,10 @@ a = Analysis(
         "src.utils.fees",
         "src.utils.indicators",
         # ── third-party ───────────────────────────────────────────────────────
+        "argcomplete",
+        "argcomplete.completers",
+        "argcomplete.finders",
+        "argcomplete.io",
         "loguru",
         "loguru._defaults",
         "sqlalchemy",

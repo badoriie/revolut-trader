@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 """revt — Revolut Trader CLI.
 
 The polished, user-facing entry point replacing all non-development make targets.
@@ -27,6 +28,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    import argcomplete
+except ImportError:
+    argcomplete = None  # type: ignore[assignment]
 
 _ROOT = Path(__file__).parent.parent
 _OP_VAULT = "revolut-trader"
@@ -1329,12 +1335,53 @@ def _get_binary_name_for_platform() -> str:
         sys.exit(1)
 
 
-def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
+def _check_install_writable(current_binary: Path) -> tuple[bool, str]:
+    """Check whether the current user can replace the binary without sudo.
+
+    Args:
+        current_binary: Path to the currently running binary.
+
+    Returns:
+        ``(True, "")`` when the install path is writable, or
+        ``(False, hint)`` with a human-readable remediation hint.
+    """
+    # Root can always write — skip further checks.
+    if os.geteuid() == 0:
+        return True, ""
+
+    parent = current_binary.parent
+    writable = os.access(parent, os.W_OK) and (
+        not current_binary.exists() or os.access(current_binary, os.W_OK)
+    )
+    if writable:
+        return True, ""
+
+    hint = (
+        f"❌ Cannot write to {current_binary} — the binary is owned by root.\n"
+        "\n"
+        "   Option 1 — elevate only the install step (no full sudo session):\n"
+        f"     {current_binary} update --sudo\n"
+        "\n"
+        "   Option 2 — rerun the whole update as root:\n"
+        f"     sudo {current_binary} update\n"
+        "\n"
+        "   Option 3 — move the binary to a user-writable location:\n"
+        f"     mv {current_binary} ~/.local/bin/revt\n"
+        "     (add ~/.local/bin to PATH if needed)"
+    )
+    return False, hint
+
+
+def _download_and_install_binary(
+    url: str, latest_tag: str | None, *, use_sudo: bool = False
+) -> None:
     """Download binary from URL and replace current executable.
 
     Args:
         url: Download URL for the binary.
         latest_tag: Latest version tag for display (e.g., "v0.3.0").
+        use_sudo: If True, use ``sudo install`` for the replace step so that
+            non-root users can update a root-owned binary without re-downloading.
 
     Raises:
         SystemExit: If download or installation fails.
@@ -1368,35 +1415,47 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
             print(f"⚠️  Warning: Failed to backup current binary: {e}")
             print("   Continuing with update...")
 
-        # Replace with new binary.
-        # On Linux, shutil.move / os.replace raise ETXTBSY when the target is a running
-        # executable.  The safe pattern is: unlink the old inode first (the running process
-        # keeps its open file-descriptor), then copy the new binary into place.
-        try:
-            # Only suppress FileNotFoundError — PermissionError must propagate so we
-            # can detect it and suggest `sudo` below.
-            with contextlib.suppress(FileNotFoundError):
-                current_binary.unlink()
-            shutil.copy2(str(tmp_path), str(current_binary))
-            current_binary.chmod(0o755)
+        if use_sudo:
+            # Elevate only the install step; the download ran as the current user.
+            subprocess.run(  # nosec B603 B607 — controlled args, sudo explicit by user
+                ["sudo", "install", "-m", "0755", str(tmp_path), str(current_binary)],
+                check=True,
+            )
             tmp_path.unlink(missing_ok=True)
-        except OSError as e:
-            # Try to restore backup if copy failed
-            if backup_path.exists():
-                try:
-                    shutil.copy2(backup_path, current_binary)
-                    current_binary.chmod(0o755)
-                    print(f"⚠️  Update failed, restored backup: {e}")
-                except Exception:
-                    # Backup restore failed - not critical since we're raising the main error
-                    pass  # nosec B110 — best-effort restore; original error raised below
-            if e.errno in (errno.EPERM, errno.EACCES):
-                raise RuntimeError(
-                    f"Failed to replace binary: {e}\n"
-                    f"   The binary at {current_binary} is owned by root.\n"
-                    f"   Re-run with sudo:  sudo {current_binary} update"
-                ) from e
-            raise RuntimeError(f"Failed to replace binary: {e}") from e
+        else:
+            # Replace with new binary.
+            # On Linux, shutil.move / os.replace raise ETXTBSY when the target is a
+            # running executable. The safe pattern: unlink the old inode first (the
+            # running process keeps its open file-descriptor), then copy into place.
+            try:
+                # Only suppress FileNotFoundError — PermissionError must propagate so
+                # we can detect it and offer the no-redownload manual install below.
+                with contextlib.suppress(FileNotFoundError):
+                    current_binary.unlink()
+                shutil.copy2(str(tmp_path), str(current_binary))
+                current_binary.chmod(0o755)
+                tmp_path.unlink(missing_ok=True)
+            except OSError as e:
+                # Try to restore backup if copy failed
+                if backup_path.exists():
+                    try:
+                        shutil.copy2(backup_path, current_binary)
+                        current_binary.chmod(0o755)
+                        print(f"⚠️  Update failed, restored backup: {e}")
+                    except Exception:
+                        pass  # nosec B110 — best-effort restore; original error raised below
+                if e.errno in (errno.EPERM, errno.EACCES):
+                    # Keep tmp_path — user can finish with sudo install, no re-download needed.
+                    print(f"\n❌ Permission denied replacing {current_binary}.")
+                    print(f"   The download is saved at: {tmp_path}")
+                    print()
+                    print("   Finish without re-downloading:")
+                    print(f"     sudo install -m 0755 {tmp_path} {current_binary}")
+                    print()
+                    print("   Or rerun with --sudo to elevate only the install step:")
+                    print(f"     {current_binary} update --sudo")
+                    sys.exit(1)
+                raise RuntimeError(f"Failed to replace binary: {e}") from e
 
         print(f"✓ Updated: {current_binary}")
         print()
@@ -1419,6 +1478,9 @@ def _download_and_install_binary(url: str, latest_tag: str | None) -> None:
         print("   - Network connectivity issue")
         print("   - GitHub release not yet published")
         sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ sudo install failed: {e}")
+        sys.exit(1)
     except Exception as e:
         print(f"\n❌ Update failed: {e}")
         sys.exit(1)
@@ -1438,8 +1500,13 @@ def _check_binary_version() -> tuple[str | None, str | None]:
     return current_version, latest_tag
 
 
-def _update_from_binary() -> None:
-    """Update when running as a frozen PyInstaller binary."""
+def _update_from_binary(use_sudo: bool = False) -> None:
+    """Update when running as a frozen PyInstaller binary.
+
+    Args:
+        use_sudo: If True, use ``sudo install`` for the replace step so a
+            non-root user can update a root-owned binary without re-downloading.
+    """
     print("🔄 Checking for updates...")
     print()
 
@@ -1467,12 +1534,21 @@ def _update_from_binary() -> None:
     # Determine platform and binary name
     binary_name = _get_binary_name_for_platform()
 
+    # Preflight: check write permission before starting the download so we don't
+    # waste bandwidth only to fail at the install step.
+    current_binary = Path(sys.executable)
+    if not use_sudo:
+        writable, hint = _check_install_writable(current_binary)
+        if not writable:
+            print(hint)
+            sys.exit(1)
+
     # Download URL
     url = f"https://github.com/badoriie/revolut-trader/releases/latest/download/{binary_name}"
     print(f"Downloading: {url}")
 
     # Download and install
-    _download_and_install_binary(url, latest_tag)
+    _download_and_install_binary(url, latest_tag, use_sudo=use_sudo)
 
 
 def _verify_git_repository() -> None:
@@ -1669,11 +1745,60 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     The revt-data/ folder and all 1Password configuration remain untouched.
     """
+    use_sudo = getattr(args, "sudo", False)
     # Check if running as frozen binary
     if getattr(sys, "frozen", False):
-        _update_from_binary()
+        _update_from_binary(use_sudo=use_sudo)
     else:
         _update_from_source()
+
+
+# ---------------------------------------------------------------------------
+# Shell completion
+# ---------------------------------------------------------------------------
+
+# Bash completion snippet adapted from argcomplete's register-python-argcomplete
+# output. Hardcoded for the `revt` binary name. Users install with:
+#   eval "$(revt completion bash)"
+# or write to a file:
+#   revt completion bash > /etc/bash_completion.d/revt
+_BASH_COMPLETION_SNIPPET = """\
+_python_argcomplete() {
+    local IFS=$'\\013'
+    local SUPPRESS_SPACE=0
+    if compopt +o nospace 2>/dev/null; then
+        SUPPRESS_SPACE=1
+    fi
+    COMPREPLY=( $(IFS="$IFS" \\
+                  COMP_LINE="$COMP_LINE" \\
+                  COMP_POINT="$COMP_POINT" \\
+                  COMP_TYPE="$COMP_TYPE" \\
+                  _ARGCOMPLETE_COMP_WORDBREAKS="$COMP_WORDBREAKS" \\
+                  _ARGCOMPLETE=1 \\
+                  _ARGCOMPLETE_SUPPRESS_SPACE=$SUPPRESS_SPACE \\
+                  "$@" 8>&1 9>&2 1>/dev/null 2>/dev/null) )
+    if [[ $? != 0 ]]; then
+        unset COMPREPLY
+    fi
+}
+complete -o nosort -o default -o bashdefault -F _python_argcomplete revt
+"""
+
+
+def cmd_completion(args: argparse.Namespace) -> None:
+    """Emit shell completion script to stdout.
+
+    Args:
+        args: Parsed arguments with ``shell_name`` attribute.
+    """
+    shell = getattr(args, "shell_name", None)
+    if shell == "bash":
+        print(_BASH_COMPLETION_SNIPPET, end="")
+    else:
+        print(f"❌ Unsupported shell: {shell!r}", file=sys.stderr)
+        print("   Supported shells: bash", file=sys.stderr)
+        print('   Example: eval "$(revt completion bash)"', file=sys.stderr)
+        sys.exit(2)
 
 
 # ---------------------------------------------------------------------------
@@ -1959,10 +2084,37 @@ environment detection (run / telegram — not overridable):
     )
     p_tg.set_defaults(func=cmd_telegram)
 
+    # ── completion ────────────────────────────────────────────────────────────
+    p_comp = sub.add_parser(
+        "completion",
+        help="Emit shell completion script",
+        description=(
+            "Print a shell completion script to stdout.\n\n"
+            "Install for the current session:\n"
+            '  eval "$(revt completion bash)"\n\n'
+            "Install permanently (system-wide):\n"
+            "  revt completion bash > /etc/bash_completion.d/revt\n\n"
+            "Install permanently (user):\n"
+            "  revt completion bash > ~/.local/share/bash-completion/completions/revt"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    comp_sub = p_comp.add_subparsers(dest="shell_name", metavar="<shell>")
+    comp_sub.add_parser("bash", help='Bash completion (eval "$(revt completion bash)")')
+    p_comp.set_defaults(func=cmd_completion)
+
     # ── update ────────────────────────────────────────────────────────────────
     p_update = sub.add_parser(
         "update",
         help="Update revt to the latest version (preserves revt-data/ folder and 1Password config)",
+    )
+    p_update.add_argument(
+        "--sudo",
+        action="store_true",
+        help=(
+            "Use sudo for the binary install step only — downloads as the current user, "
+            "then elevates only to replace the binary (avoids re-downloading if permissions fail)"
+        ),
     )
     p_update.set_defaults(func=cmd_update)
 
@@ -1981,6 +2133,8 @@ def main() -> None:
     handles top-level errors gracefully.
     """
     parser = _build_parser()
+    if argcomplete is not None:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     if not hasattr(args, "func"):

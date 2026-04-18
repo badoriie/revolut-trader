@@ -57,12 +57,18 @@ jobs:
   # Dry-runs the version bump to verify there are releasable conventional commits
   # before the expensive CI jobs start. Always runs (no top-level `if:`) so it can
   # safely appear in `needs:` of the parallel CI jobs.
+  #
+  # The computed next version is exposed as an output so build-revt can apply it
+  # to pyproject.toml before running PyInstaller — ensuring the baked-in version
+  # inside the binary matches the release tag it is attached to.
   check-version-bump:
     name: Check Version Bump
     needs: validate-inputs
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      new_version: ${{ steps.compute.outputs.new_version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -77,6 +83,7 @@ jobs:
       - run: uv sync --extra dev
 
       - name: Dry-run version bump
+        id: compute
         run: |
           INCREMENT="${{ inputs.increment }}"
           if [ -n "$INCREMENT" ]; then
@@ -93,6 +100,17 @@ jobs:
           }
 
           echo "$OUTPUT"
+
+          # Extract the computed next version from commitizen output.
+          # Commitizen prints a line like: "bump: version 0.8.0 -> 0.9.0"
+          NEW_VERSION=$(echo "$OUTPUT" | awk '/bump: version/ {print $NF}')
+          if [ -z "$NEW_VERSION" ]; then
+            echo "::error::Could not extract new version from commitizen output."
+            exit 1
+          fi
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Computed next version: $NEW_VERSION"
+
           echo "### Version bump preview" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "$OUTPUT" >> "$GITHUB_STEP_SUMMARY"
@@ -215,12 +233,35 @@ jobs:
 
       - run: uv sync --extra dev
 
+      - name: Pin pyproject.toml version for build
+        # The binary is built before `cz bump` runs in the release job, so the
+        # checkout has the old version. Patch it here (no commit — fresh checkout)
+        # then re-sync so copy_metadata("revolut-trader") bakes the correct version
+        # into the frozen binary instead of the pre-bump version.
+        run: |
+          NEW="${{ needs.check-version-bump.outputs.new_version }}"
+          test -n "$NEW" || { echo "::error::new_version output is empty"; exit 1; }
+          sed -i -E "0,/^version = \"[^\"]+\"/s//version = \"$NEW\"/" pyproject.toml
+          grep "^version = " pyproject.toml   # confirm the sed worked
+          uv sync --extra dev                 # rebuild metadata to match new version
+
       - name: Build standalone binary
         run: |
           uv run pyinstaller build/revt.spec \
             --distpath dist \
             --workpath build/.pyinstaller \
             --noconfirm
+
+      - name: Verify baked-in version matches release tag
+        run: |
+          EXPECTED="${{ needs.check-version-bump.outputs.new_version }}"
+          REPORTED=$(dist/revt --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ "$REPORTED" != "$EXPECTED" ]; then
+            echo "::error::Binary reports version '$REPORTED' but expected '$EXPECTED'."
+            echo "::error::The copy_metadata step may not have picked up the new version."
+            exit 1
+          fi
+          echo "✓ Binary version $REPORTED matches release tag $EXPECTED"
 
       - name: Rename binary to include platform suffix
         shell: bash
