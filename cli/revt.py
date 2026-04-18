@@ -441,7 +441,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             pairs=args.pairs,
             capital=args.capital,
             risk=args.risk,
-            risk_levels=None,
+            risk_levels=getattr(args, "risk_levels", None),
             strategies=getattr(args, "strategies", None),
             log_level=args.log_level,
             real_data=real_data,
@@ -1840,6 +1840,12 @@ environment detection (run / telegram — not overridable):
         choices=["conservative", "moderate", "aggressive"],
         default=None,
         help="Risk level (default: RISK_LEVEL from 1Password config)",
+    )
+    p_bt.add_argument(
+        "--risk-levels",
+        dest="risk_levels",
+        default=None,
+        help="Comma-separated risk levels for --compare (e.g. conservative,moderate,aggressive)",
     )
     p_bt.add_argument(
         "--pairs",
