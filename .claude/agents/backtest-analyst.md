@@ -1,7 +1,7 @@
 ---
 name: backtest-analyst
 description: Analyzes backtest results, compares strategies, and recommends configuration. Use when evaluating strategy performance, interpreting backtest output, or tuning parameters.
-model: claude-haiku-4-5-20251001
+model: claude-sonnet-4-6
 tools: Read Glob Grep Bash
 ---
 

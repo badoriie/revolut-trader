@@ -1,7 +1,8 @@
 ---
-name: audit-docs
-description: Documentation audit agent. Explores codebase, finds inaccuracies in README.md, CLAUDE.md, and docs/, then fixes them. Use when docs may be stale or out of sync with code.
+name: docs-reviewer
+description: Documentation review agent. Explores codebase, finds inaccuracies in README.md, CLAUDE.md, and docs/, then fixes them. Use when docs may be stale or out of sync with code.
 tools: Read Glob Grep Bash Write Edit
+model: claude-haiku-4-5-20251001
 ---
 
 Perform a comprehensive review and improvement of the project documentation and structure. This is a thorough audit — find issues and fix them.

@@ -147,12 +147,7 @@ class BreakoutStrategy(BaseStrategy):
         breakout_high = rolling_high * (Decimal("1") + self.breakout_threshold)
         breakout_low = rolling_low * (Decimal("1") - self.breakout_threshold)
 
-        # Find existing position for this symbol
-        existing_position = None
-        for pos in positions:
-            if pos.symbol == symbol:
-                existing_position = pos
-                break
+        existing_position = next((p for p in positions if p.symbol == symbol), None)
 
         signal_type = "HOLD"
         strength = 0.0
