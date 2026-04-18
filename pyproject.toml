@@ -33,6 +33,7 @@ dependencies = [
     "cryptography~=46.0",
     "loguru~=0.7",
     "sqlalchemy~=2.0",
+    "argcomplete~=3.5",
 ]
 
 [project.optional-dependencies]

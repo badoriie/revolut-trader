@@ -299,7 +299,26 @@ Real-time alerts for:
 
 ______________________________________________________________________
 
-## 8. Updating
+## 8. Shell Completion
+
+Enable tab completion for all `revt` commands in bash:
+
+```bash
+# Current session only
+eval "$(revt completion bash)"
+
+# Permanent — current user
+revt completion bash > ~/.local/share/bash-completion/completions/revt
+
+# Permanent — system-wide (requires sudo)
+revt completion bash | sudo tee /etc/bash_completion.d/revt
+```
+
+After adding it to your profile, restart your shell or run `source ~/.bashrc`.
+
+______________________________________________________________________
+
+## 9. Updating
 
 To update to the latest version:
 
@@ -308,6 +327,18 @@ revt update
 ```
 
 This downloads the latest binary while preserving your data and configuration.
+
+If the binary is installed in a root-owned location (e.g. `/usr/local/bin`), use one of:
+
+```bash
+# Option 1: elevate only the install step (downloads as you, no full sudo session)
+revt update --sudo
+
+# Option 2: run the full update as root
+sudo revt update
+```
+
+If you see a "Permission denied" error and did not use `--sudo`, the download is saved locally — the output shows the exact `sudo install` command to finish without re-downloading.
 
 Verify:
 

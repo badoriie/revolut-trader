@@ -805,6 +805,15 @@ The bot will never sell a cryptocurrency it did not purchase itself. If you hold
 **Q: Which environments use real money?**
 Only `prod` (`revt run --mode live --confirm-live`). Both `dev` and `int` are paper-trading only — no real orders are ever placed.
 
+**Q: How does `revt completion bash` work?**
+The CLI uses **argcomplete** (`argcomplete~=3.5` in `pyproject.toml`). At startup, `main()` calls `argcomplete.autocomplete(parser)` before `parse_args()`. When bash triggers completion, it sets `_ARGCOMPLETE=1` and re-invokes the binary; argcomplete intercepts, prints matching completions to fd 8, then exits without running the normal command. The `revt completion bash` subcommand (`cmd_completion` in `cli/revt.py`) emits the static `_BASH_COMPLETION_SNIPPET` constant — a bash function that sets those env vars and calls back into `revt`. The spec file `build/revt.spec` includes `"argcomplete"` in `hiddenimports` and `copy_metadata("argcomplete")` in `datas` so argcomplete's runtime metadata lookup works inside the frozen binary.
+
+**Q: Why did `revt update` report the wrong version after updating?**
+Fixed in the release pipeline (`release.yml`). Previously, the `build-revt` job ran PyInstaller against the pre-bump version of `pyproject.toml`, so `copy_metadata("revolut-trader")` baked the old version into the binary. The `release` job bumped the version *after* the binaries were built. The fix: `check-version-bump` now outputs `new_version`; `build-revt` applies it via `sed` to `pyproject.toml` then re-runs `uv sync --extra dev` before PyInstaller, so the installed package metadata matches the release tag. A post-build sanity check (`dist/revt --version`) catches future regressions.
+
+**Q: How does `revt update --sudo` work?**
+`_update_from_binary()` in `cli/revt.py` performs a **preflight write check** via `_check_install_writable(Path(sys.executable))` *before* downloading. If not writable and `--sudo` is not set, it exits immediately with remediation hints (no wasted download). With `--sudo`, the preflight is skipped and the download runs as the current user; then `_download_and_install_binary()` calls `subprocess.run(["sudo", "install", "-m", "0755", tmp_path, current_binary])` for just the install step. If EPERM still occurs during a non-sudo install, the temp file is preserved and stdout shows the exact `sudo install -m 0755 <tmp> <dest>` command — no re-download needed.
+
 ______________________________________________________________________
 
 ## 15. Trading Terminology

@@ -17,13 +17,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cli.revt import (
+    _BASH_COMPLETION_SNIPPET,
     _build_parser,
     _check_binary_version,
     _check_for_updates,
+    _check_install_writable,
     _check_op,
     _config_delete,
     _config_set,
     _config_show,
+    _download_and_install_binary,
     _env_badge,
     _get_binary_name_for_platform,
     _get_current_version_from_pyproject,
@@ -39,6 +42,7 @@ from cli.revt import (
     _ops_status,
     _print_run_config,
     _read_update_cache,
+    _replace_binary_inplace,
     _run_compare_cli,
     _setup_logger,
     _show_update_notification,
@@ -49,6 +53,7 @@ from cli.revt import (
     _write_update_cache,
     cmd_api,
     cmd_backtest,
+    cmd_completion,
     cmd_config,
     cmd_db,
     cmd_ops,
@@ -2177,3 +2182,221 @@ class TestUpdateFromSourcePullFailed:
             _update_from_source()
         out = capsys.readouterr().out
         assert "Conflict" in out or "conflict" in out.lower() or "Resolve" in out
+
+
+# ---------------------------------------------------------------------------
+# Shell completion
+# ---------------------------------------------------------------------------
+
+
+class TestCompletionSubcommand:
+    """Tests for cmd_completion and the completion subparser."""
+
+    def test_completion_bash_parses(self):
+        """'completion bash' is parsed correctly and dispatches to cmd_completion."""
+        args = _build_parser().parse_args(["completion", "bash"])
+        assert args.shell_name == "bash"
+        assert args.func is cmd_completion
+
+    def test_completion_bash_emits_snippet(self, capsys):
+        """cmd_completion bash prints the full bash completion snippet."""
+        args = argparse.Namespace(shell_name="bash")
+        cmd_completion(args)
+        out = capsys.readouterr().out
+        assert "_ARGCOMPLETE=1" in out
+        assert "complete -o nosort -o default -o bashdefault -F _python_argcomplete revt" in out
+
+    def test_bash_snippet_constant_valid(self):
+        """_BASH_COMPLETION_SNIPPET contains expected shell function and complete directive."""
+        assert "_python_argcomplete()" in _BASH_COMPLETION_SNIPPET
+        assert "_ARGCOMPLETE=1" in _BASH_COMPLETION_SNIPPET
+        assert "complete" in _BASH_COMPLETION_SNIPPET
+        assert "revt" in _BASH_COMPLETION_SNIPPET
+
+    def test_completion_unknown_shell_exits_2(self, capsys):
+        """Unsupported shell name prints error to stderr and exits with code 2."""
+        args = argparse.Namespace(shell_name="zsh")
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_completion(args)
+        assert exc_info.value.code == 2
+        err = capsys.readouterr().err
+        assert "zsh" in err
+
+    def test_completion_none_shell_exits_2(self, capsys):
+        """Missing shell_name (no sub-subcommand) exits with code 2."""
+        args = argparse.Namespace(shell_name=None)
+        with pytest.raises(SystemExit) as exc_info:
+            cmd_completion(args)
+        assert exc_info.value.code == 2
+
+    def test_main_calls_argcomplete_autocomplete(self, monkeypatch):
+        """main() calls argcomplete.autocomplete(parser) when argcomplete is available."""
+        import cli.revt as revt_module
+
+        mock_ac = MagicMock()
+        mock_ac.autocomplete = MagicMock()
+        monkeypatch.setattr(revt_module, "argcomplete", mock_ac)
+        monkeypatch.setattr(sys, "argv", ["revt", "--help"])
+
+        with pytest.raises(SystemExit):
+            main()
+
+        assert mock_ac.autocomplete.called
+
+    def test_main_skips_argcomplete_when_none(self, monkeypatch):
+        """main() does not crash when argcomplete is None (not installed)."""
+        import cli.revt as revt_module
+
+        monkeypatch.setattr(revt_module, "argcomplete", None)
+        monkeypatch.setattr(sys, "argv", ["revt", "--help"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# _check_install_writable
+# ---------------------------------------------------------------------------
+
+
+class TestCheckInstallWritable:
+    """Tests for _check_install_writable()."""
+
+    def test_root_short_circuits_to_true(self, tmp_path, monkeypatch):
+        """Root (geteuid==0) always gets (True, '') regardless of file permissions."""
+        monkeypatch.setattr("os.geteuid", lambda: 0)
+        writable, hint = _check_install_writable(tmp_path / "revt")
+        assert writable is True
+        assert hint == ""
+
+    def test_non_root_writable_dir_and_file_returns_true(self, tmp_path, monkeypatch):
+        """Non-root user, writable dir and file → (True, '')."""
+        monkeypatch.setattr("os.geteuid", lambda: 1000)
+        binary = tmp_path / "revt"
+        binary.write_bytes(b"x")
+        # tmp_path is created by pytest and is writable by the test user
+        writable, hint = _check_install_writable(binary)
+        assert writable is True
+        assert hint == ""
+
+    def test_non_root_non_writable_returns_hint(self, tmp_path, monkeypatch):
+        """Non-root user, non-writable path → (False, hint) with actionable text."""
+        monkeypatch.setattr("os.geteuid", lambda: 1000)
+        monkeypatch.setattr("os.access", lambda path, mode: False)
+        binary = tmp_path / "revt"
+        writable, hint = _check_install_writable(binary)
+        assert writable is False
+        assert "sudo" in hint
+        assert "--sudo" in hint
+        assert "~/.local/bin" in hint
+
+    def test_non_root_binary_missing_checks_parent(self, tmp_path, monkeypatch):
+        """When binary doesn't exist, only parent dir writability matters."""
+        monkeypatch.setattr("os.geteuid", lambda: 1000)
+        binary = tmp_path / "nonexistent_revt"
+        # tmp_path parent is writable by default in pytest
+        writable, _ = _check_install_writable(binary)
+        assert writable is True
+
+
+# ---------------------------------------------------------------------------
+# _download_and_install_binary — EPERM and --sudo paths
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadAndInstallBinaryEperm:
+    """Cover the EPERM and --sudo paths of _download_and_install_binary."""
+
+    def _make_fake_urlretrieve(self, content: bytes = b"new binary"):
+        """Return a fake urlretrieve that writes content to the dest path."""
+
+        def fake_urlretrieve(url, dest):
+            Path(dest).write_bytes(content)
+
+        return fake_urlretrieve
+
+    def test_eperm_preserves_tempfile_and_prints_manual_install(self, tmp_path, capsys):
+        """On EPERM, _replace_binary_inplace keeps the temp file and shows the hint."""
+        import errno as errno_module
+
+        tmp_bin = tmp_path / "revt-new"
+        tmp_bin.write_bytes(b"new binary")
+        current_binary = tmp_path / "revt"
+        current_binary.write_bytes(b"old binary")
+        backup_path = tmp_path / "revt.backup"
+
+        # _replace_binary_inplace makes exactly one copy2 call (the replace).
+        # Raise EPERM on it so we can assert the hint and temp-file preservation.
+        def raise_eperm(src, dst):
+            raise PermissionError(errno_module.EACCES, "Permission denied", str(dst))
+
+        with patch("shutil.copy2", side_effect=raise_eperm):
+            with pytest.raises(SystemExit) as exc_info:
+                _replace_binary_inplace(tmp_bin, current_binary, backup_path)
+
+        assert exc_info.value.code == 1
+        out = capsys.readouterr().out
+        assert "sudo install -m 0755" in out
+        assert "--sudo" in out
+        # Temp file must still exist so the user can finish without re-downloading.
+        assert tmp_bin.exists()
+
+    def test_sudo_flag_invokes_subprocess_install(self, tmp_path, capsys):
+        """use_sudo=True calls 'sudo install -m 0755 <tmp> <dest>' instead of copy2."""
+        fake_current = tmp_path / "revt"
+        fake_current.write_bytes(b"old")
+
+        with (
+            patch("urllib.request.urlretrieve", side_effect=self._make_fake_urlretrieve()),
+            patch("sys.executable", str(fake_current)),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            _download_and_install_binary("https://example.com/revt", "v2.0.0", use_sudo=True)
+
+        assert mock_run.called
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "sudo"
+        assert cmd[1] == "install"
+        assert "-m" in cmd
+        assert "0755" in cmd
+        assert str(fake_current) in cmd
+
+    def test_preflight_exits_before_download(self, tmp_path, capsys, monkeypatch):
+        """When install dir is not writable and use_sudo=False, no download happens."""
+        fake_current = tmp_path / "revt"
+        fake_current.write_bytes(b"old")
+
+        monkeypatch.setattr("os.geteuid", lambda: 1000)
+        monkeypatch.setattr("os.access", lambda path, mode: False)
+
+        with (
+            patch("cli.revt._check_binary_version", return_value=("1.0.0", "2.0.0")),
+            patch("cli.revt._get_binary_name_for_platform", return_value="revt-linux-x86_64"),
+            patch("sys.executable", str(fake_current)),
+            patch("urllib.request.urlretrieve") as mock_dl,
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                _update_from_binary(use_sudo=False)
+
+        assert exc_info.value.code == 1
+        mock_dl.assert_not_called()
+        out = capsys.readouterr().out
+        assert "sudo" in out
+
+    def test_preflight_skipped_when_use_sudo(self, tmp_path, capsys, monkeypatch):
+        """use_sudo=True skips the preflight check and proceeds to download."""
+        monkeypatch.setattr("os.geteuid", lambda: 1000)
+        monkeypatch.setattr("os.access", lambda path, mode: False)
+
+        with (
+            patch("cli.revt._check_binary_version", return_value=("1.0.0", "2.0.0")),
+            patch("cli.revt._get_binary_name_for_platform", return_value="revt-linux-x86_64"),
+            patch("cli.revt._download_and_install_binary") as mock_install,
+        ):
+            _update_from_binary(use_sudo=True)
+
+        mock_install.assert_called_once()
+        _, kwargs = mock_install.call_args
+        assert kwargs.get("use_sudo") is True

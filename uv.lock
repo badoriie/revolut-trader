@@ -1885,6 +1885,7 @@ name = "revolut-trader"
 version = "0.8.0"
 source = { editable = "." }
 dependencies = [
+    { name = "argcomplete" },
     { name = "cryptography" },
     { name = "httpx" },
     { name = "loguru" },
@@ -1915,6 +1916,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "argcomplete", specifier = "~=3.5" },
     { name = "bandit", marker = "extra == 'dev'", specifier = "~=1.9" },
     { name = "commitizen", marker = "extra == 'dev'", specifier = "~=4.13" },
     { name = "cryptography", specifier = "~=46.0" },

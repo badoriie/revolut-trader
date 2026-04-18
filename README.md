@@ -85,6 +85,21 @@ revt run                  # start paper trading (safe default)
 
 See [1Password Setup](docs/1PASSWORD.md) for credential configuration.
 
+### Shell completion
+
+Enable tab completion for all `revt` commands in bash:
+
+```bash
+# Current session
+eval "$(revt completion bash)"
+
+# Permanent — user
+revt completion bash > ~/.local/share/bash-completion/completions/revt
+
+# Permanent — system-wide (requires sudo)
+revt completion bash | sudo tee /etc/bash_completion.d/revt
+```
+
 ### Updating
 
 Keep `revt` up to date (preserves your data and configuration):
@@ -98,6 +113,14 @@ The `update` command:
 - **Binary users**: Downloads and replaces the binary with the latest release
 - **Source users**: Pulls latest changes from git and updates dependencies
 - **Safe**: Never touches `revt-data/` folder or 1Password configuration
+
+If the binary is installed in a root-owned location (e.g. `/usr/local/bin`):
+
+```bash
+revt update --sudo        # downloads as you, elevates only the install step
+# or
+sudo revt update          # run the full update as root
+```
 
 ### Run from source (developers)
 
