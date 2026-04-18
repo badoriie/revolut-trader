@@ -361,8 +361,8 @@ Backtesting lets you test a strategy on real historical data before using real m
 
 ```bash
 # Run the full strategy × risk matrix (shortcut via just)
-just backtest        # 7-day mock data — fast iteration, any branch
-just backtest-int    # 30-day real data — any branch (requires int credentials)
+just backtest             # 7-day mock data — fast iteration, any branch
+just backtest-real-data   # 7-day real data — any branch (requires int credentials)
 
 # Or run directly:
 

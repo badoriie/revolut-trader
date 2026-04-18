@@ -121,8 +121,8 @@ backtest:
     @uv run revt backtest --matrix --days 7
 
 # Run backtest matrix with real API data (any branch — requires 1Password int credentials)
-backtest-int:
-    @uv run revt backtest --matrix --days 30 --real-data
+backtest-real-data:
+    @uv run revt backtest --matrix --days 7 --real-data
 
 # Generate class diagrams using pyreverse
 diagrams:
