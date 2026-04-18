@@ -16,7 +16,7 @@ from cli.utils.env_detect import set_env as _set_env
 
 _set_env()
 
-from src.api import create_api_client
+from cli.utils.backtest_args import create_backtest_api_client, resolve_backtest_params
 from src.backtest.engine import BacktestEngine
 from src.config import RiskLevel, StrategyType, settings
 from src.utils.db_persistence import DatabasePersistence
@@ -37,16 +37,13 @@ async def run_backtest(args) -> None:
     # CLI flags override 1Password settings; fall back to 1Password values when not given.
     strategy_type = StrategyType(args.strategy or settings.default_strategy.value)
     risk_level = RiskLevel(args.risk or settings.risk_level.value)
-    raw_pairs = args.pairs if args.pairs else ",".join(settings.trading_pairs)
-    symbols = raw_pairs.split(",")
-    initial_capital = Decimal(
-        str(args.capital if args.capital is not None else settings.paper_initial_capital)
-    )
-    effective_days = args.days if args.days is not None else settings.backtest_days
-    effective_interval = args.interval if args.interval is not None else settings.backtest_interval
+    params = resolve_backtest_params(args)
+    symbols = params["symbols"]
+    initial_capital: Decimal = params["initial_capital"]
+    effective_days: int = params["effective_days"]
+    effective_interval: int = params["effective_interval"]
 
-    real_data = getattr(args, "real_data", False)
-    api_client = create_api_client(settings.environment, force_real=real_data)
+    api_client = create_backtest_api_client(args)
     await api_client.initialize()
 
     engine = BacktestEngine(
