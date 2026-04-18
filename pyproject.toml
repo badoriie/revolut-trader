@@ -52,6 +52,7 @@ dev = [
     "commitizen~=4.13",
     "pylint~=4.0",
     "pyinstaller~=6.19",
+    "pip-audit~=2.10",
 ]
 
 [project.scripts]
