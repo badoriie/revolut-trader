@@ -32,6 +32,23 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pre-commit run --all-files 2>&1 | tail -20",
+            "statusMessage": "Running pre-commit checks..."
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check_sonar_issues.sh",
+            "statusMessage": "Checking SonarCloud issues..."
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "matcher": "*",
