@@ -1372,6 +1372,69 @@ def _check_install_writable(current_binary: Path) -> tuple[bool, str]:
     return False, hint
 
 
+def _replace_binary_inplace(tmp_path: Path, current_binary: Path, backup_path: Path) -> None:
+    """Replace the running binary with a newly downloaded one.
+
+    On Linux, ``shutil.move`` / ``os.replace`` raise ETXTBSY against a running
+    executable. Safe pattern: unlink the old inode first (the running process
+    keeps its open file-descriptor), then copy the new binary into place.
+
+    Args:
+        tmp_path: Path to the newly downloaded binary (already chmod 0o755).
+        current_binary: Path of the binary to replace.
+        backup_path: Path of the backup copy, used to restore on failure.
+
+    Raises:
+        SystemExit: On permission error — preserves tmp_path so the user can
+            finish manually without re-downloading.
+        RuntimeError: On any other OSError.
+    """
+    import shutil
+
+    try:
+        # Only suppress FileNotFoundError — PermissionError must propagate so
+        # we can detect it and offer the no-redownload manual install below.
+        with contextlib.suppress(FileNotFoundError):
+            current_binary.unlink()
+        shutil.copy2(str(tmp_path), str(current_binary))
+        current_binary.chmod(0o755)
+        tmp_path.unlink(missing_ok=True)
+    except OSError as e:
+        _try_restore_backup(backup_path, current_binary, e)
+        if e.errno in (errno.EPERM, errno.EACCES):
+            # Keep tmp_path — user can finish with sudo install, no re-download needed.
+            print(f"\n❌ Permission denied replacing {current_binary}.")
+            print(f"   The download is saved at: {tmp_path}")
+            print()
+            print("   Finish without re-downloading:")
+            print(f"     sudo install -m 0755 {tmp_path} {current_binary}")
+            print()
+            print("   Or rerun with --sudo to elevate only the install step:")
+            print(f"     {current_binary} update --sudo")
+            sys.exit(1)
+        raise RuntimeError(f"Failed to replace binary: {e}") from e
+
+
+def _try_restore_backup(backup_path: Path, current_binary: Path, original_err: OSError) -> None:
+    """Best-effort restore of a backup after a failed install.
+
+    Args:
+        backup_path: Path to the backup copy.
+        current_binary: Install target to restore.
+        original_err: The error that triggered the restore attempt (for display).
+    """
+    import shutil
+
+    if not backup_path.exists():
+        return
+    try:
+        shutil.copy2(backup_path, current_binary)
+        current_binary.chmod(0o755)
+        print(f"⚠️  Update failed, restored backup: {original_err}")
+    except Exception:
+        pass  # nosec B110 — best-effort restore; original error raised by caller
+
+
 def _download_and_install_binary(
     url: str, latest_tag: str | None, *, use_sudo: bool = False
 ) -> None:
@@ -1398,15 +1461,10 @@ def _download_and_install_binary(
             urllib.request.urlretrieve(url, tmp.name)  # nosec B310
             tmp_path = Path(tmp.name)
 
-        # Make executable
         tmp_path.chmod(0o755)
-
-        # Get current binary path
         current_binary = Path(sys.executable)
-        # Use a writable temp dir for backup instead of the (potentially root-owned) binary dir
         backup_path = Path(tempfile.gettempdir()) / f"revt.backup.{os.getpid()}"
 
-        # Backup current binary
         try:
             if current_binary.exists():
                 shutil.copy2(current_binary, backup_path)
@@ -1423,39 +1481,7 @@ def _download_and_install_binary(
             )
             tmp_path.unlink(missing_ok=True)
         else:
-            # Replace with new binary.
-            # On Linux, shutil.move / os.replace raise ETXTBSY when the target is a
-            # running executable. The safe pattern: unlink the old inode first (the
-            # running process keeps its open file-descriptor), then copy into place.
-            try:
-                # Only suppress FileNotFoundError — PermissionError must propagate so
-                # we can detect it and offer the no-redownload manual install below.
-                with contextlib.suppress(FileNotFoundError):
-                    current_binary.unlink()
-                shutil.copy2(str(tmp_path), str(current_binary))
-                current_binary.chmod(0o755)
-                tmp_path.unlink(missing_ok=True)
-            except OSError as e:
-                # Try to restore backup if copy failed
-                if backup_path.exists():
-                    try:
-                        shutil.copy2(backup_path, current_binary)
-                        current_binary.chmod(0o755)
-                        print(f"⚠️  Update failed, restored backup: {e}")
-                    except Exception:
-                        pass  # nosec B110 — best-effort restore; original error raised below
-                if e.errno in (errno.EPERM, errno.EACCES):
-                    # Keep tmp_path — user can finish with sudo install, no re-download needed.
-                    print(f"\n❌ Permission denied replacing {current_binary}.")
-                    print(f"   The download is saved at: {tmp_path}")
-                    print()
-                    print("   Finish without re-downloading:")
-                    print(f"     sudo install -m 0755 {tmp_path} {current_binary}")
-                    print()
-                    print("   Or rerun with --sudo to elevate only the install step:")
-                    print(f"     {current_binary} update --sudo")
-                    sys.exit(1)
-                raise RuntimeError(f"Failed to replace binary: {e}") from e
+            _replace_binary_inplace(tmp_path, current_binary, backup_path)
 
         print(f"✓ Updated: {current_binary}")
         print()

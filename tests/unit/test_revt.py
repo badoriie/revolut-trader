@@ -42,6 +42,7 @@ from cli.revt import (
     _ops_status,
     _print_run_config,
     _read_update_cache,
+    _replace_binary_inplace,
     _run_compare_cli,
     _setup_logger,
     _show_update_notification,
@@ -2316,36 +2317,30 @@ class TestDownloadAndInstallBinaryEperm:
         return fake_urlretrieve
 
     def test_eperm_preserves_tempfile_and_prints_manual_install(self, tmp_path, capsys):
-        """On EPERM, the temp file is kept and stdout contains the sudo install hint."""
+        """On EPERM, _replace_binary_inplace keeps the temp file and shows the hint."""
         import errno as errno_module
-        import shutil
 
-        fake_current = tmp_path / "revt"
-        fake_current.write_bytes(b"old")
+        tmp_bin = tmp_path / "revt-new"
+        tmp_bin.write_bytes(b"new binary")
+        current_binary = tmp_path / "revt"
+        current_binary.write_bytes(b"old binary")
+        backup_path = tmp_path / "revt.backup"
 
-        call_count = {"n": 0}
-        original_copy2 = shutil.copy2
+        # _replace_binary_inplace makes exactly one copy2 call (the replace).
+        # Raise EPERM on it so we can assert the hint and temp-file preservation.
+        def raise_eperm(src, dst):
+            raise PermissionError(errno_module.EACCES, "Permission denied", str(dst))
 
-        def patched_copy2(src, dst):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                # First call is the backup — let it succeed.
-                return original_copy2(src, dst)
-            # Second call is the replace — raise EPERM.
-            raise PermissionError(errno_module.EACCES, "Permission denied", dst)
-
-        with (
-            patch("urllib.request.urlretrieve", side_effect=self._make_fake_urlretrieve()),
-            patch("sys.executable", str(fake_current)),
-            patch("shutil.copy2", side_effect=patched_copy2),
-        ):
+        with patch("shutil.copy2", side_effect=raise_eperm):
             with pytest.raises(SystemExit) as exc_info:
-                _download_and_install_binary("https://example.com/revt", "v2.0.0")
+                _replace_binary_inplace(tmp_bin, current_binary, backup_path)
 
         assert exc_info.value.code == 1
         out = capsys.readouterr().out
         assert "sudo install -m 0755" in out
         assert "--sudo" in out
+        # Temp file must still exist so the user can finish without re-downloading.
+        assert tmp_bin.exists()
 
     def test_sudo_flag_invokes_subprocess_install(self, tmp_path, capsys):
         """use_sudo=True calls 'sudo install -m 0755 <tmp> <dest>' instead of copy2."""
