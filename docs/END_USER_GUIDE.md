@@ -317,6 +317,30 @@ revt --version
 
 ______________________________________________________________________
 
+## Advanced: Maker-Fee Optimisation for Take-Profit Exits
+
+By default, the bot closes all positions (stop-loss and take-profit) with MARKET orders, which incur a 0.09% taker fee. You can opt in to LIMIT orders for take-profit exits on a per-strategy basis to capture the 0% maker fee instead.
+
+Stop-loss closes always use MARKET regardless of this setting — immediate execution takes priority when protecting against loss.
+
+Set the following keys in the strategy's 1Password item (`revolut-trader-strategy-{name}`):
+
+| Key                        | Values           | Default | Notes                                                   |
+| -------------------------- | ---------------- | ------- | ------------------------------------------------------- |
+| `USE_LIMIT_CLOSE`          | `true` / `false` | `false` | Enable LIMIT order for take-profit exits                |
+| `CLOSE_LIMIT_TIMEOUT_SECS` | positive integer | `30`    | Seconds to wait for fill before falling back to MARKET  |
+
+```bash
+# Enable limit close for the momentum strategy with a 45-second timeout
+op item edit revolut-trader-strategy-momentum --vault revolut-trader \
+  USE_LIMIT_CLOSE[text]="true" \
+  CLOSE_LIMIT_TIMEOUT_SECS[text]="45"
+```
+
+When `USE_LIMIT_CLOSE=true`, the take-profit close is placed as a LIMIT order at the current market price. If it does not fill within the timeout, the limit is cancelled and a MARKET order is placed as a fallback. In paper mode the limit fills immediately.
+
+______________________________________________________________________
+
 ## Troubleshooting
 
 ### 1Password Issues

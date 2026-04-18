@@ -109,6 +109,13 @@ class StrategyConfig:
     take_profit_pct: float | None = None
     """Take-profit percentage override for this strategy (None = use risk-level default)."""
 
+    use_limit_close: bool = False
+    """Use a passive LIMIT order for take-profit exits to capture 0% maker fee.
+    Falls back to MARKET after close_limit_timeout_secs. Stop-loss always uses MARKET."""
+
+    close_limit_timeout_secs: int = 30
+    """Seconds to wait for a LIMIT close to fill before falling back to MARKET."""
+
     # === Strategy-internal calibration parameters ===
     # All optional: None means "use the strategy's own hardcoded default".
     # When set in 1Password, they override the strategy's constructor defaults so
@@ -152,6 +159,9 @@ class StrategyConfig:
     # breakout
     breakout_threshold: float | None = None
     """Fractional distance price must exceed the range to confirm a breakout (default 0.002 = 0.2%)."""
+
+    volume_mult: float | None = None
+    """Volume confirmation multiplier for breakout: current volume must exceed this multiple of the rolling average (default 1.5)."""
 
     # range_reversion
     buy_zone: float | None = None
@@ -800,6 +810,14 @@ class Settings(BaseSettings):
                 **self._load_strategy_breakout_params(op, p, name),
                 **self._load_strategy_range_reversion_params(op, p, name),
                 **self._load_strategy_multi_params(op, p, name),
+                use_limit_close=self._load_strategy_bool(
+                    op, f"{p}_USE_LIMIT_CLOSE", name, "USE_LIMIT_CLOSE"
+                )
+                or False,
+                close_limit_timeout_secs=self._load_strategy_int(
+                    op, f"{p}_CLOSE_LIMIT_TIMEOUT_SECS", name, "CLOSE_LIMIT_TIMEOUT_SECS"
+                )
+                or 30,
             )
         self.strategy_configs = configs
 
@@ -851,6 +869,9 @@ class Settings(BaseSettings):
         return {
             "breakout_threshold": self._load_strategy_float(
                 op, f"{prefix}_BREAKOUT_THRESHOLD", name, "BREAKOUT_THRESHOLD"
+            ),
+            "volume_mult": self._load_strategy_float(
+                op, f"{prefix}_VOLUME_MULT", name, "VOLUME_MULT"
             ),
         }
 
@@ -945,6 +966,33 @@ class Settings(BaseSettings):
                 f"Invalid {key} in 1Password: {e}.\n"
                 f"Update: revolut-trader-strategy-{strategy_name} → {field_name}"
             ) from e
+
+    @staticmethod
+    def _load_strategy_bool(op, key: str, strategy_name: str, field_name: str) -> bool | None:
+        """Load an optional boolean from a strategy item in 1Password.
+
+        Accepts ``"true"``/``"false"`` (case-insensitive).
+
+        Args:
+            op:            The onepassword module.
+            key:           Full vault key.
+            strategy_name: Strategy name for error messages.
+            field_name:    Field name for error messages.
+
+        Returns:
+            The bool value, or None if absent.
+        """
+        raw = op.get_optional(key)
+        if raw is None:
+            return None
+        if raw.lower() == "true":
+            return True
+        if raw.lower() == "false":
+            return False
+        raise ValueError(
+            f"Invalid {key} in 1Password: expected 'true' or 'false', got {raw!r}.\n"
+            f"Update: revolut-trader-strategy-{strategy_name} → {field_name}"
+        )
 
     @staticmethod
     def _load_strategy_zone(op, key: str, strategy_name: str, field_name: str) -> float | None:

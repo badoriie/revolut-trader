@@ -40,6 +40,7 @@ class Position(BaseModel):
     realized_pnl: Decimal = Decimal("0")
     stop_loss: Decimal | None = None
     take_profit: Decimal | None = None
+    strategy: str | None = None
     opened_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

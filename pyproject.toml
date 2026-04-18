@@ -87,6 +87,7 @@ select = [
     "PT",   # pytest style
     "PERF", # perflint — performance anti-patterns
     "RUF",  # ruff-specific rules
+    "C901", # mccabe complexity — catch overly complex functions before SonarQube does
 ]
 ignore = [
     "E501",    # line too long (handled by formatter)
@@ -94,6 +95,9 @@ ignore = [
     "RUF002",  # ambiguous unicode in docstrings
     "RUF003",  # ambiguous unicode in comments
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
 
 [tool.ruff.lint.per-file-ignores]
 "cli/**" = ["T201"]          # CLI scripts legitimately use print()

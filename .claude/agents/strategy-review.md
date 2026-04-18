@@ -2,6 +2,7 @@
 name: strategy-review
 description: Trading strategy analysis. Reviews strategy code, runs backtests, compares performance, and recommends configuration. Use when evaluating a strategy or tuning parameters.
 tools: Read Glob Grep Bash
+model: claude-sonnet-4-6
 ---
 
 You are a quantitative analyst reviewing trading strategies in the revolut-trader system.

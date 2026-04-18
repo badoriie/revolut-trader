@@ -224,11 +224,37 @@ Each strategy's 1Password item (`revolut-trader-strategy-{name}`) accepts option
 | `range_reversion` | `BUY_ZONE`, `SELL_ZONE`, `RSI_PERIOD`, `RSI_CONFIRMATION_OVERSOLD`, `RSI_CONFIRMATION_OVERBOUGHT`, `MIN_RANGE_PCT`               |
 | `multi_strategy`  | `MIN_CONSENSUS`, `WEIGHT_MOMENTUM`, `WEIGHT_BREAKOUT`, `WEIGHT_MARKET_MAKING`, `WEIGHT_MEAN_REVERSION`, `WEIGHT_RANGE_REVERSION` |
 
+The following two fields are also available on every strategy item and control the adaptive close behaviour:
+
+| Field                      | Type             | Default | Description                                                                               |
+| -------------------------- | ---------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `USE_LIMIT_CLOSE`          | `true` / `false` | `false` | Use a LIMIT order for take-profit exits (0% maker fee). Stop-loss always uses MARKET.     |
+| `CLOSE_LIMIT_TIMEOUT_SECS` | positive integer | `30`    | Seconds to wait for the LIMIT to fill before cancelling and falling back to MARKET.        |
+
 ```bash
 # Example: shorten the momentum EMA periods for faster signals
 op item edit revolut-trader-strategy-momentum --vault revolut-trader \
   FAST_PERIOD[text]="8" SLOW_PERIOD[text]="20"
+
+# Example: enable limit close for momentum with a 45-second timeout
+op item edit revolut-trader-strategy-momentum --vault revolut-trader \
+  USE_LIMIT_CLOSE[text]="true" \
+  CLOSE_LIMIT_TIMEOUT_SECS[text]="45"
 ```
+
+These fields are loaded by `Settings._load_strategy_bool` and `Settings._load_strategy_int` respectively and stored on the `StrategyConfig` dataclass (`src/config.py`) as `use_limit_close: bool` and `close_limit_timeout_secs: int`.
+
+### Adaptive close execution (`src/execution/executor.py`)
+
+**`Position.strategy`** (`src/models/domain.py`) — optional `str | None` field added to `Position`. Set to `order.strategy` when a new position is opened in `_update_positions`. This lets the executor look up the originating strategy's config at close time, enabling per-strategy close behaviour without passing extra context.
+
+**`OrderExecutor._attempt_limit_close(close_order, timeout_secs)`** — places the supplied LIMIT `Order`, then polls `GET /orders/{id}` every 2 seconds until the order is filled or `timeout_secs` elapses. On timeout the limit is cancelled and a MARKET order is placed as a fallback. In paper mode the limit fills immediately without polling. Returns the filled `Order` (either the limit or the market fallback).
+
+**`OrderExecutor._close_position`** — updated to choose the order type based on `reason` and the strategy config:
+
+- `reason == "stop_loss"`: always MARKET (risk safety — no opt-out).
+- `reason == "take_profit"` and `position.strategy` resolves to a `StrategyConfig` with `use_limit_close=True`: delegates to `_attempt_limit_close`.
+- All other cases: MARKET as before.
 
 ______________________________________________________________________
 

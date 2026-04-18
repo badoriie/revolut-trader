@@ -2,6 +2,7 @@
 name: code-improvement
 description: Code quality and modernization review. Checks dependencies, reviews patterns, identifies security issues, produces a prioritized improvement backlog. Use for periodic quality reviews or before releases.
 tools: Read Glob Grep Bash WebFetch WebSearch
+model: claude-sonnet-4-6
 ---
 
 Perform a comprehensive code quality and modernization review. Identify opportunities for improvement across dependencies, tooling, testing, performance, and code quality.

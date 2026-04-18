@@ -37,6 +37,7 @@ class BreakoutStrategy(BaseStrategy):
         rsi_period: int = 14,
         rsi_overbought: float = 75.0,
         rsi_oversold: float = 25.0,
+        volume_mult: float = 1.5,
     ):
         """Initialise the Breakout strategy.
 
@@ -74,10 +75,14 @@ class BreakoutStrategy(BaseStrategy):
         self.rsi_oversold = Decimal(
             str(scfg.rsi_oversold if scfg and scfg.rsi_oversold is not None else rsi_oversold)
         )
+        self.volume_mult = Decimal(
+            str(scfg.volume_mult if scfg and scfg.volume_mult is not None else volume_mult)
+        )
 
         # Per-symbol state
         self.price_history: dict[str, deque[Decimal]] = {}
         self.rsi_indicator: dict[str, RSI] = {}
+        self.volume_history: dict[str, deque[Decimal]] = {}
 
     async def analyze(
         self,
@@ -102,8 +107,10 @@ class BreakoutStrategy(BaseStrategy):
         if symbol not in self.price_history:
             self.price_history[symbol] = deque(maxlen=self.lookback_period)
             self.rsi_indicator[symbol] = RSI(self.rsi_period)
+            self.volume_history[symbol] = deque(maxlen=self.lookback_period)
 
         current_price = market_data.last
+        current_volume = market_data.volume_24h
         rsi = self.rsi_indicator[symbol].update(current_price)
 
         # Need a full prior-history window AND a warmed-up RSI before producing signals.
@@ -114,6 +121,7 @@ class BreakoutStrategy(BaseStrategy):
             or not self.rsi_indicator[symbol].is_ready
         ):
             self.price_history[symbol].append(current_price)
+            self.volume_history[symbol].append(current_volume)
             logger.debug(
                 f"{symbol}: Breakout strategy warming up "
                 f"({len(self.price_history[symbol])}/{self.lookback_period} prices, "
@@ -121,30 +129,31 @@ class BreakoutStrategy(BaseStrategy):
             )
             return None
 
-        # Compute range from the established window (prior bars only)
+        # Compute range and rolling average volume from the established window (prior bars only)
         prices = list(self.price_history[symbol])
         rolling_high = max(prices)
         rolling_low = min(prices)
+        avg_volume = sum(self.volume_history[symbol]) / Decimal(len(self.volume_history[symbol]))
 
-        # Now slide the window forward to include the current bar
+        # Slide both windows forward to include the current bar
         self.price_history[symbol].append(current_price)
+        self.volume_history[symbol].append(current_volume)
+
+        # Volume confirmation: current volume must exceed volume_mult × rolling average
+        volume_ratio = current_volume / avg_volume if avg_volume > 0 else Decimal("0")
+        volume_confirmed = volume_ratio >= self.volume_mult
 
         # Breakout levels: price must exceed the range by at least the threshold
         breakout_high = rolling_high * (Decimal("1") + self.breakout_threshold)
         breakout_low = rolling_low * (Decimal("1") - self.breakout_threshold)
 
-        # Find existing position for this symbol
-        existing_position = None
-        for pos in positions:
-            if pos.symbol == symbol:
-                existing_position = pos
-                break
+        existing_position = next((p for p in positions if p.symbol == symbol), None)
 
         signal_type = "HOLD"
         strength = 0.0
         reason = ""
 
-        if current_price > breakout_high and rsi < self.rsi_overbought:
+        if current_price > breakout_high and rsi < self.rsi_overbought and volume_confirmed:
             if not existing_position or existing_position.side == OrderSide.SELL:
                 signal_type = "BUY"
                 # Strength: 0.5 right at the breakout level, scales toward 1.0
@@ -156,12 +165,14 @@ class BreakoutStrategy(BaseStrategy):
                 )
                 reason = (
                     f"Upward breakout: {current_price:.2f} > rolling high {rolling_high:.2f} "
-                    f"(+{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}"
+                    f"(+{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}, "
+                    f"volume {float(volume_ratio):.1f}× avg"
                 )
 
         elif (
             current_price < breakout_low
             and rsi > self.rsi_oversold
+            and volume_confirmed
             and (not existing_position or existing_position.side == OrderSide.BUY)
         ):
             signal_type = "SELL"
@@ -172,7 +183,8 @@ class BreakoutStrategy(BaseStrategy):
             )
             reason = (
                 f"Downward breakout: {current_price:.2f} < rolling low {rolling_low:.2f} "
-                f"(-{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}"
+                f"(-{self.breakout_threshold:.2%} buffer), RSI {rsi:.1f}, "
+                f"volume {float(volume_ratio):.1f}× avg"
             )
 
         if signal_type == "HOLD":
@@ -192,6 +204,7 @@ class BreakoutStrategy(BaseStrategy):
                 "breakout_low": float(breakout_low),
                 "rsi": float(rsi),
                 "current_price": float(current_price),
+                "volume_ratio": float(volume_ratio),
             },
         )
 
@@ -204,4 +217,5 @@ class BreakoutStrategy(BaseStrategy):
             "rsi_period": self.rsi_period,
             "rsi_overbought": float(self.rsi_overbought),
             "rsi_oversold": float(self.rsi_oversold),
+            "volume_mult": float(self.volume_mult),
         }
