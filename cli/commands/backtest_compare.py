@@ -27,7 +27,7 @@ from cli.utils.env_detect import set_env as _set_env
 
 _set_env()
 
-from src.api import create_api_client
+from cli.utils.backtest_args import create_backtest_api_client, resolve_backtest_params
 from src.backtest.engine import BacktestEngine, BacktestResults
 from src.config import RiskLevel, StrategyType, settings
 from src.utils.db_persistence import DatabasePersistence
@@ -193,15 +193,13 @@ async def run_compare(args) -> None:
     strategies = args.strategies.split(",") if args.strategies else ALL_STRATEGIES
     effective_risk = args.risk or settings.risk_level.value
     risk_levels = args.risk_levels.split(",") if args.risk_levels else [effective_risk]
-    raw_pairs = args.pairs if args.pairs else ",".join(settings.trading_pairs)
-    symbols = raw_pairs.split(",")
-    initial_capital = Decimal(
-        str(args.capital if args.capital is not None else settings.paper_initial_capital)
-    )
-    effective_days = args.days if args.days is not None else settings.backtest_days
-    effective_interval = args.interval if args.interval is not None else settings.backtest_interval
+    params = resolve_backtest_params(args)
+    symbols = params["symbols"]
+    initial_capital: Decimal = params["initial_capital"]
+    effective_days: int = params["effective_days"]
+    effective_interval: int = params["effective_interval"]
 
-    api_client = create_api_client(settings.environment)
+    api_client = create_backtest_api_client(args)
     await api_client.initialize()
     db = DatabasePersistence()
 
@@ -381,6 +379,7 @@ def run_compare_cli(
     interval: int | None = None,
     capital: float | None = None,
     log_level: str | None = None,
+    real_data: bool = False,
 ) -> None:
     """Run comparison backtest with the given parameters.
 
@@ -396,6 +395,7 @@ def run_compare_cli(
         interval: Candle interval in minutes.
         capital: Initial capital in EUR.
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
+        real_data: If True, use the real API client even on a dev branch.
     """
     from types import SimpleNamespace
 
@@ -411,6 +411,7 @@ def run_compare_cli(
         interval=interval,
         capital=capital,
         log_level=log_level,
+        real_data=real_data,
     )
 
     try:

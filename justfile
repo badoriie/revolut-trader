@@ -116,13 +116,13 @@ check: lint format typecheck security deps-audit test
 env:
     @uv run python -c "from cli.utils.env_detect import detect_env; env = detect_env(); print(f'Current environment: {env}')"
 
-# Run backtest matrix in dev environment (mock API — use on feature branches)
-backtest-dev:
+# Run backtest matrix with mock API (fast, any branch)
+backtest:
     @uv run revt backtest --matrix --days 7
 
-# Run backtest matrix in integration environment (real API, paper mode — use on main branch)
-backtest-int:
-    @uv run revt backtest --matrix --days 30
+# Run backtest matrix with real API data (any branch — requires 1Password int credentials)
+backtest-real-data:
+    @uv run revt backtest --matrix --days 7 --real-data
 
 # Generate class diagrams using pyreverse
 diagrams:

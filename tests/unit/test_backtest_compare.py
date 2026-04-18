@@ -300,7 +300,7 @@ class TestRunCompare:
     @pytest.mark.asyncio
     @patch("cli.commands.backtest_compare.DatabasePersistence")
     @patch("cli.commands.backtest_compare.BacktestEngine")
-    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.utils.backtest_args.create_api_client")
     @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_with_custom_args(
         self,
@@ -357,7 +357,7 @@ class TestRunCompare:
     @pytest.mark.asyncio
     @patch("cli.commands.backtest_compare.DatabasePersistence")
     @patch("cli.commands.backtest_compare.BacktestEngine")
-    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.utils.backtest_args.create_api_client")
     @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_defaults_use_all_strategies(
         self,
@@ -396,7 +396,7 @@ class TestRunCompare:
     @pytest.mark.asyncio
     @patch("cli.commands.backtest_compare.DatabasePersistence")
     @patch("cli.commands.backtest_compare.BacktestEngine")
-    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.utils.backtest_args.create_api_client")
     @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_multiple_risk_levels(
         self,
@@ -435,7 +435,7 @@ class TestRunCompare:
     @pytest.mark.asyncio
     @patch("cli.commands.backtest_compare.DatabasePersistence")
     @patch("cli.commands.backtest_compare.BacktestEngine")
-    @patch("cli.commands.backtest_compare.create_api_client")
+    @patch("cli.utils.backtest_args.create_api_client")
     @patch("cli.commands.backtest_compare._print_comparison_table")
     async def test_api_client_closed_on_error(
         self,
