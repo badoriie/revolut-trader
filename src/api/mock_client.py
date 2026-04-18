@@ -660,7 +660,9 @@ class MockRevolutAPIClient:
         if n_candles <= 0:
             return []
 
-        volatility = base_price * 0.002  # ±0.2% noise per candle
+        volatility = (
+            base_price * 0.008
+        )  # ±0.8% noise per candle — realistic intraday crypto volatility
 
         candles = []
         for i in range(n_candles):

@@ -7,6 +7,8 @@
 ```bash
 # Development
 just install | test | lint | format | typecheck | security | check | clean
+just backtest-dev   # matrix (7d, mock API — feature branches)
+just backtest-int   # matrix (30d, real API — main branch)
 
 # Trading bot
 revt run [--strategy S] [--risk R] [--mode live] [--confirm-live]

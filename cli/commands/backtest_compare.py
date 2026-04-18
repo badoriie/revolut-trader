@@ -268,7 +268,7 @@ async def run_compare(args) -> None:
         _print_comparison_table(comparison_rows)
 
         logger.info(
-            f"All {total_runs} backtest runs saved to database. View with: make db-backtests"
+            f"All {total_runs} backtest runs saved to database. View with: revt db backtests"
         )
 
     finally:

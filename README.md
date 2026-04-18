@@ -357,6 +357,8 @@ just typecheck        # pyright src/ cli/
 just check            # all of the above + tests
 just pre-commit       # run all pre-commit hooks
 just clean            # remove cache files
+just backtest-dev     # matrix backtest, 7d mock API (feature branches)
+just backtest-int     # matrix backtest, 30d real API (main branch)
 just --list           # show all available commands
 ```
 

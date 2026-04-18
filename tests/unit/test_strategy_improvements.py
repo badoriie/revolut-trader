@@ -306,11 +306,16 @@ class TestFeeFloor:
         assert not self._make_strat()._above_fee_floor(Decimal("0"))
 
     @pytest.mark.asyncio
-    async def test_momentum_buy_blocked_when_ema_gap_below_fee_floor(self):
-        """Momentum must not emit BUY when EMA gap is too small to cover round-trip fees."""
-        # Prices oscillate in a tiny 0.05% band — EMA cross will happen but gap < 0.54% floor
+    async def test_momentum_buy_emits_at_crossover_with_minimum_strength(self):
+        """Momentum emits BUY at EMA crossover with strength ≥ 0.7 regardless of gap size.
+
+        EMA gaps are inherently near-zero at the exact crossover bar (definition of crossover).
+        The strategy must still emit a signal — the fee-floor check that blocked tiny-gap
+        crossovers was incorrect because it prevented the strategy from ever trading.
+        Signal strength has a 0.7 base to clear the default min-signal-strength threshold.
+        """
         strat = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0)
-        # Micro-oscillation around 100: spread is < 0.5%, so EMA gap at cross is tiny
+        # Micro-oscillation around 100: EMA cross will happen with a tiny gap
         prices = [100, 100.05, 99.98, 100.06, 100.02, 100.08, 100.04, 100.10, 100.06, 100.12]
         buy_signals = []
         for p in prices:
@@ -323,6 +328,8 @@ class TestFeeFloor:
             if sig and sig.signal_type == "BUY":
                 buy_signals.append(sig)
 
-        assert not buy_signals, (
-            "Momentum must not emit BUY when EMA gap is below the fee floor (0.54%)"
-        )
+        assert buy_signals, "Momentum must emit BUY on an EMA crossover"
+        for sig in buy_signals:
+            assert sig.strength >= 0.7, (
+                f"BUY signal strength {sig.strength:.3f} must be ≥ 0.7 to clear min-signal-strength"
+            )
