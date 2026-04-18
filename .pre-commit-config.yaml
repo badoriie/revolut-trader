@@ -75,6 +75,13 @@ repos:
         types: [python]
         pass_filenames: false
 
+      - id: deps-audit
+        name: dependency vulnerability audit
+        entry: bash .claude/hooks/deps-audit.sh --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
   # ============================================================================
   # STAGE 5: TESTS
   # Runs ONLY if ALL above stages pass (1+2+3+4)

@@ -91,8 +91,21 @@ typecheck:
 security:
     @uv run bandit -c pyproject.toml -r src/ cli/
 
-# Run all quality checks (lint, format, typecheck, security, test)
-check: lint format typecheck security test
+# Check dependencies for known vulnerabilities (Dependabot alerts + pip-audit)
+deps-audit:
+    @bash .claude/hooks/deps-audit.sh --check
+
+# Upgrade vulnerable packages within semver constraints, then re-audit
+deps-update:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash .claude/hooks/deps-audit.sh --fix
+    echo ""
+    echo "Review uv.lock changes, then commit:"
+    echo "  git add uv.lock && git commit -m 'chore(deps): upgrade vulnerable packages'"
+
+# Run all quality checks (lint, format, typecheck, security, deps-audit, test)
+check: lint format typecheck security deps-audit test
     @echo "All quality checks passed"
 
 # ============================================================================
