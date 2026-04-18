@@ -103,6 +103,14 @@ check: lint format typecheck security test
 env:
     @uv run python -c "from cli.utils.env_detect import detect_env; env = detect_env(); print(f'Current environment: {env}')"
 
+# Run backtest matrix in dev environment (mock API — use on feature branches)
+backtest-dev:
+    @uv run revt backtest --matrix --days 7
+
+# Run backtest matrix in integration environment (real API, paper mode — use on main branch)
+backtest-int:
+    @uv run revt backtest --matrix --days 30
+
 # Generate class diagrams using pyreverse
 diagrams:
     #!/usr/bin/env bash

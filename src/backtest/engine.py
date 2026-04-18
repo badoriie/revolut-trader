@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from collections import deque
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -232,6 +233,10 @@ class BacktestEngine:
         # Running peak for O(1) drawdown tracking
         self._equity_peak: Decimal = initial_capital
 
+        # Rolling 24h high/low buffers — keyed by symbol, sized in run()
+        self._high_low_buffer: dict[str, deque[tuple[Decimal, Decimal]]] = {}
+        self._bars_per_24h: int = 24  # updated when run() is called with the actual interval
+
     # ------------------------------------------------------------------
     # Strategy factory
     # ------------------------------------------------------------------
@@ -328,13 +333,24 @@ class BacktestEngine:
         """Convert a ``CandleData`` to a ``MarketData`` snapshot.
 
         The close price is used as the reference price.  A synthetic bid/ask
-        spread of ``SPREAD_PCT`` (0.3 %) is applied symmetrically around the
+        spread of ``SPREAD_PCT`` (0.1 %) is applied symmetrically around the
         close — realistic for liquid BTC/ETH pairs on Revolut X.
 
         The timestamp is UTC-aware, matching what the live bot produces.
         """
         close = candle.close_price
         half_spread = close * SPREAD_PCT / 2
+
+        # Maintain a per-symbol rolling window of (high, low) pairs covering
+        # the last 24 hours.  This gives strategies an accurate 24h range
+        # instead of the single-candle high/low.
+        buf = self._high_low_buffer.get(symbol)
+        if buf is None:
+            buf = deque(maxlen=self._bars_per_24h)
+            self._high_low_buffer[symbol] = buf
+        buf.append((candle.high_price, candle.low_price))
+        high_24h = max(h for h, _ in buf)
+        low_24h = min(lo for _, lo in buf)
 
         return MarketData(
             symbol=symbol,
@@ -343,8 +359,8 @@ class BacktestEngine:
             ask=close + half_spread,
             last=close,
             volume_24h=candle.volume_decimal,
-            high_24h=candle.high_price,
-            low_24h=candle.low_price,
+            high_24h=high_24h,
+            low_24h=low_24h,
         )
 
     # ------------------------------------------------------------------
@@ -781,6 +797,9 @@ class BacktestEngine:
         logger.info(f"Symbols:         {', '.join(symbols)}")
         logger.info(f"Period:          {days}d × {interval}min candles")
         logger.info("=" * 60)
+
+        self._bars_per_24h = max(1, 24 * 60 // interval)
+        self._high_low_buffer.clear()
 
         indexed: dict[str, dict[int, CandleData]] = {}
         for symbol in symbols:

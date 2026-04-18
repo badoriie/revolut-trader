@@ -70,9 +70,10 @@ class MomentumStrategy(BaseStrategy):
     ) -> tuple[str, float, str]:
         """Determine signal type, strength, and reason from indicator values.
 
-        Entry signals (BUY/SELL via EMA cross) fire only on the bar of the cross
-        and are further filtered by the fee floor — the EMA gap must be large enough
-        to cover the round-trip taker fee before an entry is worth taking.
+        Entry signals (BUY/SELL via EMA cross) fire only on the bar of the cross.
+        Strength starts at 0.5 and scales with the EMA gap — EMA gaps are tiny at
+        the exact crossover bar and grow afterward, so a floor of 0.5 is necessary
+        to clear the min-signal-strength filter.
 
         RSI-based exits fire every bar regardless of cross state.
 
@@ -90,24 +91,27 @@ class MomentumStrategy(BaseStrategy):
         can_buy = not existing_position or existing_position.side == OrderSide.SELL
         can_sell = not existing_position or existing_position.side == OrderSide.BUY
 
-        # Entry: fire only on the crossing bar and only when the gap clears the fee floor
+        # Entry: fire only on the crossing bar.
+        # Strength: 0.5 base (clears default min-strength filter) + EMA gap contribution.
         if just_crossed_bullish and rsi < self.rsi_overbought and can_buy:
-            ma_diff = (fast_ma - slow_ma) / slow_ma
-            if self._above_fee_floor(ma_diff):
-                return (
-                    "BUY",
-                    min(1.0, float(ma_diff) * 10),
-                    f"Bullish cross: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-                )
+            ma_diff = float((fast_ma - slow_ma) / slow_ma)
+            # Base 0.7 ensures entry clears the default min-signal-strength of 0.6; EMA gap
+            # grows after the cross so the base dominates at crossover time.
+            strength = min(1.0, 0.7 + ma_diff * 30)
+            return (
+                "BUY",
+                strength,
+                f"Bullish cross: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+            )
 
         if just_crossed_bearish and rsi > self.rsi_oversold and can_sell:
-            ma_diff = (slow_ma - fast_ma) / slow_ma
-            if self._above_fee_floor(ma_diff):
-                return (
-                    "SELL",
-                    min(1.0, float(ma_diff) * 10),
-                    f"Bearish cross: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-                )
+            ma_diff = float((slow_ma - fast_ma) / slow_ma)
+            strength = min(1.0, 0.7 + ma_diff * 30)
+            return (
+                "SELL",
+                strength,
+                f"Bearish cross: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+            )
 
         # Exit signals based on RSI extremes — fire every bar, not gated by cross event
         if (

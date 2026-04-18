@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "onepassword": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with", "mcp",
+        ".claude/mcp_servers/onepassword/server.py"
+      ]
+    }
+  }
+}

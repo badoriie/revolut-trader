@@ -1,7 +1,8 @@
 {
   "autoMemoryEnabled": true,
   "enabledMcpjsonServers": [
-    "github"
+    "github",
+    "onepassword"
   ],
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,

@@ -156,12 +156,12 @@ class BreakoutStrategy(BaseStrategy):
         if current_price > breakout_high and rsi < self.rsi_overbought and volume_confirmed:
             if not existing_position or existing_position.side == OrderSide.SELL:
                 signal_type = "BUY"
-                # Strength: 0.5 right at the breakout level, scales toward 1.0
-                # as price extends further beyond it.
+                # Strength: 0.7 at the breakout level (volume-confirmed breakout warrants
+                # high confidence), scales toward 1.0 as price extends further.
                 excess = (current_price - breakout_high) / breakout_high
                 strength = min(
                     1.0,
-                    0.5 + 0.5 * float(excess) / float(self.breakout_threshold),
+                    0.7 + 0.3 * float(excess) / float(self.breakout_threshold),
                 )
                 reason = (
                     f"Upward breakout: {current_price:.2f} > rolling high {rolling_high:.2f} "
@@ -179,7 +179,7 @@ class BreakoutStrategy(BaseStrategy):
             excess = (breakout_low - current_price) / breakout_low
             strength = min(
                 1.0,
-                0.5 + 0.5 * float(excess) / float(self.breakout_threshold),
+                0.7 + 0.3 * float(excess) / float(self.breakout_threshold),
             )
             reason = (
                 f"Downward breakout: {current_price:.2f} < rolling low {rolling_low:.2f} "
