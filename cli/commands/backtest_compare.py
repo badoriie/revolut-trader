@@ -201,7 +201,8 @@ async def run_compare(args) -> None:
     effective_days = args.days if args.days is not None else settings.backtest_days
     effective_interval = args.interval if args.interval is not None else settings.backtest_interval
 
-    api_client = create_api_client(settings.environment)
+    real_data = getattr(args, "real_data", False)
+    api_client = create_api_client(settings.environment, force_real=real_data)
     await api_client.initialize()
     db = DatabasePersistence()
 
@@ -381,6 +382,7 @@ def run_compare_cli(
     interval: int | None = None,
     capital: float | None = None,
     log_level: str | None = None,
+    real_data: bool = False,
 ) -> None:
     """Run comparison backtest with the given parameters.
 
@@ -396,6 +398,7 @@ def run_compare_cli(
         interval: Candle interval in minutes.
         capital: Initial capital in EUR.
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR).
+        real_data: If True, use the real API client even on a dev branch.
     """
     from types import SimpleNamespace
 
@@ -411,6 +414,7 @@ def run_compare_cli(
         interval=interval,
         capital=capital,
         log_level=log_level,
+        real_data=real_data,
     )
 
     try:

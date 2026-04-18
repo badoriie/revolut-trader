@@ -414,6 +414,8 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     logger.remove()
     logger.add(sys.stderr, level=args.log_level or "INFO")
 
+    real_data = getattr(args, "real_data", False)
+
     if args.matrix:
         print("\n  STRATEGY × RISK LEVEL MATRIX BACKTEST\n")
         _run_compare_cli(
@@ -425,6 +427,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             risk_levels="conservative,moderate,aggressive",
             strategies=None,
             log_level=args.log_level,
+            real_data=real_data,
         )
     elif args.compare:
         _run_compare_cli(
@@ -436,6 +439,7 @@ def cmd_backtest(args: argparse.Namespace) -> None:
             risk_levels=None,
             strategies=getattr(args, "strategies", None),
             log_level=args.log_level,
+            real_data=real_data,
         )
     else:
         _backtest_single(args)
@@ -473,6 +477,7 @@ def _run_compare_cli(
     risk_levels: str | None,
     strategies: str | None,
     log_level: str | None,
+    real_data: bool = False,
 ) -> None:
     """Invoke backtest_compare.run_compare_cli() directly with parameters.
 
@@ -489,6 +494,7 @@ def _run_compare_cli(
         risk_levels=risk_levels,
         strategies=strategies,
         log_level=log_level,
+        real_data=real_data,
     )
 
 
@@ -1697,6 +1703,7 @@ examples:
   revt backtest                               30-day backtest
   revt backtest --compare                     compare all strategies side-by-side
   revt backtest --matrix                      all strategies × all risk levels
+  revt backtest --matrix --real-data          matrix with real API data (any branch)
 
   # API Commands (requires int or prod env — switch to main or tagged commit)
   revt api test                               verify API connection is working
@@ -1847,6 +1854,13 @@ environment detection (run / telegram — not overridable):
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default=None,
         help="Logging level (default: LOG_LEVEL from 1Password config, or INFO)",
+    )
+    p_bt.add_argument(
+        "--real-data",
+        dest="real_data",
+        action="store_true",
+        default=False,
+        help="Use real API data even on a dev branch (feature branch development)",
     )
     p_bt.set_defaults(func=cmd_backtest)
 

@@ -639,3 +639,11 @@ class TestCreateAPIClient:
 
         client = create_api_client(Environment.PROD)
         assert isinstance(client, RevolutAPIClient)
+
+    def test_force_real_on_dev_returns_real_client(self):
+        """force_real=True bypasses mock even in dev — for real-data backtests on feature branches."""
+        from src.api import create_api_client
+        from src.api.client import RevolutAPIClient
+
+        client = create_api_client(Environment.DEV, force_real=True)
+        assert isinstance(client, RevolutAPIClient)

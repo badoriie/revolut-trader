@@ -45,7 +45,8 @@ async def run_backtest(args) -> None:
     effective_days = args.days if args.days is not None else settings.backtest_days
     effective_interval = args.interval if args.interval is not None else settings.backtest_interval
 
-    api_client = create_api_client(settings.environment)
+    real_data = getattr(args, "real_data", False)
+    api_client = create_api_client(settings.environment, force_real=real_data)
     await api_client.initialize()
 
     engine = BacktestEngine(
