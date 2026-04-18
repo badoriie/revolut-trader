@@ -160,6 +160,9 @@ class StrategyConfig:
     breakout_threshold: float | None = None
     """Fractional distance price must exceed the range to confirm a breakout (default 0.002 = 0.2%)."""
 
+    volume_mult: float | None = None
+    """Volume confirmation multiplier for breakout: current volume must exceed this multiple of the rolling average (default 1.5)."""
+
     # range_reversion
     buy_zone: float | None = None
     """Bottom fraction of daily range that triggers buy signals (default 0.20 = bottom 20%)."""
@@ -866,6 +869,9 @@ class Settings(BaseSettings):
         return {
             "breakout_threshold": self._load_strategy_float(
                 op, f"{prefix}_BREAKOUT_THRESHOLD", name, "BREAKOUT_THRESHOLD"
+            ),
+            "volume_mult": self._load_strategy_float(
+                op, f"{prefix}_VOLUME_MULT", name, "VOLUME_MULT"
             ),
         }
 

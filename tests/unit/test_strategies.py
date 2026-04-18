@@ -128,11 +128,11 @@ class TestMomentumStrategy:
 
     @pytest.mark.asyncio
     async def test_buy_signal_on_strongly_rising_prices(self):
-        """Oscillating uptrend keeps RSI moderate while fast EMA rises above slow EMA → BUY."""
+        """Oscillating uptrend with large swings produces EMA gap > fee floor → BUY."""
         strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_overbought=90.0)
         portfolio_value = Decimal("10000")
-        # Oscillating uptrend: losses interspersed prevent RSI from hitting 100
-        prices = [50000, 51000, 49500, 51500, 50500, 52000, 51000, 53000]
+        # Large-amplitude oscillation (~12%): RSI stays moderate AND EMA gap clears 0.54% fee floor
+        prices = [50000, 56000, 48000, 58000, 50000, 62000, 54000, 66000, 58000, 70000]
         buy_signals = []
         for p in prices:
             md = make_market_data(last=Decimal(str(p)))
@@ -148,11 +148,11 @@ class TestMomentumStrategy:
 
     @pytest.mark.asyncio
     async def test_sell_signal_on_strongly_falling_prices(self):
-        """Oscillating downtrend keeps RSI moderate while fast EMA falls below slow EMA → SELL."""
+        """Oscillating downtrend with large swings produces EMA gap > fee floor → SELL."""
         strategy = MomentumStrategy(fast_period=3, slow_period=5, rsi_period=3, rsi_oversold=10.0)
         portfolio_value = Decimal("10000")
-        # Oscillating downtrend: gains interspersed prevent RSI from hitting 0
-        prices = [50000, 49000, 50500, 48500, 49500, 48000, 49000, 47000]
+        # Large-amplitude oscillation (~12%): RSI stays moderate AND EMA gap clears fee floor
+        prices = [50000, 44000, 52000, 42000, 50000, 38000, 46000, 34000, 42000, 30000]
         sell_signals = []
         for p in prices:
             md = make_market_data(last=Decimal(str(p)))
@@ -716,7 +716,7 @@ class TestBreakoutStrategy:
 
     @pytest.mark.asyncio
     async def test_buy_signal_on_upward_breakout(self):
-        """Price breaks above rolling high + threshold → BUY."""
+        """Price breaks above rolling high + threshold with high volume → BUY."""
         # rsi_period=3 so RSI warms up within the 5-price lookback window
         strategy = BreakoutStrategy(
             lookback_period=5,
@@ -729,8 +729,8 @@ class TestBreakoutStrategy:
         for p in (50000, 49500, 50000, 49500, 50000):
             md = make_market_data(last=Decimal(str(p)))
             await strategy.analyze("BTC-EUR", md, [], portfolio_value)
-        # Break above: 50000 × 1.001 = 50050; price = 50100 clears it
-        md = make_market_data(last=Decimal("50100"))
+        # Break above with 2× average volume to clear the volume confirmation gate
+        md = make_market_data(last=Decimal("50100"), volume_24h=Decimal("2000"))
         result = await strategy.analyze("BTC-EUR", md, [], portfolio_value)
         assert result is not None
         assert result.signal_type == "BUY"
@@ -753,8 +753,8 @@ class TestBreakoutStrategy:
         for p in (50000, 50500, 50000, 50500, 50000):
             md = make_market_data(last=Decimal(str(p)))
             await strategy.analyze("BTC-EUR", md, [], portfolio_value)
-        # Break below: 50000 × (1 - 0.001) = 49950; price = 49900 clears it
-        md = make_market_data(last=Decimal("49900"))
+        # Break below with 2× average volume to clear the volume confirmation gate
+        md = make_market_data(last=Decimal("49900"), volume_24h=Decimal("2000"))
         result = await strategy.analyze("BTC-EUR", md, [], portfolio_value)
         assert result is not None
         assert result.signal_type == "SELL"
@@ -835,7 +835,7 @@ class TestBreakoutStrategy:
 
     @pytest.mark.asyncio
     async def test_metadata_contains_expected_fields(self):
-        """Signal metadata includes rolling range and RSI values."""
+        """Signal metadata includes rolling range, RSI, and volume_ratio."""
         strategy = BreakoutStrategy(
             lookback_period=5,
             breakout_threshold=0.001,
@@ -846,7 +846,7 @@ class TestBreakoutStrategy:
         for p in (50000, 49500, 50000, 49500, 50000):
             md = make_market_data(last=Decimal(str(p)))
             await strategy.analyze("BTC-EUR", md, [], portfolio_value)
-        md = make_market_data(last=Decimal("50100"))
+        md = make_market_data(last=Decimal("50100"), volume_24h=Decimal("2000"))
         result = await strategy.analyze("BTC-EUR", md, [], portfolio_value)
         assert result is not None
         assert "rolling_high" in result.metadata
@@ -854,6 +854,7 @@ class TestBreakoutStrategy:
         assert "rsi" in result.metadata
         assert "breakout_high" in result.metadata
         assert "breakout_low" in result.metadata
+        assert "volume_ratio" in result.metadata
 
     @pytest.mark.asyncio
     async def test_per_symbol_state_isolation(self):

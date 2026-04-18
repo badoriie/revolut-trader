@@ -56,48 +56,60 @@ class MomentumStrategy(BaseStrategy):
         self.slow_ema: dict[str, EMA] = {}
         self.rsi_indicator: dict[str, RSI] = {}
 
+        # Cross-event state: True = fast was above slow on the previous bar, None = no prior bar
+        self._ema_was_bullish: dict[str, bool | None] = {}
+
     def _determine_signal(
         self,
         fast_ma: Decimal,
         slow_ma: Decimal,
         rsi: Decimal,
         existing_position: Position | None,
+        just_crossed_bullish: bool,
+        just_crossed_bearish: bool,
     ) -> tuple[str, float, str]:
         """Determine signal type, strength, and reason from indicator values.
 
+        Entry signals (BUY/SELL via EMA cross) fire only on the bar of the cross
+        and are further filtered by the fee floor — the EMA gap must be large enough
+        to cover the round-trip taker fee before an entry is worth taking.
+
+        RSI-based exits fire every bar regardless of cross state.
+
         Args:
-            fast_ma:           Fast EMA value.
-            slow_ma:           Slow EMA value.
-            rsi:               Current RSI value.
-            existing_position: Existing position for this symbol (or ``None``).
+            fast_ma:              Fast EMA value.
+            slow_ma:              Slow EMA value.
+            rsi:                  Current RSI value.
+            existing_position:    Existing position for this symbol (or ``None``).
+            just_crossed_bullish: True only on the bar fast EMA crossed above slow EMA.
+            just_crossed_bearish: True only on the bar fast EMA crossed below slow EMA.
 
         Returns:
             ``(signal_type, strength, reason)`` tuple.
         """
-        is_bullish = fast_ma > slow_ma and rsi < self.rsi_overbought
-        is_bearish = fast_ma < slow_ma and rsi > self.rsi_oversold
         can_buy = not existing_position or existing_position.side == OrderSide.SELL
         can_sell = not existing_position or existing_position.side == OrderSide.BUY
 
-        # Bullish: Fast MA crosses above Slow MA and RSI not overbought
-        if is_bullish and can_buy:
+        # Entry: fire only on the crossing bar and only when the gap clears the fee floor
+        if just_crossed_bullish and rsi < self.rsi_overbought and can_buy:
             ma_diff = (fast_ma - slow_ma) / slow_ma
-            return (
-                "BUY",
-                min(1.0, float(ma_diff) * 10),
-                f"Bullish momentum: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-            )
+            if self._above_fee_floor(ma_diff):
+                return (
+                    "BUY",
+                    min(1.0, float(ma_diff) * 10),
+                    f"Bullish cross: Fast MA {fast_ma:.2f} > Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+                )
 
-        # Bearish: Fast MA crosses below Slow MA and RSI not oversold
-        if is_bearish and can_sell:
+        if just_crossed_bearish and rsi > self.rsi_oversold and can_sell:
             ma_diff = (slow_ma - fast_ma) / slow_ma
-            return (
-                "SELL",
-                min(1.0, float(ma_diff) * 10),
-                f"Bearish momentum: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
-            )
+            if self._above_fee_floor(ma_diff):
+                return (
+                    "SELL",
+                    min(1.0, float(ma_diff) * 10),
+                    f"Bearish cross: Fast MA {fast_ma:.2f} < Slow MA {slow_ma:.2f}, RSI {rsi:.1f}",
+                )
 
-        # Exit signals based on RSI extremes
+        # Exit signals based on RSI extremes — fire every bar, not gated by cross event
         if (
             existing_position
             and existing_position.side == OrderSide.BUY
@@ -140,11 +152,26 @@ class MomentumStrategy(BaseStrategy):
             and self.rsi_indicator[symbol].is_ready
         ):
             logger.debug(f"{symbol}: Indicators warming up...")
+            self._ema_was_bullish[symbol] = None
             return None
+
+        is_bullish_now = fast_ma > slow_ma
+        prev_bullish = self._ema_was_bullish.get(symbol)
+        self._ema_was_bullish[symbol] = is_bullish_now
+
+        # Treat the first ready bar (prev=None) the same as a state change so
+        # the initial cross isn't silently swallowed by the warmup window.
+        just_crossed_bullish = (prev_bullish is not True) and is_bullish_now
+        just_crossed_bearish = (prev_bullish is not False) and not is_bullish_now
 
         existing_position = next((p for p in positions if p.symbol == symbol), None)
         signal_type, strength, reason = self._determine_signal(
-            fast_ma, slow_ma, rsi, existing_position
+            fast_ma,
+            slow_ma,
+            rsi,
+            existing_position,
+            just_crossed_bullish=just_crossed_bullish,
+            just_crossed_bearish=just_crossed_bearish,
         )
 
         if signal_type == "HOLD":
